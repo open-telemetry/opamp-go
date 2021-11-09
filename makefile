@@ -8,7 +8,11 @@ endef
 # Find all .proto files.
 BASELINE_PROTO_FILES := $(wildcard internal/proto/*.proto)
 
-all:
+all: test
+
+.PHONY: test
+test:
+	go test ./...
 
 # Generate Protobuf Go files.
 .PHONY: gen-proto
