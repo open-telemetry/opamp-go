@@ -336,26 +336,14 @@ message AddonsAvailable {
 // hash then the agent does not need to do anything, it already
 // has the right version of the addon.
 message AddonAvailable {
-    // The list of files in the addon.
-    DownloadableFileList files = 1;
+    // The downloadable file of the addon.
+    DownloadableFile file = 1;
 
-    // The aggregate hash of the addon. SHOULD be calculated based on file names
-    // and content of all files in the addon.
+    // The hash of the addon. SHOULD be calculated based on addon name and
+    // content of the file of the addon.
     bytes hash = 2;
 
     // TODO: do we need other fields, e.g. addon version or description?
-}
-
-// A list of files that can be downloaded. The list's aggregate hash and the hash
-// of each individual file is provided so that the downloading can be skipped if the
-// Agent already has the collection or the individual files.
-message DownloadableFileList {
-    // Map of files. Keys are file names.
-    map<string,DownloadableFile> files = 1;
-
-    // The aggregate hash of the list. SHOULD be calculated based on the names
-    // and content of all files.
-    bytes hash = 2;
 }
 
 message DownloadableFile {
@@ -364,8 +352,9 @@ message DownloadableFile {
     // to allow for resuming downloads.
     string download_url = 1;
 
-    // The hash of the file content.
-    bytes hash = 2;
+    // The hash of the file content. Can be used by the Agent to verify that the file
+    // was downloaded correctly.
+    bytes content_hash = 2;
 }
 
 message ServerErrorResponse {
@@ -408,10 +397,10 @@ message AgentPackageAvailable {
     // already downloaded and failed to install.
     string version = 1;
 
-    // The list of files in the package.
+    // The downloadable file of the package.
     // Executable files SHOULD be code-signed and the signature SHOULD be verified
     // by the agent after downloading and before installing.
-    DownloadableFileList files = 2;
+    DownloadableFile file = 2;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
