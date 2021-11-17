@@ -471,19 +471,6 @@ message StatusReport {
     // it has for this Agent and if the hashes are different the server SHOULD send
     // an AddonsAvailable message to the agent.
     bytes server_provided_all_addons_hash = 4;
-
-    // Indicates whether the agent is healthy or not.
-    enum HealthStatus {
-        // The health status is unchanged since last reported.
-        HealthUnset = 0;
-
-        // The agent is healthy.
-        Healthy = 1;
-
-        // The agent is unhealthy.
-        Unhealthy = 2;
-    }
-    HealthStatus health_status = 5;
 }
 
 message EffectiveConfig {
