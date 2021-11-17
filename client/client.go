@@ -82,10 +82,6 @@ type OpAMPClient interface {
 	// in the next outgoing status report.
 	SetAgentAttributes(attrs map[string]protobufs.AnyValue) error
 
-	// SetAgentHealthy sets isHealth flag of the Agent. The initial state of this
-	// flag is true.
-	SetAgentHealthy(isHealthy bool) error
-
 	// SetEffectiveConfig sets the effective config of the Agent. The config will be
 	// included in the next status report sent to the server. The behavior regarding
 	// Start() method is exactly the same as for SetAgentAttributes() method.
