@@ -21,27 +21,17 @@ type AgentPackageSyncer interface {
 // matches exactly the package that is available on the server.
 // It is assumed the agent can store only a single package locally.
 type AgentPackageStateProvider interface {
-	// PackageInfo returns the version of the locally available package the hash
-	// of all local files, previously set via SetPackageInfo.
-	PackageInfo() (version string, hash []byte, err error)
+	// PackageInfo returns the version of the locally available package and the hash
+	// of the file content, previously set via UpdateContent.
+	PackageInfo() (version string, contentHash []byte, err error)
 
-	// Files returns the names of the agent package files that exist locally.
-	Files() ([]string, error)
-
-	// FileHash returns the hash of the file that exists locally.
-	FileHash(fileName string) ([]byte, error)
-
-	// UpsertFile must create or update the specified local file. The entire content
+	// UpdateContent must create or update the local content file. The entire content
 	// of the file must be replaced by the data. The data must be read until
-	// it returns an EOF.
+	// it returns an EOF. If reading from data fails UpdateContent must abort and return
+	// an error.
+	// Version and content hash must be updated if the data is updated without failure.
+	// Version and content hash must be returned later when PackageInfo is called when
+	// the next AgentPackageAvailable message arrives.
 	// The function must cancel and return an error if the context is cancelled.
-	UpsertFile(ctx context.Context, fileName string, data io.Reader) error
-
-	// DeleteFile must delete the specified local file.
-	DeleteFile(fileName string) error
-
-	// SetPackageInfo must remember the package hash and version. Hash and version
-	// must be returned later when PackageInfo is called. SetPackageInfo is called
-	// after all file updates complete successfully.
-	SetPackageInfo(version string, hash []byte) error
+	UpdateContent(ctx context.Context, data io.Reader, contentHash []byte, version string) error
 }

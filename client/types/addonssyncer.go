@@ -30,23 +30,16 @@ type AddonStateProvider interface {
 	// If the addon did not exist its hash should be set to nil.
 	CreateAddon(addonName string) error
 
-	// Files returns the names of the files that exist locally for the
-	// specified addon.
-	Files(addonName string) ([]string, error)
+	// FileContentHash returns the content hash of the addon file that exists locally.
+	FileContentHash(addonName string) ([]byte, error)
 
-	// FileHash returns the hash of the file that exists locally.
-	FileHash(addonName string, fileName string) ([]byte, error)
-
-	// UpsertFile must create or update the specified local file. The entire content
+	// UpdateContent must create or update the addon content file. The entire content
 	// of the file must be replaced by the data. The data must be read until
-	// it returns an EOF.
+	// it returns an EOF. If reading from data fails UpdateContent must abort and return
+	// an error.
+	// Content hash must be updated if the data is updated without failure.
 	// The function must cancel and return an error if the context is cancelled.
-	UpsertFile(ctx context.Context, addonName string, fileName string, data io.Reader) error
-
-	SetFileHash(addonName string, fileName string, hash []byte) error
-
-	// DeleteFile must delete the specified local file.
-	DeleteFile(addonName string, fileName string) error
+	UpdateContent(ctx context.Context, addonName string, data io.Reader, contentHash []byte) error
 
 	// SetAddonHash must remember the hash for the specified addon. Must be returned
 	// later when GetAddonHash is called. SetAddonHash is called after all UpsertFile
