@@ -33,7 +33,7 @@ func eventually(t *testing.T, f func() bool) {
 	assert.Eventually(t, f, 5*time.Second, 10*time.Millisecond)
 }
 
-func prepareClient(settings StartSettings) *Impl {
+func prepareClient(settings StartSettings) *client {
 	// Autogenerate instance id.
 	entropy := ulid.Monotonic(rand.New(rand.NewSource(99)), 0)
 	settings.InstanceUid = ulid.MustNew(ulid.Timestamp(time.Now()), entropy).String()
@@ -41,7 +41,7 @@ func prepareClient(settings StartSettings) *Impl {
 	return New(nil)
 }
 
-func startClient(t *testing.T, settings StartSettings) *Impl {
+func startClient(t *testing.T, settings StartSettings) *client {
 	client := prepareClient(settings)
 	err := client.Start(settings)
 	assert.NoError(t, err)

@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -12,11 +13,10 @@ import (
 
 // Receiver implements the client's receiving portion of OpAMP protocol.
 type Receiver struct {
-	conn       *websocket.Conn
-	logger     types.Logger
-	sender     *Sender
-	runContext context.Context
-	callbacks  types.Callbacks
+	conn      *websocket.Conn
+	logger    types.Logger
+	sender    *Sender
+	callbacks types.Callbacks
 }
 
 func NewReceiver(logger types.Logger, callbacks types.Callbacks, conn *websocket.Conn, sender *Sender) *Receiver {
@@ -30,7 +30,6 @@ func NewReceiver(logger types.Logger, callbacks types.Callbacks, conn *websocket
 
 func (r *Receiver) ReceiverLoop(ctx context.Context) {
 	runContext, cancelFunc := context.WithCancel(ctx)
-	r.runContext = runContext
 
 out:
 	for {
@@ -41,7 +40,7 @@ out:
 			}
 			break out
 		} else {
-			r.processReceivedMessage(&message)
+			r.processReceivedMessage(runContext, &message)
 		}
 	}
 
@@ -55,15 +54,15 @@ func (r *Receiver) receiveMessage(msg *protobufs.ServerToAgent) error {
 	}
 	err = proto.Unmarshal(bytes, msg)
 	if err != nil {
-		r.logger.Errorf("Cannot decode received message: %v", err)
+		return fmt.Errorf("cannot decode received message: %w", err)
 	}
 	return err
 }
 
-func (r *Receiver) processReceivedMessage(p *protobufs.ServerToAgent) {
+func (r *Receiver) processReceivedMessage(ctx context.Context, p *protobufs.ServerToAgent) {
 	data := p.GetDataForAgent()
 	if data != nil {
-		r.rcvDataForAgent(data)
+		r.rcvDataForAgent(ctx, data)
 		return
 	}
 
@@ -73,12 +72,11 @@ func (r *Receiver) processReceivedMessage(p *protobufs.ServerToAgent) {
 	}
 }
 
-func (r *Receiver) rcvDataForAgent(data *protobufs.DataForAgent) {
+func (r *Receiver) rcvDataForAgent(ctx context.Context, data *protobufs.DataForAgent) {
 	if r.callbacks != nil {
-		reportStatus := false
+		reportStatus := r.rcvRemoteConfig(ctx, data.RemoteConfig)
 
-		reportStatus = r.rcvRemoteConfig(data.RemoteConfig) || reportStatus
-		reportStatus = r.rcvConnectionSettings(data.ConnectionSettings) || reportStatus
+		r.rcvConnectionSettings(ctx, data.ConnectionSettings)
 		r.rcvAddonsAvailable(data.AddonsAvailable)
 
 		if reportStatus {
@@ -87,8 +85,8 @@ func (r *Receiver) rcvDataForAgent(data *protobufs.DataForAgent) {
 	}
 }
 
-func (r *Receiver) rcvRemoteConfig(config *protobufs.AgentRemoteConfig) (reportStatus bool) {
-	effective, err := r.callbacks.OnRemoteConfig(r.runContext, config)
+func (r *Receiver) rcvRemoteConfig(ctx context.Context, config *protobufs.AgentRemoteConfig) (reportStatus bool) {
+	effective, err := r.callbacks.OnRemoteConfig(ctx, config)
 	if err == nil {
 		r.sender.UpdateStatus(func(statusReport *protobufs.StatusReport) {
 			statusReport.EffectiveConfig = effective
@@ -100,13 +98,13 @@ func (r *Receiver) rcvRemoteConfig(config *protobufs.AgentRemoteConfig) (reportS
 	return false
 }
 
-func (r *Receiver) rcvConnectionSettings(settings *protobufs.ConnectionSettingsOffers) (reportStatus bool) {
+func (r *Receiver) rcvConnectionSettings(ctx context.Context, settings *protobufs.ConnectionSettingsOffers) {
 	if settings == nil {
-		return false
+		return
 	}
 
 	if settings.Opamp != nil {
-		err := r.callbacks.OnOpampConnectionSettings(r.runContext, settings.Opamp)
+		err := r.callbacks.OnOpampConnectionSettings(ctx, settings.Opamp)
 		if err == nil {
 			// TODO: verify connection using new settings.
 			r.callbacks.OnOpampConnectionSettingsAccepted(settings.Opamp)
@@ -114,47 +112,50 @@ func (r *Receiver) rcvConnectionSettings(settings *protobufs.ConnectionSettingsO
 	}
 
 	r.rcvOwnTelemetryConnectionSettings(
+		ctx,
 		settings.OwnMetrics,
 		types.OwnMetrics,
 		r.callbacks.OnOwnTelemetryConnectionSettings,
 	)
 
 	r.rcvOwnTelemetryConnectionSettings(
+		ctx,
 		settings.OwnTraces,
 		types.OwnTraces,
 		r.callbacks.OnOwnTelemetryConnectionSettings,
 	)
 
 	r.rcvOwnTelemetryConnectionSettings(
+		ctx,
 		settings.OwnLogs,
 		types.OwnLogs,
 		r.callbacks.OnOwnTelemetryConnectionSettings,
 	)
 
 	for name, s := range settings.OtherConnections {
-		r.rcvOtherConnectionSettings(s, name, r.callbacks.OnOtherConnectionSettings)
+		r.rcvOtherConnectionSettings(ctx, s, name, r.callbacks.OnOtherConnectionSettings)
 	}
-
-	return false
 }
 
 func (r *Receiver) rcvOwnTelemetryConnectionSettings(
+	ctx context.Context,
 	settings *protobufs.ConnectionSettings,
 	telemetryType types.OwnTelemetryType,
 	callback func(ctx context.Context, telemetryType types.OwnTelemetryType, settings *protobufs.ConnectionSettings) error,
 ) {
 	if settings != nil {
-		callback(r.runContext, telemetryType, settings)
+		callback(ctx, telemetryType, settings)
 	}
 }
 
 func (r *Receiver) rcvOtherConnectionSettings(
+	ctx context.Context,
 	settings *protobufs.ConnectionSettings,
 	name string,
 	callback func(ctx context.Context, name string, settings *protobufs.ConnectionSettings) error,
 ) {
 	if settings != nil {
-		callback(r.runContext, name, settings)
+		callback(ctx, name, settings)
 	}
 }
 

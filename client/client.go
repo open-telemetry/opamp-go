@@ -65,13 +65,19 @@ type OpAMPClient interface {
 	//  - OnConnectFailed
 	//  - OnError
 	//  - OnRemoteConfig
+	//
+	// Start should be called only once. It should not be called concurrently with
+	// any other OpAMPClient methods.
 	Start(settings StartSettings) error
 
-	// Stop the client. After this call returns successfully it is guaranteed
-	// that no callbacks will be called. Stop() will cancel context of any in-fly
+	// Stop the client. May be called only after Start() returns successfully.
+	// May be called only once.
+	// After this call returns successfully it is guaranteed that no
+	// callbacks will be called. Stop() will cancel context of any in-fly
 	// callbacks, but will wait until such in-fly callbacks are returned before
 	// Stop returns, so make sure the callbacks don't block infinitely and react
 	// promptly to context cancellations.
+	// Once stopped OpAMPClient cannot be started again.
 	Stop(ctx context.Context) error
 
 	// SetAgentAttributes sets attributes of the Agent. The attributes will be included

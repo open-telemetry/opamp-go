@@ -18,8 +18,13 @@ import (
 	"github.com/open-telemetry/opamp-go/internal/protobufs"
 )
 
-// Impl is a Client implementation.
-type Impl struct {
+var (
+	errAlreadyStarted       = errors.New("already started")
+	errCannotStopNotStarted = errors.New("cannot stop because not started")
+)
+
+// client is a Client implementation.
+type client struct {
 	logger   types.Logger
 	settings StartSettings
 
@@ -34,12 +39,11 @@ type Impl struct {
 	conn      *websocket.Conn
 	connMutex sync.RWMutex
 
-	// True is Start() is successful.
+	// True if Start() is successful.
 	isStarted bool
 
-	// Context to use for background running go routines.
-	runContext context.Context
-	runCancel  context.CancelFunc
+	// Cancellation func background running go routines.
+	runCancel context.CancelFunc
 
 	// True when stopping is in progress.
 	isStoppingFlag  bool
@@ -52,16 +56,16 @@ type Impl struct {
 	sender *internal.Sender
 }
 
-var _ OpAMPClient = (*Impl)(nil)
+var _ OpAMPClient = (*client)(nil)
 
 const retryAfterHTTPHeader = "Retry-After"
 
-func New(logger types.Logger) *Impl {
+func New(logger types.Logger) *client {
 	if logger == nil {
 		logger = &nopLogger{}
 	}
 
-	w := &Impl{
+	w := &client{
 		logger:        logger,
 		stoppedSignal: make(chan struct{}, 1),
 		sender:        internal.NewSender(logger),
@@ -69,9 +73,9 @@ func New(logger types.Logger) *Impl {
 	return w
 }
 
-func (w *Impl) Start(settings StartSettings) error {
+func (w *client) Start(settings StartSettings) error {
 	if w.isStarted {
-		return errors.New("already started")
+		return errAlreadyStarted
 	}
 
 	w.settings = settings
@@ -115,9 +119,9 @@ func (w *Impl) Start(settings StartSettings) error {
 	return nil
 }
 
-func (w *Impl) Stop(ctx context.Context) error {
+func (w *client) Stop(ctx context.Context) error {
 	if !w.isStarted {
-		return errors.New("cannot stop because not started")
+		return errCannotStopNotStarted
 	}
 
 	w.isStoppingMutex.Lock()
@@ -149,11 +153,11 @@ func (w *Impl) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (w *Impl) SetAgentAttributes(attrs map[string]protobufs.AnyValue) error {
+func (w *client) SetAgentAttributes(attrs map[string]protobufs.AnyValue) error {
 	panic("implement me")
 }
 
-func (w *Impl) SetEffectiveConfig(config *protobufs.EffectiveConfig) error {
+func (w *client) SetEffectiveConfig(config *protobufs.EffectiveConfig) error {
 	w.sender.UpdateStatus(func(statusReport *protobufs.StatusReport) {
 		statusReport.EffectiveConfig = config
 	})
@@ -161,10 +165,16 @@ func (w *Impl) SetEffectiveConfig(config *protobufs.EffectiveConfig) error {
 	return nil
 }
 
+type optionalDuration struct {
+	duration time.Duration
+	// true if duration field is defined.
+	defined bool
+}
+
 // Try to connect once. Returns an error if connection fails and optional retryAfter
 // duration to indicate to the caller to retry after the specified time as instructed
 // by the server.
-func (w *Impl) tryConnectOnce(ctx context.Context) (err error, retryAfter time.Duration) {
+func (w *client) tryConnectOnce(ctx context.Context) (err error, retryAfter optionalDuration) {
 	var resp *http.Response
 	conn, resp, err := w.dialer.DialContext(ctx, w.url.String(), w.requestHeader)
 	if err != nil {
@@ -176,7 +186,7 @@ func (w *Impl) tryConnectOnce(ctx context.Context) (err error, retryAfter time.D
 			duration := extractRetryAfterHeader(resp)
 			return err, duration
 		}
-		return err, 0
+		return err, optionalDuration{defined: false}
 	}
 
 	// Successfully connected.
@@ -187,12 +197,12 @@ func (w *Impl) tryConnectOnce(ctx context.Context) (err error, retryAfter time.D
 		w.settings.Callbacks.OnConnect()
 	}
 
-	return nil, 0
+	return nil, optionalDuration{defined: false}
 }
 
 // Extract Retry-After response header if the status is 503 or 429. Returns
 // 0 duration if the header is not found or the status is different.
-func extractRetryAfterHeader(resp *http.Response) time.Duration {
+func extractRetryAfterHeader(resp *http.Response) optionalDuration {
 	if resp.StatusCode == http.StatusServiceUnavailable ||
 		resp.StatusCode == http.StatusTooManyRequests {
 		retryAfter := strings.TrimSpace(resp.Header.Get(retryAfterHTTPHeader))
@@ -200,16 +210,16 @@ func extractRetryAfterHeader(resp *http.Response) time.Duration {
 			retryIntervalSec, err := strconv.Atoi(retryAfter)
 			if err == nil {
 				retryInterval := time.Duration(retryIntervalSec) * time.Second
-				return retryInterval
+				return optionalDuration{defined: true, duration: retryInterval}
 			}
 		}
 	}
-	return 0
+	return optionalDuration{defined: false}
 }
 
 // Continuously try until connected. Will return nil when successfully
 // connected. Will return error if it is cancelled via context.
-func (w *Impl) ensureConnected(ctx context.Context) error {
+func (w *client) ensureConnected(ctx context.Context) error {
 	infiniteBackoff := backoff.NewExponentialBackOff()
 
 	// Make ticker run forever.
@@ -226,18 +236,18 @@ func (w *Impl) ensureConnected(ctx context.Context) error {
 			{
 				if err, retryAfter := w.tryConnectOnce(ctx); err != nil {
 					if errors.Is(err, context.Canceled) {
-						w.logger.Infof("Client is stopped, will not try anymore.")
+						w.logger.Debugf("Client is stopped, will not try anymore.")
 						return err
 					} else {
 						w.logger.Errorf("Connection failed (%v), will retry.", err)
 					}
 					// Retry again a bit later.
 
-					if retryAfter > interval {
+					if retryAfter.defined && retryAfter.duration > interval {
 						// If the server suggested connecting later than our interval
 						// then honour server's request, otherwise wait at least
 						// as much as we calculated.
-						interval = retryAfter
+						interval = retryAfter.duration
 					}
 
 					continue
@@ -247,20 +257,20 @@ func (w *Impl) ensureConnected(ctx context.Context) error {
 			}
 
 		case <-ctx.Done():
-			w.logger.Infof("Client is stopped, will not try anymore.")
+			w.logger.Debugf("Client is stopped, will not try anymore.")
 			timer.Stop()
 			return ctx.Err()
 		}
 	}
 }
 
-func (w *Impl) isStopping() bool {
+func (w *client) isStopping() bool {
 	w.isStoppingMutex.RLock()
 	defer w.isStoppingMutex.RUnlock()
 	return w.isStoppingFlag
 }
 
-func (w *Impl) startConnectAndRun() {
+func (w *client) startConnectAndRun() {
 	// Create a cancellable context.
 	runCtx, runCancel := context.WithCancel(context.Background())
 
@@ -272,9 +282,8 @@ func (w *Impl) startConnectAndRun() {
 		return
 	}
 	w.runCancel = runCancel
-	w.runContext = runCtx
 
-	go w.runUntilStopped()
+	go w.runUntilStopped(runCtx)
 }
 
 // runOneCycle performs the following actions:
@@ -282,9 +291,9 @@ func (w *Impl) startConnectAndRun() {
 //   2. send first status report.
 //   3. receive and process messages until error happens.
 // If it encounters an error it closes the connection and returns.
-// Will stop and return if Stop() is called (runContext is cancelled, isStopping is set).
-func (w *Impl) runOneCycle() {
-	if err := w.ensureConnected(w.runContext); err != nil {
+// Will stop and return if Stop() is called (ctx is cancelled, isStopping is set).
+func (w *client) runOneCycle(ctx context.Context) {
+	if err := w.ensureConnected(ctx); err != nil {
 		// Can't connect, so can't move forward. This currently happens when we
 		// are being stopped.
 		return
@@ -296,7 +305,7 @@ func (w *Impl) runOneCycle() {
 	}
 
 	// Create a cancellable context for background processors.
-	procCtx, procCancel := context.WithCancel(w.runContext)
+	procCtx, procCancel := context.WithCancel(ctx)
 
 	// Connected successfully. Start the sender. This will also send the first
 	// status report.
@@ -309,7 +318,7 @@ func (w *Impl) runOneCycle() {
 
 	// First status report sent. Now loop to receive and process messages.
 	r := internal.NewReceiver(w.logger, w.settings.Callbacks, w.conn, w.sender)
-	r.ReceiverLoop(w.runContext)
+	r.ReceiverLoop(ctx)
 
 	// Stop the background processors.
 	procCancel()
@@ -324,7 +333,7 @@ func (w *Impl) runOneCycle() {
 	w.sender.WaitToStop()
 }
 
-func (w *Impl) runUntilStopped() {
+func (w *client) runUntilStopped(ctx context.Context) {
 
 	defer func() {
 		// We only return from runUntilStopped when we are instructed to stop.
@@ -338,11 +347,6 @@ func (w *Impl) runUntilStopped() {
 			return
 		}
 
-		w.runOneCycle()
+		w.runOneCycle(ctx)
 	}
 }
-
-type nopLogger struct{}
-
-func (l *nopLogger) Infof(format string, v ...interface{})  {}
-func (l *nopLogger) Errorf(format string, v ...interface{}) {}
