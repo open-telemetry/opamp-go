@@ -254,12 +254,8 @@ func TestFirstStatusReport(t *testing.T) {
 	srv := internal.StartMockServer(t)
 	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 		return &protobufs.ServerToAgent{
-			InstanceUid: msg.InstanceUid,
-			Body: &protobufs.ServerToAgent_DataForAgent{
-				DataForAgent: &protobufs.DataForAgent{
-					RemoteConfig: remoteConfig,
-				},
-			},
+			InstanceUid:  msg.InstanceUid,
+			RemoteConfig: remoteConfig,
 		}
 	}
 
@@ -365,18 +361,14 @@ func TestConnectionSettings(t *testing.T) {
 			atomic.AddInt64(&rcvStatus, 1)
 
 			return &protobufs.ServerToAgent{
-				Body: &protobufs.ServerToAgent_DataForAgent{
-					DataForAgent: &protobufs.DataForAgent{
-						ConnectionSettings: &protobufs.ConnectionSettingsOffers{
-							Hash:       hash,
-							Opamp:      opampSettings,
-							OwnMetrics: metricsSettings,
-							OwnTraces:  tracesSettings,
-							OwnLogs:    logsSettings,
-							OtherConnections: map[string]*protobufs.ConnectionSettings{
-								"other": otherSettings,
-							},
-						},
+				ConnectionSettings: &protobufs.ConnectionSettingsOffers{
+					Hash:       hash,
+					Opamp:      opampSettings,
+					OwnMetrics: metricsSettings,
+					OwnTraces:  tracesSettings,
+					OwnLogs:    logsSettings,
+					OtherConnections: map[string]*protobufs.ConnectionSettings{
+						"other": otherSettings,
 					},
 				},
 			}
