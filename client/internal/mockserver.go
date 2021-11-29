@@ -3,6 +3,8 @@ package internal
 import (
 	"log"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/gorilla/websocket"
@@ -18,13 +20,13 @@ type MockServer struct {
 	OnRequest func(w http.ResponseWriter, r *http.Request)
 	OnConnect func(r *http.Request, conn *websocket.Conn)
 	OnMessage func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent
-	HTTPSrv   *http.Server
+	srv       *httptest.Server
 }
 
 var upgrader = websocket.Upgrader{}
 
 func StartMockServer(t *testing.T) *MockServer {
-	srv := &MockServer{Endpoint: testhelpers.GetAvailableLocalAddress()}
+	srv := &MockServer{}
 
 	m := http.NewServeMux()
 	m.HandleFunc(
@@ -71,13 +73,20 @@ func StartMockServer(t *testing.T) *MockServer {
 			}
 		},
 	)
-	srv.HTTPSrv = &http.Server{
-		Handler: m,
-		Addr:    srv.Endpoint,
+
+	srv.srv = httptest.NewServer(m)
+
+	u, err := url.Parse(srv.srv.URL)
+	if err != nil {
+		t.Fatal(err)
 	}
-	go srv.HTTPSrv.ListenAndServe()
+	srv.Endpoint = u.Host
 
 	testhelpers.WaitForEndpoint(srv.Endpoint)
 
 	return srv
+}
+
+func (m *MockServer) Close() {
+	m.srv.Close()
 }

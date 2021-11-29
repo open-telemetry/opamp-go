@@ -130,7 +130,7 @@ func TestConnectWithServer(t *testing.T) {
 	eventually(t, func() bool { return atomic.LoadInt64(&connected) != 0 })
 
 	// Shutdown the server.
-	srv.HTTPSrv.Shutdown(context.Background())
+	srv.Close()
 
 	// Shutdown the client.
 	err := client.Stop(context.Background())
@@ -173,7 +173,7 @@ func TestConnectWithServer503(t *testing.T) {
 	assert.EqualValues(t, 0, atomic.LoadInt64(&clientConnected))
 
 	// Shutdown the server.
-	srv.HTTPSrv.Shutdown(context.Background())
+	srv.Close()
 	client.Stop(context.Background())
 }
 
@@ -198,7 +198,7 @@ func TestConnectWithHeader(t *testing.T) {
 	eventually(t, func() bool { return conn.Load() != nil })
 
 	// Shutdown the server and the client.
-	srv.HTTPSrv.Shutdown(context.Background())
+	srv.Close()
 	client.Stop(context.Background())
 }
 
@@ -231,7 +231,7 @@ func TestDisconnectByServer(t *testing.T) {
 	assert.True(t, connectErr.Load() == nil)
 
 	// Close the server and forcefully disconnect.
-	srv.HTTPSrv.Close()
+	srv.Close()
 	conn.Load().(*websocket.Conn).Close()
 
 	// The client must retry and must fail now.
@@ -293,7 +293,7 @@ func TestFirstStatusReport(t *testing.T) {
 	eventually(t, func() bool { return atomic.LoadInt64(&remoteConfigReceived) != 0 })
 
 	// Shutdown the server.
-	srv.HTTPSrv.Shutdown(context.Background())
+	srv.Close()
 
 	// Shutdown the client.
 	err := client.Stop(context.Background())
@@ -342,7 +342,7 @@ func TestSetEffectiveConfig(t *testing.T) {
 	eventually(t, func() bool { return proto.Equal(sendConfig, rcvConfig.Load().(*protobufs.EffectiveConfig)) })
 
 	// Shutdown the server.
-	srv.HTTPSrv.Shutdown(context.Background())
+	srv.Close()
 
 	// Shutdown the client.
 	err := client.Stop(context.Background())
@@ -436,7 +436,7 @@ func TestConnectionSettings(t *testing.T) {
 	eventually(t, func() bool { return atomic.LoadInt64(&rcvStatus) == 1 })
 
 	// Shutdown the server.
-	srv.HTTPSrv.Shutdown(context.Background())
+	srv.Close()
 
 	// Shutdown the client.
 	err := client.Stop(context.Background())
