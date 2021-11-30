@@ -80,7 +80,7 @@ func (r *Receiver) processReceivedMessage(ctx context.Context, msg *protobufs.Se
 func (r *Receiver) rcvRemoteConfig(ctx context.Context, config *protobufs.AgentRemoteConfig) (reportStatus bool) {
 	effective, err := r.callbacks.OnRemoteConfig(ctx, config)
 	if err == nil {
-		r.sender.UpdateStatus(func(statusReport *protobufs.StatusReport) {
+		r.sender.UpdateNextStatus(func(statusReport *protobufs.StatusReport) {
 			statusReport.EffectiveConfig = effective
 		})
 		if effective != nil {

@@ -28,34 +28,25 @@ message AgentToServer {
     // Recommended format: https://github.com/ulid/spec
     string instance_uid = 1;
 
-    // Sequential number of the message.
-    //
-    // (instance_uid, sequence_num) pair globally uniquely identifies every
-    // AgentToServer message and SHOULD be treated as an idempotency key by the
-    // Management Server.
-    //
-    // The Agent SHOULD start with sequence_num=0 and increment it by 2 for every new
-    // request (thus only even numbers should appear in the requests from Agent to Server).
-    //
-    // Requests which need to be retried (e.g. because the response timed out) MUST
-    // keep the same sequence_num.
-    //fixed64 sequence_num = 2;
+    // The status of the Agent. MUST be set in the first AgentToServer message that the
+    // Agent sends after connecting.
+    // This field SHOULD be unset if this information is unchanged since the last
+    // AgentToServer message for this agent was sent in the stream.
+    StatusReport status_report = 2;
 
-    oneof Body {
-        StatusReport status_report = 2;
+    // The list of the agent addons, including addon statuses.
+    // This field SHOULD be unset if this information is unchanged since the last
+    // AgentToServer message for this agent was sent in the stream.
+    AgentAddonStatuses addon_statuses = 3;
 
-        // The list of the agent addons, including addon statuses.
-        // This field SHOULD be unset if this information is unchanged since the last
-        // StatusReport message for this agent was sent in the stream.
-        AgentAddonStatuses addon_statuses = 3;
+    // The status of the installation operation that was previously offered by the server.
+    // This field SHOULD be unset if the installation status is unchanged since the
+    // last AgentToServer message.
+    AgentInstallStatus agent_install_status = 4;
 
-        // The status of the installation operation that was previously offered by the server.
-        // This field SHOULD be unset if the installation status is unchanged since the
-        // last StatusReport message.
-        AgentInstallStatus agent_install_status = 4;
-
-        AgentDisconnect agent_disconnect = 5;
-    }
+    // AgentDisconnect MUST be set in the last AgentToServer message sent from the
+    // agent to the server.
+    AgentDisconnect agent_disconnect = 5;
 }
 
 // AgentDisconnect is the last message sent from the agent to the server. The server

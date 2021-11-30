@@ -101,14 +101,21 @@ func (w *client) Start(settings StartSettings) error {
 	}
 
 	// Prepare the first status report.
-	w.sender.UpdateStatus(
+	w.sender.UpdateNextStatus(
 		func(statusReport *protobufs.StatusReport) {
 			statusReport.AgentDescription = &protobufs.AgentDescription{
 				AgentType:    w.settings.AgentType,
 				AgentVersion: w.settings.AgentVersion,
 			}
+		},
+	)
 
-			statusReport.ServerProvidedAllAddonsHash = w.settings.LastServerProvidedAllAddonsHash
+	w.sender.UpdateNextMessage(
+		func(msg *protobufs.AgentToServer) {
+			if msg.AddonStatuses == nil {
+				msg.AddonStatuses = &protobufs.AgentAddonStatuses{}
+			}
+			msg.AddonStatuses.ServerProvidedAllAddonsHash = w.settings.LastServerProvidedAllAddonsHash
 		},
 	)
 
@@ -158,7 +165,7 @@ func (w *client) SetAgentAttributes(attrs map[string]protobufs.AnyValue) error {
 }
 
 func (w *client) SetEffectiveConfig(config *protobufs.EffectiveConfig) error {
-	w.sender.UpdateStatus(func(statusReport *protobufs.StatusReport) {
+	w.sender.UpdateNextStatus(func(statusReport *protobufs.StatusReport) {
 		statusReport.EffectiveConfig = config
 	})
 	w.sender.ScheduleSend()
