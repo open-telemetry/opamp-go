@@ -422,13 +422,6 @@ message StatusReport {
     // This field SHOULD be unset if the remote config status is unchanged since the
     // last StatusReport message.
     RemoteConfigStatus remote_config_status = 3;
-
-    // The aggregate hash of all addons that this Agent previously received from
-    // the server via AddonsAvailable message.
-    // The server SHOULD compare this hash to the aggregate hash of all addons that
-    // it has for this Agent and if the hashes are different the server SHOULD send
-    // an AddonsAvailable message to the agent.
-    bytes server_provided_all_addons_hash = 4;
 }
 
 message EffectiveConfig {
