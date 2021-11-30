@@ -73,52 +73,30 @@ message ServerToAgent {
     // Used for multiplexing messages from/to multiple agents using one message stream.
     string instance_uid = 1;
 
-    // There are two types of ServerToAgent messages: responses to an AgentToServer
-    // message and non-response messages, which are initiated by the server.
-    //
-    // If this message is a response to an AgentToServer message then sequence_num field
-    // here MUST be equal to the AgentToServer.sequence_num field. The sequential number
-    // allows to correctly match responses to requests even when the responses arrive
-    // re-ordered.
-    //
-    // If this message is non-response then the sequence_num field MUST be assigned
-    // by the server. The server SHOULD start with sequence_num=1 and increment it by 2
-    // for every new message that is not a response to an agent request (thus only
-    // odd numbers should appear in the non-response type messages from server to agent).
-    //fixed64 sequence_num = 2;
+    // error_response is set if the Server wants to indicate that something went wrong
+    // during processing of an AgentToServer message. If error_response is set then
+    // all other fields below must be unset and vice versa, if any of the fields below is
+    // set then error_response must be unset.
+    ServerErrorResponse error_response = 2;
 
-    oneof Body {
-        DataForAgent data_for_agent = 2;
-        ServerErrorResponse error_response = 3;
-    }
-}
-
-// DataForAgent message is sent from the server to the agent either in response to the
-// AgentToServer message or when the server has data to deliver to the agent.
-//
-// If the server receives an AgentToServer message and the server has nothing to
-// send back to the agent then DataForAgent message will still be sent, but all
-// fields will be unset (in that case DataForAgent serves simply as an acknowledgement
-// of receipt).
-message DataForAgent {
     // remote_config field is set when the server has a remote config offer for the agent.
-    AgentRemoteConfig remote_config = 1;
+    AgentRemoteConfig remote_config = 3;
 
     // This field is set when the Server wants the Agent to change one or more
     // of its client connection settings (destination, headers, certificate, etc).
-    ConnectionSettingsOffers connection_settings = 2;
+    ConnectionSettingsOffers connection_settings = 4;
 
     // addons_available field is set when the server has addons to offer to the agent.
-    AddonsAvailable addons_available = 3;
+    AddonsAvailable addons_available = 5;
 
     // agent_package_available field is set when the server has a different version
     // of an agent package available for download.
-    AgentPackageAvailable agent_package_available = 4;
+    AgentPackageAvailable agent_package_available = 6;
 
     enum Flags {
         FlagsUnspecified = 0;
 
-        // DataForAgentFlags is a bit mask. Values below define individual bits.
+        // Flags is a bit mask. Values below define individual bits.
 
         // Report* flags an be used by the server if the agent did not include the
         // particular bit of information in the last status report (which is an allowed
@@ -131,7 +109,7 @@ message DataForAgent {
         ReportAddonStatus     = 0x00000002;
     }
     // Bit flags as defined by Flags bit masks.
-    Flags flags = 5;
+    Flags flags = 7;
 }
 
 // The ConnectionSettings message is a collection of fields which comprise an

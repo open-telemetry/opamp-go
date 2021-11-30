@@ -59,29 +59,21 @@ func (r *Receiver) receiveMessage(msg *protobufs.ServerToAgent) error {
 	return err
 }
 
-func (r *Receiver) processReceivedMessage(ctx context.Context, p *protobufs.ServerToAgent) {
-	data := p.GetDataForAgent()
-	if data != nil {
-		r.rcvDataForAgent(ctx, data)
-		return
-	}
-
-	err := p.GetErrorResponse()
-	if err != nil {
-		r.processErrorResponse(err)
-	}
-}
-
-func (r *Receiver) rcvDataForAgent(ctx context.Context, data *protobufs.DataForAgent) {
+func (r *Receiver) processReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
 	if r.callbacks != nil {
-		reportStatus := r.rcvRemoteConfig(ctx, data.RemoteConfig)
+		reportStatus := r.rcvRemoteConfig(ctx, msg.RemoteConfig)
 
-		r.rcvConnectionSettings(ctx, data.ConnectionSettings)
-		r.rcvAddonsAvailable(data.AddonsAvailable)
+		r.rcvConnectionSettings(ctx, msg.ConnectionSettings)
+		r.rcvAddonsAvailable(msg.AddonsAvailable)
 
 		if reportStatus {
 			r.sender.ScheduleSend()
 		}
+	}
+
+	err := msg.GetErrorResponse()
+	if err != nil {
+		r.processErrorResponse(err)
 	}
 }
 
