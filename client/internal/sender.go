@@ -21,12 +21,12 @@ type Sender struct {
 	// Indicates that there are pending messages to send.
 	hasMessages chan struct{}
 
-	// The next status report to send.
-	statusReport protobufs.StatusReport
-	// Indicates that the status report is pending to be sent.
-	statusReportPending bool
+	// The next message to send.
+	nextMessage protobufs.AgentToServer
+	// Indicates that nextMessage is pending to be sent.
+	messagePending bool
 	// Mutex to protect the above 2 fields.
-	statusReportMutex sync.Mutex
+	messageMutex sync.Mutex
 
 	// Indicates that the sender has fully stopped.
 	stopped chan struct{}
@@ -39,12 +39,12 @@ func NewSender(logger types.Logger) *Sender {
 	}
 }
 
-// Start the sender and send the first status report that was set via UpdateStatus()
+// Start the sender and send the first message that was set via UpdateNextMessage()
 // earlier. To stop the Sender cancel the ctx.
 func (s *Sender) Start(ctx context.Context, instanceUid string, conn *websocket.Conn) error {
 	s.conn = conn
 	s.instanceUid = instanceUid
-	err := s.sendStatusReport()
+	err := s.sendNextMessage()
 
 	// Run the sender in the background.
 	s.stopped = make(chan struct{})
@@ -59,18 +59,31 @@ func (s *Sender) WaitToStop() {
 	<-s.stopped
 }
 
-// UpdateStatus applies the specified modifier function to the status report that
-// will be sent next and marks the status report as pending to be sent.
-func (s *Sender) UpdateStatus(modifier func(statusReport *protobufs.StatusReport)) {
-	s.statusReportMutex.Lock()
-	modifier(&s.statusReport)
-	s.statusReportPending = true
-	s.statusReportMutex.Unlock()
+// UpdateNextMessage applies the specified modifier function to the next message that
+// will be sent and marks the message as pending to be sent.
+func (s *Sender) UpdateNextMessage(modifier func(msg *protobufs.AgentToServer)) {
+	s.messageMutex.Lock()
+	modifier(&s.nextMessage)
+	s.messagePending = true
+	s.messageMutex.Unlock()
 }
 
-// ScheduleSend signals to the sending goroutine to send the current status report
-// if it is pending. If there is no pending status report (e.g. status report was
-// already sent and "pending" flag is reset) then status report will not be sent.
+// UpdateNextStatus applies the specified modifier function to the status report that
+// will be sent next and marks the status report as pending to be sent.
+func (s *Sender) UpdateNextStatus(modifier func(statusReport *protobufs.StatusReport)) {
+	s.UpdateNextMessage(
+		func(msg *protobufs.AgentToServer) {
+			if s.nextMessage.StatusReport == nil {
+				s.nextMessage.StatusReport = &protobufs.StatusReport{}
+			}
+			modifier(s.nextMessage.StatusReport)
+		},
+	)
+}
+
+// ScheduleSend signals to the sending goroutine to send the next message
+// if it is pending. If there is no pending message (e.g. the message was
+// already sent and "pending" flag is reset) then no message will be be sent.
 func (s *Sender) ScheduleSend() {
 	select {
 	case s.hasMessages <- struct{}{}:
@@ -84,7 +97,7 @@ out:
 	for {
 		select {
 		case <-s.hasMessages:
-			s.sendMessages()
+			s.sendNextMessage()
 
 		case <-ctx.Done():
 			break out
@@ -94,35 +107,26 @@ out:
 	close(s.stopped)
 }
 
-func (s *Sender) sendMessages() {
-	s.sendStatusReport()
-}
-
-func (s *Sender) sendStatusReport() error {
-	var statusReport *protobufs.StatusReport
-	s.statusReportMutex.Lock()
-	if s.statusReportPending {
-		// Clone the statusReport to have a copy for sending and avoid blocking
-		// future updates to statusReport field.
-		statusReport = proto.Clone(&s.statusReport).(*protobufs.StatusReport)
-		s.statusReportPending = false
+func (s *Sender) sendNextMessage() error {
+	var msgToSend *protobufs.AgentToServer
+	s.messageMutex.Lock()
+	if s.messagePending {
+		// Clone the message to have a copy for sending and avoid blocking
+		// future updates to s.nextMessage field.
+		msgToSend = proto.Clone(&s.nextMessage).(*protobufs.AgentToServer)
+		s.messagePending = false
 
 		// Reset fields that we do not have to send unless they change before the
 		// next report after this one.
-		s.statusReport.RemoteConfigStatus = nil
-		s.statusReport.EffectiveConfig = nil
-		s.statusReport.AgentDescription = nil
+		s.nextMessage = protobufs.AgentToServer{}
 	}
-	s.statusReportMutex.Unlock()
+	s.messageMutex.Unlock()
 
-	if statusReport != nil {
-		msg := protobufs.AgentToServer{
-			InstanceUid: s.instanceUid,
-			Body: &protobufs.AgentToServer_StatusReport{
-				StatusReport: statusReport,
-			},
-		}
-		return s.sendMessage(&msg)
+	if msgToSend != nil && !proto.Equal(msgToSend, &protobufs.AgentToServer{}) {
+		// There is a pending message and the message has some fields populated.
+		// Set the InstanceUid field and send it.
+		msgToSend.InstanceUid = s.instanceUid
+		return s.sendMessage(msgToSend)
 	}
 	return nil
 }
