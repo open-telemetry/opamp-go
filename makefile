@@ -23,3 +23,7 @@ gen-proto:
 
 	cp -R internal/proto/github.com/open-telemetry/opamp-go/internal/protobufs/* internal/protobufs/
 	rm -rf internal/proto/github.com/
+
+.PHONY: gomoddownload
+gomoddownload:
+	go mod download
