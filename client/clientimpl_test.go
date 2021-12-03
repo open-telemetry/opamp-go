@@ -49,12 +49,16 @@ func startClient(t *testing.T, settings StartSettings) *client {
 	return client
 }
 
-func TestConnectNoServer(t *testing.T) {
-	settings := StartSettings{
-		OpAMPServerURL: "ws://" + testhelpers.GetAvailableLocalAddress(),
+// Create start settings that point to a non-existing server.
+func createNoServerSettings() StartSettings {
+	return StartSettings{
+		OpAMPServerURL:   "ws://" + testhelpers.GetAvailableLocalAddress(),
+		AgentDescription: &protobufs.AgentDescription{},
 	}
+}
 
-	client := startClient(t, settings)
+func TestConnectNoServer(t *testing.T) {
+	client := startClient(t, createNoServerSettings())
 
 	err := client.Stop(context.Background())
 	assert.NoError(t, err)
@@ -62,12 +66,10 @@ func TestConnectNoServer(t *testing.T) {
 
 func TestOnConnectFail(t *testing.T) {
 	var connectErr atomic.Value
-	settings := StartSettings{
-		OpAMPServerURL: "ws://" + testhelpers.GetAvailableLocalAddress(),
-		Callbacks: CallbacksStruct{
-			OnConnectFailedFunc: func(err error) {
-				connectErr.Store(err)
-			},
+	settings := createNoServerSettings()
+	settings.Callbacks = CallbacksStruct{
+		OnConnectFailedFunc: func(err error) {
+			connectErr.Store(err)
 		},
 	}
 
@@ -80,12 +82,10 @@ func TestOnConnectFail(t *testing.T) {
 }
 
 func TestStartStarted(t *testing.T) {
-	settings := StartSettings{
-		OpAMPServerURL: "ws://" + testhelpers.GetAvailableLocalAddress(),
-	}
-
+	settings := createNoServerSettings()
 	client := startClient(t, settings)
 
+	// Try to start again.
 	err := client.Start(settings)
 	assert.Error(t, err)
 
@@ -100,10 +100,7 @@ func TestStopWithoutStart(t *testing.T) {
 }
 
 func TestStopCancellation(t *testing.T) {
-	settings := StartSettings{
-		OpAMPServerURL: "ws://" + testhelpers.GetAvailableLocalAddress(),
-	}
-	client := startClient(t, settings)
+	client := startClient(t, createNoServerSettings())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -125,6 +122,7 @@ func TestConnectWithServer(t *testing.T) {
 				atomic.StoreInt64(&connected, 1)
 			},
 		},
+		AgentDescription: &protobufs.AgentDescription{},
 	}
 	settings.OpAMPServerURL = "ws://" + srv.Endpoint
 	client := startClient(t, settings)
@@ -165,6 +163,7 @@ func TestConnectWithServer503(t *testing.T) {
 				connectErr.Store(err)
 			},
 		},
+		AgentDescription: &protobufs.AgentDescription{},
 	}
 	settings.OpAMPServerURL = "ws://" + srv.Endpoint
 	client := startClient(t, settings)
@@ -194,6 +193,7 @@ func TestConnectWithHeader(t *testing.T) {
 	settings := StartSettings{
 		OpAMPServerURL:      "ws://" + srv.Endpoint,
 		AuthorizationHeader: "Bearer 12345678",
+		AgentDescription:    &protobufs.AgentDescription{},
 	}
 	client := startClient(t, settings)
 
@@ -225,6 +225,7 @@ func TestDisconnectByServer(t *testing.T) {
 				connectErr.Store(err)
 			},
 		},
+		AgentDescription: &protobufs.AgentDescription{},
 	}
 	settings.OpAMPServerURL = "ws://" + srv.Endpoint
 	client := startClient(t, settings)
@@ -281,6 +282,7 @@ func TestFirstStatusReport(t *testing.T) {
 				}, nil
 			},
 		},
+		AgentDescription: &protobufs.AgentDescription{},
 	}
 	settings.OpAMPServerURL = "ws://" + srv.Endpoint
 	client := startClient(t, settings)
@@ -315,6 +317,7 @@ func TestSetEffectiveConfig(t *testing.T) {
 	// Start a client.
 	settings := StartSettings{}
 	settings.OpAMPServerURL = "ws://" + srv.Endpoint
+	settings.AgentDescription = &protobufs.AgentDescription{}
 	client := prepareClient(settings)
 
 	sendConfig := &protobufs.EffectiveConfig{
@@ -348,17 +351,14 @@ func TestSetEffectiveConfig(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func isEqualAgentAttrs(set map[string]*protobufs.AnyValue, received []*protobufs.KeyValue) bool {
-	if len(set) != len(received) {
+func isEqualAgentAttrs(sent []*protobufs.KeyValue, received []*protobufs.KeyValue) bool {
+	if len(sent) != len(received) {
 		return false
 	}
 
-	for _, kv := range received {
-		val, exists := set[kv.Key]
-		if !exists {
-			return false
-		}
-		if !protobufshelpers.IsEqualAnyValue(kv.Value, val) {
+	for i, rval := range received {
+		sval := sent[i]
+		if !protobufshelpers.IsEqualKeyValue(rval, sval) {
 			return false
 		}
 	}
@@ -380,36 +380,41 @@ func TestSetAgentAttributes(t *testing.T) {
 	}
 
 	// Start a client.
-	settings := StartSettings{}
-	settings.OpAMPServerURL = "ws://" + srv.Endpoint
+	settings := StartSettings{
+		OpAMPServerURL:   "ws://" + srv.Endpoint,
+		AgentDescription: &protobufs.AgentDescription{},
+	}
 	client := prepareClient(settings)
 
-	sendAttrs := map[string]*protobufs.AnyValue{
-		"host.name": {
-			Value: &protobufs.AnyValue_StringValue{StringValue: "somehost"},
+	settings.AgentDescription = &protobufs.AgentDescription{
+		IdentifyingAttributes: []*protobufs.KeyValue{
+			{
+				Key:   "host.name",
+				Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "somehost"}},
+			},
 		},
 	}
-
-	// Set before start. It should be delivered immediately after Start().
-	client.SetAgentAttributes(sendAttrs)
 
 	assert.NoError(t, client.Start(settings))
 
 	// Verify it is delivered.
 	eventually(t, func() bool {
-		agentDescr := rcvAgentDescr.Load().(*protobufs.AgentDescription)
-		if agentDescr == nil {
+		agentDescr, ok := rcvAgentDescr.Load().(*protobufs.AgentDescription)
+		if !ok || agentDescr == nil {
 			return false
 		}
-		return isEqualAgentAttrs(sendAttrs, agentDescr.AgentAttributes)
+		return isEqualAgentAttrs(settings.AgentDescription.IdentifyingAttributes, agentDescr.IdentifyingAttributes)
 	})
 
 	// Now change again.
-	sendAttrs["key2"] = &protobufs.AnyValue{
-		Value: &protobufs.AnyValue_StringValue{StringValue: "somehost"},
+	settings.AgentDescription.NonIdentifyingAttributes = []*protobufs.KeyValue{
+		{
+			Key:   "os.name",
+			Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "linux"}},
+		},
 	}
 
-	client.SetAgentAttributes(sendAttrs)
+	client.SetAgentDescription(settings.AgentDescription)
 
 	// Verify change is delivered.
 	eventually(t, func() bool {
@@ -417,7 +422,8 @@ func TestSetAgentAttributes(t *testing.T) {
 		if agentDescr == nil {
 			return false
 		}
-		return isEqualAgentAttrs(sendAttrs, agentDescr.AgentAttributes)
+		return isEqualAgentAttrs(settings.AgentDescription.IdentifyingAttributes, agentDescr.IdentifyingAttributes) &&
+			isEqualAgentAttrs(settings.AgentDescription.NonIdentifyingAttributes, agentDescr.NonIdentifyingAttributes)
 	})
 
 	// Shutdown the server.
@@ -499,6 +505,7 @@ func TestConnectionSettings(t *testing.T) {
 				return nil
 			},
 		},
+		AgentDescription: &protobufs.AgentDescription{},
 	}
 	settings.OpAMPServerURL = "ws://" + srv.Endpoint
 	client := prepareClient(settings)

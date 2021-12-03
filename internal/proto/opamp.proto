@@ -280,22 +280,20 @@ message ConnectionSettingsOffers {
     // its own metrics, i.e. metrics of the agent process and any custom metrics that
     // describe the agent state.
     //
-    // The Resource in the OTLP metrics SHOULD describe the agent:
-    // - service.instance.id SHOULD be set to Agent's instance uid that is used in
-    //   the OpAMP messages.
-    // - service.name SHOULD be set to Agent's type, matching the value of
-    //   agent_type field in AgentDescription message.
-    // - service.version SHOULD be set to Agent's version, matching the value of
-    //   agent_version field in AgentDescription message.
-    // - any other applicable Resource attributes that describe the agent, such as
-    //   Operating System on which the Agent runs as described here
-    //   https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/resource/semantic_conventions/os.md
+    // All attributes specified in the identifying_attributes field in AgentDescription
+    // message SHOULD be also specified in the Resource of the reported OTLP metrics.
+    //
+    // Attributes specified in the non_identifying_attributes field in
+    // AgentDescription message may be also specified in the Resource of the reported
+    // OTLP metrics, in which case they SHOULD have exactly the same values.
     //
     // Process metrics MUST follow the conventions for processes:
     // https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/semantic_conventions/process-metrics.md
     ConnectionSettings own_metrics = 3;
+
     // Similar to own_metrics, but for traces.
     ConnectionSettings own_traces = 4;
+
     // Similar to own_metrics, but for logs.
     ConnectionSettings own_logs = 5;
 
@@ -410,30 +408,39 @@ message AgentPackageAvailable {
 // Status reporting
 
 message AgentDescription {
-    // Reverse FQDN that uniquely identifies the agent type, e.g. "io.opentelemetry.collector"
-    string agent_type = 1;
-
-    // Version number of the agent build. The server can use this information to
-    // decide if it wants to offer a package of a different version to the agent
-    // via PackageAvailable message.
-    string agent_version = 2;
-
-    // Attributes that describe the agent and the environment it runs in.
+    // Attributes that identify the agent.
     // Keys/values are according to OpenTelemetry semantic conventions, see:
     // https://github.com/open-telemetry/opentelemetry-specification/tree/main/specification/resource/semantic_conventions
     //
+    // For standalone running Agents (such as OpenTelemetry Collector) the following
+    // attributes SHOULD be specified:
+    // - service.name should be set to a reverse FQDN that uniquely identifies the
+    //   agent type, e.g. "io.opentelemetry.collector"
+    // - service.namespace if it is used in the environment where the Agent runs.
+    // - service.version should be set to version number of the Agent build.
+    // - service.instance.id should be set. It may be be set equal to the Agent's
+    //   instance uid (equal to ServerToAgent.instance_uid field) or any other value
+    //   that uniquely identifies the Agent in combination with other attributes.
+    // - any other attributes that are necessary for uniquely identifying the Agent's
+    //   own telemetry.
+    //
+    // The Agent SHOULD also include these attributes in the Resource of its own
+    // telemetry. The combination of identifying attributes SHOULD be sufficient to
+    // uniquely identify the Agent's own telemetry in the destination system to which
+    // the Agent sends its own telemetry.
+    repeated KeyValue identifying_attributes = 1;
+
+    // Attributes that do not necessarily identify the Agent but help describe
+    // where it runs.
     // The following attributes SHOULD be included:
     // - os.type, os.version - to describe where the agent runs.
-    //
-    // The following attributes are recommended to be included:
     // - host.* to describe the host the agent runs on.
     // - cloud.* to describe the cloud where the host is located.
-    // - other os.* attributes not listed in the previous paragraph.
     // - any other relevant Resource attributes that describe this agent and the
     //   environment it runs in.
-    // - any user-defined attributes that the end user would like to associate with
-    //   this agent.
-    repeated KeyValue agent_attributes = 3;
+    // - any user-defined attributes that the end user would like to associate
+    //   with this agent.
+    repeated KeyValue non_identifying_attributes = 2;
 
     // TODO: add ability to specify related entities (such as the Service the Agent is
     // is responsible/associated with).

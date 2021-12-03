@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"crypto/tls"
-	"time"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -16,10 +15,11 @@ type StartSettings struct {
 	TLSConfig           *tls.Config
 
 	// Agent information.
-	InstanceUid  string
-	AgentType    string
-	AgentVersion string
-	StartTime    time.Time
+	InstanceUid string
+
+	// AgentDescription MUST be set and MUST describe the Agent. See OpAMP spec
+	// for details.
+	AgentDescription *protobufs.AgentDescription
 
 	// Callbacks that the client will call after Start() returns nil.
 	Callbacks types.Callbacks
@@ -51,8 +51,7 @@ type OpAMPClient interface {
 	// the connection is lost. All failed connection attempts will be reported via
 	// OnConnectFailed callback.
 	//
-	// AgentType and AgentVersion will be included in all status reports sent to server.
-	// If the type or the version have changed, Shutdown and Start the client again.
+	// AgentDescription in settings MUST be set.
 	//
 	// Start may immediately return an error if the settings are incorrect (e.g. the
 	// serverURL is not a valid URL).
@@ -80,13 +79,12 @@ type OpAMPClient interface {
 	// Once stopped OpAMPClient cannot be started again.
 	Stop(ctx context.Context) error
 
-	// SetAgentAttributes sets attributes of the Agent. The attributes will be included
+	// SetAgentDescription sets attributes of the Agent. The attributes will be included
 	// in the next status report sent to the server.
-	// MAY be called before Start(), in which case the attributes will be
-	// included in the first start report after  connection is established.
-	// MAY also be called after Start(), in which case the attributes will be included
+	// MUST NOT be called before Start().
+	// MAY be called after Start(), in which case the attributes will be included
 	// in the next outgoing status report.
-	SetAgentAttributes(attrs map[string]*protobufs.AnyValue) error
+	SetAgentDescription(descr *protobufs.AgentDescription) error
 
 	// SetEffectiveConfig sets the effective config of the Agent. The config will be
 	// included in the next status report sent to the server. The behavior regarding

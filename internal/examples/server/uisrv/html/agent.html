@@ -23,21 +23,20 @@
                 <tr>
                     <td>Instance ID:</td><td>{{ .InstanceId }}</td>
                 <tr>
-                </tr>
-                    <td>Type:</td><td>{{ .Status.AgentDescription.AgentType }}</td>
-                <tr>
-                </tr>
-                    <td>Version:</td><td>{{ .Status.AgentDescription.AgentVersion }}</td>
-                </tr>
             </table>
         </td>
         <td valign="top">
             <h3>Attributes</h3>
             <table border="1" style="border-collapse: collapse">
-                {{ range .Status.AgentDescription.AgentAttributes }}
-                    </tr>
-                    <td>{{ .Key }}</td><td>{{ .Value }}</td>
-                    </tr>
+                {{ range .Status.AgentDescription.IdentifyingAttributes }}
+                </tr>
+                <td>{{ .Key }}</td><td>{{ .Value }}</td>
+                </tr>
+                {{ end }}
+                {{ range .Status.AgentDescription.NonIdentifyingAttributes }}
+                </tr>
+                <td>{{ .Key }}</td><td>{{ .Value }}</td>
+                </tr>
                 {{ end }}
             </table>
         </td>
