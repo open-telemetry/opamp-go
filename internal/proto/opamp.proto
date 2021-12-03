@@ -101,6 +101,40 @@ message ServerToAgent {
     }
     // Bit flags as defined by Flags bit masks.
     Flags flags = 7;
+
+    // Bitmask of flags defined by ServerCapabilities enum.
+    // All bits that are not defined in ServerCapabilities enum MUST be set to 0
+    // by the Server. This allows extending the protocol and the ServerCapabilities
+    // enum in the future such that old Servers automatically report that they
+    // don't support the new capability.
+    // This field MUST be set in the first ServerToAgent sent by the Server and MAY
+    // be omitted in subsequent ServerToAgent messages by setting it to
+    // UnspecifiedServerCapability value.
+    ServerCapabilities capabilities = 8;
+}
+
+enum ServerCapabilities {
+    // The capabilities field is unspecified.
+    UnspecifiedServerCapability = 0;
+    // The Server can accept status reports. This bit MUST be set, since all Server
+    // MUST be able to accept status reports.
+    AcceptsStatus                  = 0x00000001;
+    // The Server can offer remote configuration to the Agent.
+    OffersRemoteConfig             = 0x00000002;
+    // The Server can accept EffectiveConfig in StatusReport.
+    AcceptsEffectiveConfig         = 0x00000004;
+    // The Server can offer Addons.
+    OffersAddons                   = 0x00000008;
+    // The Server can accept Addon status.
+    AcceptsAddonsStatus            = 0x00000010;
+    // The Server can offer packages to install.
+    OffersAgentPackage             = 0x00000020;
+    // The Server can accept the installation status of the package.
+    AcceptsAgentPackageStatus      = 0x00000040;
+    // The Server can offer connection settings.
+    OffersConnectionSettings       = 0x00000080;
+
+    // Add new capabilities here, continuing with the least significant unused bit.
 }
 
 // The ConnectionSettings message is a collection of fields which comprise an
@@ -422,6 +456,53 @@ message StatusReport {
     // This field SHOULD be unset if the remote config status is unchanged since the
     // last StatusReport message.
     RemoteConfigStatus remote_config_status = 3;
+
+    // Bitmask of flags defined by AgentCapabilities enum.
+    // All bits that are not defined in AgentCapabilities enum MUST be set to 0 by
+    // the Agent. This allows extending the protocol and the AgentCapabilities enum
+    // in the future such that old Agents automatically report that they don't
+    // support the new capability.
+    // This field MUST be set in the first StatusReport sent by the Agent and MAY
+    // be omitted in subsequent StatusReport messages by setting it to
+    // UnspecifiedAgentCapability value.
+    AgentCapabilities capabilities = 4;
+}
+
+enum AgentCapabilities {
+    // The capabilities field is unspecified.
+    UnspecifiedAgentCapability = 0;
+    // The Agent can report status. This bit MUST be set, since all Agents MUST
+    // report status.
+    ReportsStatus                  = 0x00000001;
+    // The Agent can accept remote configuration from the Server.
+    AcceptsRemoteConfig            = 0x00000002;
+    // The Agent will report EffectiveConfig in StatusReport.
+    ReportsEffectiveConfig         = 0x00000004;
+    // The Agent can accept Addon offers.
+    AcceptsAddons                  = 0x00000008;
+    // The Agent can report Addon status.
+    ReportsAddonsStatus            = 0x00000010;
+    // The Agent can accept packages to install.
+    AcceptsAgentPackage            = 0x00000020;
+    // The Agent can report the installation status of the package.
+    ReportsAgentPackageStatus      = 0x00000040;
+    // The Agent can report own traces to the destination specified by
+    // the Server via ConnectionSettingsOffers.own_traces field.
+    ReportsOwnTraces               = 0x00000080;
+    // The Agent can report own metrics to the destination specified by
+    // the Server via ConnectionSettingsOffers.own_metrics field.
+    ReportsOwnMetrics              = 0x00000100;
+    // The Agent can report own logs to the destination specified by
+    // the Server via ConnectionSettingsOffers.own_logs field.
+    ReportsOwnLogs                 = 0x00000200;
+    // The Agent can accept connections settings for OpAMP via
+    // ConnectionSettingsOffers.opamp field.
+    AcceptsOpAMPConnectionSettings = 0x00000400;
+    // The Agent can accept connections settings for other destinations via
+    // ConnectionSettingsOffers.other_connections field.
+    AcceptsOtherConnectionSettings = 0x00000800;
+
+    // Add new capabilities here, continuing with the least significant unused bit.
 }
 
 message EffectiveConfig {
