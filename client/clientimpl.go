@@ -15,6 +15,7 @@ import (
 
 	"github.com/open-telemetry/opamp-go/client/internal"
 	"github.com/open-telemetry/opamp-go/client/types"
+	sharedinternal "github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/protobufs"
 )
 
@@ -62,7 +63,7 @@ const retryAfterHTTPHeader = "Retry-After"
 
 func New(logger types.Logger) *client {
 	if logger == nil {
-		logger = &nopLogger{}
+		logger = &sharedinternal.NopLogger{}
 	}
 
 	w := &client{
