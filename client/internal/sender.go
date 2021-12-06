@@ -8,7 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/types"
-	"github.com/open-telemetry/opamp-go/internal/protobufs"
+	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
 // Sender implements the client's sending portion of OpAMP protocol.
