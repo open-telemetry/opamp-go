@@ -19,6 +19,10 @@ type StartSettings struct {
 	// ListenEndpoint specifies the endpoint to listen on, e.g. "127.0.0.1:4320"
 	ListenEndpoint string
 
+	// ListenPath specifies the URL path on which to accept the OpAMP connections
+	// If this is empty string then Start() will use the default "/v1/opamp" path.
+	ListenPath string
+
 	// Server's TLS configuration.
 	TLSConfig *tls.Config
 }

@@ -12,7 +12,7 @@ all: test
 
 .PHONY: test
 test:
-	go test ./...
+	go test -race ./...
 
 # Generate Protobuf Go files.
 .PHONY: gen-proto
