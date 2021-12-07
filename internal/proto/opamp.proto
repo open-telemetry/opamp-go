@@ -20,7 +20,7 @@ package opamp.proto;
 
 import "anyvalue.proto";
 
-option go_package = "github.com/open-telemetry/opamp-go/internal/protobufs";
+option go_package = "github.com/open-telemetry/opamp-go/protobufs";
 
 message AgentToServer {
     // Globally unique identifier of the running instance of the agent. SHOULD remain
