@@ -31,8 +31,6 @@ func startServer(t *testing.T, settings *StartSettings) *server {
 	err := srv.Start(*settings)
 	require.NoError(t, err)
 
-	// Wait until the server strts accepting connections.
-	testhelpers.WaitForEndpoint(settings.ListenEndpoint)
 	return srv
 }
 
@@ -111,6 +109,7 @@ func TestServerStartAcceptConnection(t *testing.T) {
 	// Verify that the connection is successful.
 	assert.NoError(t, err)
 	assert.NotNil(t, conn)
+	require.NotNil(t, resp)
 	assert.EqualValues(t, 101, resp.StatusCode)
 	eventually(t, func() bool { return atomic.LoadInt32(&connectedCalled) == 1 })
 	assert.True(t, atomic.LoadInt32(&connectionCloseCalled) == 0)
@@ -149,6 +148,7 @@ func TestServerReceiveSendMessage(t *testing.T) {
 
 	// Connect using a WebSocket client.
 	conn, _, _ := dialClient(settings)
+	require.NotNil(t, conn)
 	defer conn.Close()
 
 	// Send a message to the server.
@@ -210,9 +210,6 @@ func TestServerAttachAcceptConnection(t *testing.T) {
 	mux.HandleFunc(path, handlerFunc)
 	hs := httptest.NewServer(mux)
 	defer hs.Close()
-
-	// Wait until server is ready and accepts connections.
-	testhelpers.WaitForEndpoint(hs.Listener.Addr().String())
 
 	// Connect using WebSocket client.
 	srvUrl := "ws://" + hs.Listener.Addr().String() + path

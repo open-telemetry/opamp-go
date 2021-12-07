@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -68,29 +69,54 @@ func (s *server) Start(settings StartSettings) error {
 	mux.HandleFunc(path, s.httpHandler)
 
 	hs := &http.Server{
-		Handler: mux,
-		Addr:    settings.ListenEndpoint,
+		Handler:   mux,
+		Addr:      settings.ListenEndpoint,
+		TLSConfig: settings.TLSConfig,
 	}
 	s.httpServer = hs
 
-	// Start the HTTP server in background and return immediately.
-	// TODO: wait until server starts listening or remove the requirement to wait for that.
-	if settings.TLSConfig != nil {
-		hs.TLSConfig = settings.TLSConfig
-		go s.runServer(func() error { return hs.ListenAndServeTLS("", "") })
+	listenAddr := s.httpServer.Addr
+
+	// Start the HTTP server in background.
+	if hs.TLSConfig != nil {
+		if listenAddr == "" {
+			listenAddr = ":https"
+		}
+		err = s.startHttpServer(
+			listenAddr,
+			func(l net.Listener) error { return hs.ServeTLS(l, "", "") },
+		)
 	} else {
-		go s.runServer(func() error { return hs.ListenAndServe() })
+		if listenAddr == "" {
+			listenAddr = ":http"
+		}
+		err = s.startHttpServer(
+			listenAddr,
+			func(l net.Listener) error { return hs.Serve(l) },
+		)
 	}
-	return nil
+	return err
 }
 
-func (s *server) runServer(runner func() error) {
-	err := runner()
-	// ErrServerClosed is expected after successful Stop(), so we won't log that
-	// particular error.
-	if err != nil && err != http.ErrServerClosed {
-		s.logger.Errorf("Error running HTTP Server: %v", err)
+func (s *server) startHttpServer(listenAddr string, serveFunc func(l net.Listener) error) error {
+	// If the listen address is not specified use the default.
+	ln, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		return err
 	}
+
+	// Begin serving connections in the background.
+	go func() {
+		err = serveFunc(ln)
+
+		// ErrServerClosed is expected after successful Stop(), so we won't log that
+		// particular error.
+		if err != nil && err != http.ErrServerClosed {
+			s.logger.Errorf("Error running HTTP Server: %v", err)
+		}
+	}()
+
+	return nil
 }
 
 func (s *server) Stop(ctx context.Context) error {
