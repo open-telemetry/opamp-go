@@ -11,7 +11,6 @@ type CallbacksStruct struct {
 	OnConnectingFunc      func(request *http.Request) types.ConnectionResponse
 	OnConnectedFunc       func(conn types.Connection)
 	OnMessageFunc         func(conn types.Connection, message *protobufs.AgentToServer)
-	OnDisconnectFunc      func(conn types.Connection, instanceUid string)
 	OnConnectionCloseFunc func(conn types.Connection)
 }
 
@@ -33,12 +32,6 @@ func (c CallbacksStruct) OnConnected(conn types.Connection) {
 func (c CallbacksStruct) OnMessage(conn types.Connection, message *protobufs.AgentToServer) {
 	if c.OnMessageFunc != nil {
 		c.OnMessageFunc(conn, message)
-	}
-}
-
-func (c CallbacksStruct) OnDisconnect(conn types.Connection, instanceUid string) {
-	if c.OnDisconnectFunc != nil {
-		c.OnDisconnectFunc(conn, instanceUid)
 	}
 }
 

@@ -37,12 +37,6 @@ type Callbacks interface {
 	// only after OnConnected().
 	OnMessage(conn Connection, message *protobufs.AgentToServer)
 
-	// OnDisconnect is called when a Disconnect message is received from the client
-	// identified by instanceUid through the specified connection. Note that this is
-	// not the same as disconnecting the connection, the Disconnect is a message that
-	// the clients should send before the actual disconnection.
-	OnDisconnect(conn Connection, instanceUid string)
-
 	// OnConnectionClose is called when the WebSocket connection is closed.
 	// Typically, preceded by OnDisconnect() unless the client misbehaves or the
 	// connection is lost.
