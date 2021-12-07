@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/open-telemetry/opamp-go/client/types"
-	"github.com/open-telemetry/opamp-go/internal/protobufs"
+	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
 type StartSettings struct {

@@ -10,9 +10,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
-	"github.com/open-telemetry/opamp-go/internal/protobufs"
 	"github.com/open-telemetry/opamp-go/internal/testhelpers"
-	"github.com/open-telemetry/opamp-go/server/internal"
+	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,7 +52,7 @@ func TestServerStartStop(t *testing.T) {
 }
 
 func TestServerStartRejectConnection(t *testing.T) {
-	callbacks := internal.CallbacksStruct{
+	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			// Reject the incoming HTTP connection.
 			return types.ConnectionResponse{
@@ -87,7 +86,7 @@ func TestServerStartAcceptConnection(t *testing.T) {
 	connectedCalled := int32(0)
 	connectionCloseCalled := int32(0)
 	var srvConn types.Connection
-	callbacks := internal.CallbacksStruct{
+	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true}
 		},
@@ -125,7 +124,7 @@ func TestServerStartAcceptConnection(t *testing.T) {
 
 func TestServerReceiveSendMessage(t *testing.T) {
 	var rcvMsg atomic.Value
-	callbacks := internal.CallbacksStruct{
+	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true}
 		},
@@ -184,7 +183,7 @@ func TestServerAttachAcceptConnection(t *testing.T) {
 	connectedCalled := int32(0)
 	connectionCloseCalled := int32(0)
 	var srvConn types.Connection
-	callbacks := internal.CallbacksStruct{
+	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true}
 		},

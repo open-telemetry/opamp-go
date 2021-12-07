@@ -16,7 +16,7 @@ import (
 	"github.com/open-telemetry/opamp-go/client/internal"
 	"github.com/open-telemetry/opamp-go/client/types"
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
-	"github.com/open-telemetry/opamp-go/internal/protobufs"
+	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
 var (

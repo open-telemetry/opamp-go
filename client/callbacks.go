@@ -1,10 +1,10 @@
-package internal
+package client
 
 import (
 	"context"
 
 	"github.com/open-telemetry/opamp-go/client/types"
-	"github.com/open-telemetry/opamp-go/internal/protobufs"
+	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
 type CallbacksStruct struct {

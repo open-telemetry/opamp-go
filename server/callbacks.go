@@ -1,9 +1,9 @@
-package internal
+package server
 
 import (
 	"net/http"
 
-	"github.com/open-telemetry/opamp-go/internal/protobufs"
+	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server/types"
 )
 

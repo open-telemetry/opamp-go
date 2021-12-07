@@ -21,7 +21,7 @@ gen-proto:
         -w${PWD} otel/build-protobuf:latest --proto_path=${PWD}/internal/proto/ \
         --go_out=${PWD}/internal/proto/ -I${PWD}/internal/proto/ ${PWD}/$(file)))
 
-	cp -R internal/proto/github.com/open-telemetry/opamp-go/internal/protobufs/* internal/protobufs/
+	cp -R internal/proto/github.com/open-telemetry/opamp-go/protobufs/* protobufs/
 	rm -rf internal/proto/github.com/
 
 .PHONY: gomoddownload

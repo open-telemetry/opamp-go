@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/open-telemetry/opamp-go/internal/protobufs"
 	"github.com/open-telemetry/opamp-go/internal/testhelpers"
+	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
 type MockServer struct {
