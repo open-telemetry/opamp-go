@@ -10,8 +10,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
-	"github.com/open-telemetry/opamp-go/internal/protobufs"
 	"github.com/open-telemetry/opamp-go/internal/testhelpers"
+	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server/internal"
 	"github.com/open-telemetry/opamp-go/server/types"
 	"github.com/stretchr/testify/assert"
