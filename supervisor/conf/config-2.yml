@@ -1,0 +1,89 @@
+# Connection details for the OpAMP server.
+opampServer:
+    endpoint: https://localhost:1729
+    tls:
+        # Client-side TLS configuration to connect to the OpAMP server.
+
+agents:
+    # Many collector related configuration is omitted in this section as its
+    # tailor-made supervisor can fill in with the defaults.
+    io.opentelemetry.collector:
+        executable: /opt/opentelemetry-collector/bin/otel
+        config:
+            file: /opt/opentelemetry-collector/config.yaml
+        attrs:
+            service.name: ecommerce
+            service.namespace: shop
+        # systemd section is commented -- enable this if the collector is
+        # managed by systemd.
+        # systemd:
+        #    name: otel-collector
+        watchdog:
+            env:
+                ENV_VAR1: env_value1
+                ENV_VAR2: env_value2
+            policy:
+                restart: always
+                restartWait: 10s
+                maxAttempts: 3
+                waitBetweenAttempts: 1s
+    # Many FluentBit related configuration is omitted in this section as its
+    # tailor-made supervisor can fill in with the defaults.
+    io.fluentbit:
+        executable: /opt/fluent-bit/bin/fluent-bit
+        config:
+            file: /opt/fluent-bit/fluent-bit.conf
+            autoReload: true
+        attrs:
+            attr1_key: attr1_value
+        systemd:
+            name: fluentbit
+        # watchdog section is commented -- enable this if fluentbit is NOT
+        # managed by systemd.
+        # watchdog:
+        #     env:
+        #         ENV_VAR1: env_value1
+        #         ENV_VAR2: env_value2
+        #     policy:
+        #         restart: always
+        #         restartWait: 10s
+        #         maxAttempts: 3
+        #         waitBetweenAttempts: 1s
+    # A generic agent for which there is no already implemented supervisor.
+    # In this case, all the configuration elements must be specified for the
+    # supervisor to act correctly.
+    foobar:
+        executable: /opt/foobar/bin/foobar
+        config:
+            file: /opt/foobar/config.yaml
+            autoReload: true
+        attrs:
+             attr1_key: attr1_value
+        management:
+            healthCheck:
+                url: http://localhost:12222/ping
+                initialDelay: 5s
+                period: 5s
+                timeout: 20s
+            ownTelemetry:
+                url: http://localhost:12223/metrics
+                initialDelay: 5s
+                period: 5s
+        systemd:
+            name: foobar-service
+        watchdog:
+            args:
+                - --config
+                - /opt/foobar/config.yaml
+                - --arg1
+                - arg1_value
+                - --arg2
+                - arg2_value
+            env:
+                ENV_VAR1: env_value1
+                ENV_VAR2: env_value2
+            policy:
+                restart: always
+                restartWait: 10s
+                maxAttempts: 3
+                waitBetweenAttempts: 1s
