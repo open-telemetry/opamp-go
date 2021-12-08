@@ -1,0 +1,73 @@
+{{ template "header.html" . }}
+
+<a href="/">Back to Agents List</a>
+
+<style>
+    td {
+        padding: 5px
+    }
+</style>
+
+<link rel="stylesheet"
+      href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.1.0/styles/default.min.css">
+<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.1.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+
+<hr/>
+
+<table>
+    <tr>
+        <td valign="top">
+            <h3>Agent</h3>
+            <table border="1" style="border-collapse: collapse">
+                <tr>
+                    <td>Instance ID:</td><td>{{ .InstanceId }}</td>
+                <tr>
+                </tr>
+                    <td>Type:</td><td>{{ .Status.AgentDescription.AgentType }}</td>
+                <tr>
+                </tr>
+                    <td>Version:</td><td>{{ .Status.AgentDescription.AgentVersion }}</td>
+                </tr>
+            </table>
+        </td>
+        <td valign="top">
+            <h3>Attributes</h3>
+            <table border="1" style="border-collapse: collapse">
+                {{ range .Status.AgentDescription.AgentAttributes }}
+                    </tr>
+                    <td>{{ .Key }}</td><td>{{ .Value }}</td>
+                    </tr>
+                {{ end }}
+            </table>
+        </td>
+    </tr>
+</table>
+
+<hr/>
+
+<h3>Configuration</h3>
+<table width="100%">
+    <tr>
+        <td valign="top">
+            Current Effective Configuration:<br/>
+            <pre><code class="language-yaml">{{ .EffectiveConfig }}</code></pre>
+        </td>
+        <td valign="top">
+            Additional Configuration:<br/>
+            <form action="/save_config" method="post">
+            <input type="hidden" name="instanceid" value="{{ .InstanceId }}"/>
+            <textarea cols="40" rows="20" name="config">{{ .CustomConfigForInstance }}</textarea><br/>
+             {{if .Status.RemoteConfigStatus }}
+                {{if .Status.RemoteConfigStatus.ErrorMessage }}
+                <span style="color:red">Failed: {{ .Status.RemoteConfigStatus.ErrorMessage }}</span><br/>
+                {{end}}
+             {{end}}
+            <input type="submit" value="Save and Send to Agent"/>
+            </form>
+        </td>
+    </tr>
+</table>
+
+</body>
+</html>
