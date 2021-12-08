@@ -71,7 +71,7 @@ func (agents *Agents) FindOrCreateAgent(agentId InstanceId, conn types.Connectio
 	// Ensure the agent is in the agentsById map.
 	agent := agents.agentsById[agentId]
 	if agent == nil {
-		agent := NewAgent(agentId, conn)
+		agent = NewAgent(agentId, conn)
 		agents.agentsById[agentId] = agent
 
 		// Ensure the agent's instance id is associated with the connection.
@@ -113,5 +113,6 @@ func (agents *Agents) GetAllAgentsReadonlyClone() map[InstanceId]*Agent {
 }
 
 var AllAgents = Agents{
-	agentsById: map[InstanceId]*Agent{},
+	agentsById:  map[InstanceId]*Agent{},
+	connections: map[types.Connection]map[InstanceId]bool{},
 }

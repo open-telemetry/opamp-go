@@ -57,7 +57,7 @@
             Additional Configuration:<br/>
             <form action="/save_config" method="post">
             <input type="hidden" name="instanceid" value="{{ .InstanceId }}"/>
-            <textarea cols="40" rows="20" name="config">{{ .CustomConfigForInstance }}</textarea><br/>
+            <textarea cols="40" rows="20" name="config">{{ .CustomInstanceConfig }}</textarea><br/>
              {{if .Status.RemoteConfigStatus }}
                 {{if .Status.RemoteConfigStatus.ErrorMessage }}
                 <span style="color:red">Failed: {{ .Status.RemoteConfigStatus.ErrorMessage }}</span><br/>

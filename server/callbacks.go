@@ -20,7 +20,7 @@ func (c CallbacksStruct) OnConnecting(request *http.Request) types.ConnectionRes
 	if c.OnConnectingFunc != nil {
 		return c.OnConnectingFunc(request)
 	}
-	return types.ConnectionResponse{}
+	return types.ConnectionResponse{Accept: true}
 }
 
 func (c CallbacksStruct) OnConnected(conn types.Connection) {
