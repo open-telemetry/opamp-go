@@ -1,0 +1,85 @@
+# Connection details for the OpAMP server.
+opampServer:
+    endpoint: https://localhost:1729
+    tls:
+        # Client-side TLS configuration to connect to the OpAMP server.
+
+# Agent specifies the agent that is being managed by this supervisor. Concretely,
+# the `agent' configuration dictates how to start it and where the configuration
+# file resides. This basic information is necessary for the supervisor to
+# restart the agent on a remote configuration change.
+# `watchdog' and `systemd' config elements are mutually exclusive. So, only
+# one of the two must be specified below.
+agent:
+    # Type specifies the type of the agent that is being supervised. Internally,
+    # the `type' can be used to auto-discover several attributes if the
+    # supervisor is tailor-made for that agent thereby relieving the user from
+    # having to specify most, if not all, of the configuration.
+    type: io.opentelemetry.collector
+    # Fully-qualified path to the agent executable required for two reasons:
+    # 1. If the supervisor is functioning as a watchdog, then the executable
+    #    is used to start/stop/restart the agent on configuration changes, etc.
+    # 2. If the supervisor is performing the upgrade, the executable indicates
+    #    the file and path in the filesystem that must be replaced with the newer
+    #    version of the executable.
+    executable: /opt/opentelemetry-collector/bin/otel
+    #
+    management:
+        # Dictates how to check if the agent is healthy.
+        healthCheck:
+            url: http://localhost:13133/
+            initialDelay: 5s
+            period: 5s
+            timeout: 20s
+        ownTelemetry:
+            url: http://localhost:8888/
+            initialDelay: 5s
+            period: 5s
+    config:
+        # Currently, only a `file' based configuration is accepted.
+        file: /opt/opentelemetry-collector/config.yaml
+        # If `autoReload` is true, then the agent doesn't need a restart on a config
+        # change as it is internally managed by the agent.
+        autoReload: false
+    # An arbitrary set of key-value pairs that is specific for this agent. This
+    # will be used by the specific supervisor that is managing this agent.
+    attrs:
+        service.name: ecommerce
+        service.namespace: shop
+    # Set of attributes that describe this agent's systemd installation. If this
+    # config element is specified, the `watchdog' config element is ignored as
+    # they are mutually exclusive. The `systemd' information specified here will
+    # be used by the supervisor to restart this agent on configuration changes,
+    # executable upgrades, etc.
+    systemd:
+        name: otel-collector
+    # Watchdog allows the supervisor to monitor the health of the agent and ensure
+    # it is always running (restarting if necessary). In this sense, it acts as
+    # an alternative to agent installations that are not managed by systemd.
+    watchdog:
+        # Set of command-line arguments required to start the `executable` specified
+        # above.
+        args:
+            - --config
+            - /etc/otel/config.yaml
+        # Additional environment variables that must be set when the agent is
+        # started.
+        env:
+            ENV_VAR1: env_value1
+            ENV_VAR2: env_value2
+        # A watchdog policy, like `systemd', albeit not as exhaustive, that
+        # the supervisor uses to control the starting and stopping of the
+        # agents that are being supervised.
+        policy:
+            # Dictates when to restart: `always' restarts any time the supervisor
+            # finds the agent not running; `failure' restarts only if the process
+            # dies as a result of a non-zero exit code (which could be a result of
+            # an internal error or an unexpected OS signal).
+            restart: always
+            # Time to wait before restarting the agent (as configured with `restart')
+            restartWait: 10s
+            # Max attempts the agent is allowed to fail when attempted to START or
+            # STOP in which case the operation will be re-attempted.
+            maxAttempts: 3
+            # Duration to wait between successive attempts of a START or STOP.
+            waitBetweenAttempts: 1s
