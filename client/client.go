@@ -86,7 +86,7 @@ type OpAMPClient interface {
 	// included in the first start report after  connection is established.
 	// MAY also be called after Start(), in which case the attributes will be included
 	// in the next outgoing status report.
-	SetAgentAttributes(attrs map[string]protobufs.AnyValue) error
+	SetAgentAttributes(attrs map[string]*protobufs.AnyValue) error
 
 	// SetEffectiveConfig sets the effective config of the Agent. The config will be
 	// included in the next status report sent to the server. The behavior regarding

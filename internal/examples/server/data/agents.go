@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"github.com/open-telemetry/opamp-go/protobufshelpers"
 	"github.com/open-telemetry/opamp-go/server/types"
 )
 
@@ -51,7 +52,7 @@ func isEqualAgentDescr(d1, d2 *protobufs.AgentDescription) bool {
 	}
 	for i, a1 := range d1.AgentAttributes {
 		a2 := d2.AgentAttributes[i]
-		if !isEqualKeyValue(a1, a2) {
+		if !protobufshelpers.IsEqualKeyValue(a1, a2) {
 			return false
 		}
 	}

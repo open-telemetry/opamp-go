@@ -104,10 +104,11 @@ func (w *client) Start(settings StartSettings) error {
 	// Prepare the first status report.
 	w.sender.UpdateNextStatus(
 		func(statusReport *protobufs.StatusReport) {
-			statusReport.AgentDescription = &protobufs.AgentDescription{
-				AgentType:    w.settings.AgentType,
-				AgentVersion: w.settings.AgentVersion,
+			if statusReport.AgentDescription == nil {
+				statusReport.AgentDescription = &protobufs.AgentDescription{}
 			}
+			statusReport.AgentDescription.AgentType = w.settings.AgentType
+			statusReport.AgentDescription.AgentVersion = w.settings.AgentVersion
 		},
 	)
 
@@ -161,8 +162,26 @@ func (w *client) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (w *client) SetAgentAttributes(attrs map[string]protobufs.AnyValue) error {
-	panic("implement me")
+func (w *client) SetAgentAttributes(attrs map[string]*protobufs.AnyValue) error {
+	var attrsSlice []*protobufs.KeyValue
+	for k, v := range attrs {
+		attrsSlice = append(attrsSlice, &protobufs.KeyValue{
+			Key:   k,
+			Value: v,
+		})
+	}
+
+	w.sender.UpdateNextStatus(func(statusReport *protobufs.StatusReport) {
+		if statusReport.AgentDescription == nil {
+			statusReport.AgentDescription = &protobufs.AgentDescription{
+				AgentType:       w.settings.AgentType,
+				AgentVersion:    w.settings.AgentVersion,
+				AgentAttributes: attrsSlice,
+			}
+		}
+	})
+	w.sender.ScheduleSend()
+	return nil
 }
 
 func (w *client) SetEffectiveConfig(config *protobufs.EffectiveConfig) error {

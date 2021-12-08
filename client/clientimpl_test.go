@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	ulid "github.com/oklog/ulid/v2"
+	"github.com/open-telemetry/opamp-go/protobufshelpers"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
 
@@ -338,6 +339,86 @@ func TestSetEffectiveConfig(t *testing.T) {
 
 	// Verify change is delivered.
 	eventually(t, func() bool { return proto.Equal(sendConfig, rcvConfig.Load().(*protobufs.EffectiveConfig)) })
+
+	// Shutdown the server.
+	srv.Close()
+
+	// Shutdown the client.
+	err := client.Stop(context.Background())
+	assert.NoError(t, err)
+}
+
+func isEqualAgentAttrs(set map[string]*protobufs.AnyValue, received []*protobufs.KeyValue) bool {
+	if len(set) != len(received) {
+		return false
+	}
+
+	for _, kv := range received {
+		val, exists := set[kv.Key]
+		if !exists {
+			return false
+		}
+		if !protobufshelpers.IsEqualAnyValue(kv.Value, val) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func TestSetAgentAttributes(t *testing.T) {
+	// Start a server.
+	srv := internal.StartMockServer(t)
+	var rcvAgentDescr atomic.Value
+	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+		if statusReport := msg.GetStatusReport(); statusReport != nil {
+			if statusReport.AgentDescription != nil {
+				rcvAgentDescr.Store(statusReport.AgentDescription)
+			}
+		}
+		return nil
+	}
+
+	// Start a client.
+	settings := StartSettings{}
+	settings.OpAMPServerURL = "ws://" + srv.Endpoint
+	client := prepareClient(settings)
+
+	sendAttrs := map[string]*protobufs.AnyValue{
+		"host.name": {
+			Value: &protobufs.AnyValue_StringValue{StringValue: "somehost"},
+		},
+	}
+
+	// Set before start. It should be delivered immediately after Start().
+	client.SetAgentAttributes(sendAttrs)
+
+	assert.NoError(t, client.Start(settings))
+
+	// Verify it is delivered.
+	eventually(t, func() bool {
+		agentDescr := rcvAgentDescr.Load().(*protobufs.AgentDescription)
+		if agentDescr == nil {
+			return false
+		}
+		return isEqualAgentAttrs(sendAttrs, agentDescr.AgentAttributes)
+	})
+
+	// Now change again.
+	sendAttrs["key2"] = &protobufs.AnyValue{
+		Value: &protobufs.AnyValue_StringValue{StringValue: "somehost"},
+	}
+
+	client.SetAgentAttributes(sendAttrs)
+
+	// Verify change is delivered.
+	eventually(t, func() bool {
+		agentDescr := rcvAgentDescr.Load().(*protobufs.AgentDescription)
+		if agentDescr == nil {
+			return false
+		}
+		return isEqualAgentAttrs(sendAttrs, agentDescr.AgentAttributes)
+	})
 
 	// Shutdown the server.
 	srv.Close()
