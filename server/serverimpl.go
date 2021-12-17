@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 
@@ -19,6 +20,8 @@ var (
 )
 
 const defaultOpAMPPath = "/v1/opamp"
+const headerContentType = "Content-Type"
+const contentTypeProtobuf = "application/x-protobuf"
 
 type server struct {
 	logger   types.Logger
@@ -69,9 +72,10 @@ func (s *server) Start(settings StartSettings) error {
 	mux.HandleFunc(path, s.httpHandler)
 
 	hs := &http.Server{
-		Handler:   mux,
-		Addr:      settings.ListenEndpoint,
-		TLSConfig: settings.TLSConfig,
+		Handler:     mux,
+		Addr:        settings.ListenEndpoint,
+		TLSConfig:   settings.TLSConfig,
+		ConnContext: contextWithConn,
 	}
 	s.httpServer = hs
 
@@ -143,7 +147,15 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// HTTP connection is accepted. Upgrade it to WebSocket.
+	// HTTP connection is accepted. Check if it is a plain HTTP request.
+
+	if req.Header.Get(headerContentType) == contentTypeProtobuf {
+		// Yes, a plain HTTP request.
+		s.handlePlainHTTPRequest(req, w)
+		return
+	}
+
+	// No, it is a WebSocket. Upgrade it.
 	conn, err := s.wsUpgrader.Upgrade(w, req, nil)
 	if err != nil {
 		s.logger.Errorf("Cannot upgrade HTTP connection to WebSocket: %v", err)
@@ -156,11 +168,16 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func (s *server) handleWSConnection(wsConn *websocket.Conn) {
-	agentConn := connection{wsConn: wsConn}
+	agentConn := wsConnection{wsConn: wsConn}
 
 	defer func() {
 		// Close the connection when all is done.
-		defer wsConn.Close()
+		defer func() {
+			err := wsConn.Close()
+			if err != nil {
+				s.logger.Errorf("error closing the WebSocket connection: %v", err)
+			}
+		}()
 
 		if s.settings.Callbacks != nil {
 			s.settings.Callbacks.OnConnectionClose(agentConn)
@@ -198,7 +215,73 @@ func (s *server) handleWSConnection(wsConn *websocket.Conn) {
 		}
 
 		if s.settings.Callbacks != nil {
-			s.settings.Callbacks.OnMessage(agentConn, &request)
+			response := s.settings.Callbacks.OnMessage(agentConn, &request)
+			if response.InstanceUid == "" {
+				response.InstanceUid = request.InstanceUid
+			}
+			err = agentConn.Send(context.Background(), response)
+			if err != nil {
+				s.logger.Errorf("Cannot send message to WebSocket: %v", err)
+			}
 		}
+	}
+}
+
+func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter) {
+	bytes, err := io.ReadAll(req.Body)
+	if err != nil {
+		s.logger.Debugf("Cannot read HTTP body: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	// Decode the message as a Protobuf message.
+	var request protobufs.AgentToServer
+	err = proto.Unmarshal(bytes, &request)
+	if err != nil {
+		s.logger.Debugf("Cannot decode message from HTTP Body: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	agentConn := httpConnection{
+		conn: connFromRequest(req),
+	}
+
+	if s.settings.Callbacks == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	s.settings.Callbacks.OnConnected(agentConn)
+
+	defer func() {
+		// Indicate via the callback that the OpAMP Connection is closed. From OpAMP
+		// perspective the connection represented by this http request
+		// is closed. It is not possible to send or receive more OpAMP messages
+		// via this agentConn.
+		s.settings.Callbacks.OnConnectionClose(agentConn)
+	}()
+
+	response := s.settings.Callbacks.OnMessage(agentConn, &request)
+
+	// Set the InstanceUid if it is not set by the callback.
+	if response.InstanceUid == "" {
+		response.InstanceUid = request.InstanceUid
+	}
+
+	// Marshal the response.
+	bytes, err = proto.Marshal(response)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// Send the response.
+	w.Header().Set(headerContentType, contentTypeProtobuf)
+	_, err = w.Write(bytes)
+
+	if err != nil {
+		s.logger.Debugf("Cannot send HTTP response: %v", err)
 	}
 }
