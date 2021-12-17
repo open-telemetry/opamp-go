@@ -82,10 +82,9 @@ func (agent *Agent) start() error {
 	agent.opampClient = client.New(agent.logger)
 
 	settings := client.StartSettings{
-		OpAMPServerURL: "ws://127.0.0.1:4320/v1/opamp",
-		InstanceUid:    agent.instanceId.String(),
-		AgentType:      agent.agentType,
-		AgentVersion:   agent.agentVersion,
+		OpAMPServerURL:   "ws://127.0.0.1:4320/v1/opamp",
+		InstanceUid:      agent.instanceId.String(),
+		AgentDescription: agent.agentDescription,
 		Callbacks: client.CallbacksStruct{
 			OnConnectFunc: func() {
 				agent.logger.Debugf("Connected to the server.")
@@ -123,9 +122,21 @@ func (agent *Agent) createAgentIdentity() {
 
 	// Create agent description.
 	agent.agentDescription = &protobufs.AgentDescription{
-		AgentType:    agent.agentType,
-		AgentVersion: agent.agentVersion,
-		AgentAttributes: []*protobufs.KeyValue{
+		IdentifyingAttributes: []*protobufs.KeyValue{
+			{
+				Key: "service.name",
+				Value: &protobufs.AnyValue{
+					Value: &protobufs.AnyValue_StringValue{StringValue: agent.agentType},
+				},
+			},
+			{
+				Key: "service.version",
+				Value: &protobufs.AnyValue{
+					Value: &protobufs.AnyValue_StringValue{StringValue: agent.agentVersion},
+				},
+			},
+		},
+		NonIdentifyingAttributes: []*protobufs.KeyValue{
 			{
 				Key: "os.family",
 				Value: &protobufs.AnyValue{

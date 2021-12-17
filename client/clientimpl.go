@@ -20,8 +20,9 @@ import (
 )
 
 var (
-	errAlreadyStarted       = errors.New("already started")
-	errCannotStopNotStarted = errors.New("cannot stop because not started")
+	errAlreadyStarted          = errors.New("already started")
+	errCannotStopNotStarted    = errors.New("cannot stop because not started")
+	errAgentDescriptionMissing = errors.New("AgentDescription is not set")
 )
 
 // client is a Client implementation.
@@ -79,6 +80,10 @@ func (w *client) Start(settings StartSettings) error {
 		return errAlreadyStarted
 	}
 
+	if settings.AgentDescription == nil {
+		return errAgentDescriptionMissing
+	}
+
 	w.settings = settings
 
 	var err error
@@ -104,11 +109,7 @@ func (w *client) Start(settings StartSettings) error {
 	// Prepare the first status report.
 	w.sender.UpdateNextStatus(
 		func(statusReport *protobufs.StatusReport) {
-			if statusReport.AgentDescription == nil {
-				statusReport.AgentDescription = &protobufs.AgentDescription{}
-			}
-			statusReport.AgentDescription.AgentType = w.settings.AgentType
-			statusReport.AgentDescription.AgentVersion = w.settings.AgentVersion
+			statusReport.AgentDescription = w.settings.AgentDescription
 		},
 	)
 
@@ -162,23 +163,13 @@ func (w *client) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (w *client) SetAgentAttributes(attrs map[string]*protobufs.AnyValue) error {
-	var attrsSlice []*protobufs.KeyValue
-	for k, v := range attrs {
-		attrsSlice = append(attrsSlice, &protobufs.KeyValue{
-			Key:   k,
-			Value: v,
-		})
+func (w *client) SetAgentDescription(descr *protobufs.AgentDescription) error {
+	if descr == nil {
+		return errAgentDescriptionMissing
 	}
 
 	w.sender.UpdateNextStatus(func(statusReport *protobufs.StatusReport) {
-		if statusReport.AgentDescription == nil {
-			statusReport.AgentDescription = &protobufs.AgentDescription{
-				AgentType:       w.settings.AgentType,
-				AgentVersion:    w.settings.AgentVersion,
-				AgentAttributes: attrsSlice,
-			}
-		}
+		statusReport.AgentDescription = descr
 	})
 	w.sender.ScheduleSend()
 	return nil

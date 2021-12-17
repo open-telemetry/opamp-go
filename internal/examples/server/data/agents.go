@@ -44,14 +44,16 @@ func isEqualAgentDescr(d1, d2 *protobufs.AgentDescription) bool {
 	if d1 == nil || d2 == nil {
 		return false
 	}
-	if d1.AgentType != d2.AgentType || d1.AgentVersion != d2.AgentVersion {
+	return isEqualAttrs(d1.IdentifyingAttributes, d2.IdentifyingAttributes) &&
+		isEqualAttrs(d1.NonIdentifyingAttributes, d2.NonIdentifyingAttributes)
+}
+
+func isEqualAttrs(attrs1, attrs2 []*protobufs.KeyValue) bool {
+	if len(attrs1) != len(attrs2) {
 		return false
 	}
-	if len(d1.AgentAttributes) != len(d2.AgentAttributes) {
-		return false
-	}
-	for i, a1 := range d1.AgentAttributes {
-		a2 := d2.AgentAttributes[i]
+	for i, a1 := range attrs1 {
+		a2 := attrs2[i]
 		if !protobufshelpers.IsEqualKeyValue(a1, a2) {
 			return false
 		}
