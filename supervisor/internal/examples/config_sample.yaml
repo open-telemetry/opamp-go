@@ -1,0 +1,78 @@
+# Connection details for the OpAMP server.
+server:
+    endpoint: wss://localhost:1729
+    #    tls:
+    # Client-side TLS configuration to connect to the OpAMP server.
+
+# Watchdog allows the supervisor to monitor the health of the agent and ensure
+# it is always running (restarting if necessary). In this sense, it acts as
+# an alternative to agent installations that are not managed by systemd.
+#
+# A watchdog policy, like `systemd', albeit not as exhaustive, allows the
+# watchdog to honor certain timing restrictions during the start, stop and
+# restart of the agents.
+watchdog:
+    # Command describes how the agent must be exec'd.
+    command:
+        # Full or relative path to the agent executable.
+        name: /opt/otcol/bin/otel
+        # Set of command-line arguments required to start the `executable`
+        # specified above.
+        args:
+            - --config
+            - /etc/otcol/config.yaml
+
+    # Dictates how to check if the agent is healthy.
+    health_check:
+        url: http://localhost:13133/
+        initial_delay: 5s
+        period: 5s
+        timeout: 1s
+        success_threshold: 1
+        failure_threshold: 3
+
+    # Max attempts the agent is allowed to fail when attempted to START or
+    # STOP in which case the operation will be re-attempted.
+    max_attempts: 3
+
+    # Duration to wait between successive attempts of a START or STOP.
+    wait_between_attempts: 1s
+
+agent:
+    # Set of capabilities that this agent supports.
+    capabilities:
+        - REPORTS_CONFIG
+        - ACCEPTS_CONFIG
+        - REPORTS_PACKAGE
+        - ACCEPTS_PACAKGE
+        # - REPORTS_ADDONS
+        # - ACCEPTS_ADDONS
+        # - REPORTS_OWN_TRACES
+        # - REPORTS_OWN_METRICS
+        # - REPORTS_OWN_LOGS
+        # - ACCEPTS_OPAMP_CONN_SETTINGS
+        # - ACCEPTS_OTHER_CONN_SETTINGS
+
+    # An arbitrary set of key-value pairs that identify this agent and may
+    # describe where this agent runs.
+    attrs:
+        -   service.name: io.opentelemetry.collector
+        -   service.namespace: collector
+        -   other_attr1: other_attr1_val
+        -   other_attr2: other_attr2_val
+
+    # Describes the configuration properties of the agent. This field MUST
+    # be specified if `REPORTS_CONFIG' or `ACCEPTS_CONFIG' capabilities are set.
+    config:
+        # Currently, only a `file' based configuration is accepted.
+        file: /opt/opentelemetry-collector/config.yaml
+        # If `auto_reload` is true, then the agent doesn't need a restart on a config
+        # change as it is internally managed by the agent.
+        auto_reload: false
+
+    # Describes the set of files that makes up the agent and therefore allows
+    # the agent to be updated. This field MUST be specified if `REPORTS_PACKAGE'
+    # or `ACCEPTS_PACKAGE' capabilities are turned on.
+    package:
+        files:
+            -   otel: /opt/otcol/bin/otel
