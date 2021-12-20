@@ -117,7 +117,7 @@ func (s *supervisor) Start() error {
 		s.logger.Debugf("Failed to stop the client: %v", err)
 	}
 	if err := s.watcher.Shutdown(ctx); err != nil {
-		s.logger.Debugf("Failed to stop the watcher: %w", err)
+		s.logger.Debugf("Failed to stop the watcher: %v", err)
 	}
 
 	return nil
