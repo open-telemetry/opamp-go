@@ -81,7 +81,7 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 }
 
 func (agent *Agent) start() error {
-	agent.opampClient = client.New(agent.logger)
+	agent.opampClient = client.NewWebSocket(agent.logger)
 
 	settings := client.StartSettings{
 		OpAMPServerURL:   "ws://127.0.0.1:4320/v1/opamp",

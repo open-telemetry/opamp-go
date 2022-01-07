@@ -5,8 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -25,8 +23,9 @@ var (
 	errAgentDescriptionMissing = errors.New("AgentDescription is not set")
 )
 
-// client is a Client implementation.
-type client struct {
+// wsClient is an OpAMP Client implementation for WebSocket transport.
+// See specification: https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#websocket-transport
+type wsClient struct {
 	logger   types.Logger
 	settings StartSettings
 
@@ -55,19 +54,17 @@ type client struct {
 	stoppedSignal chan struct{}
 
 	// The sender is responsible for sending portion of the OpAMP protocol.
-	sender *internal.Sender
+	sender *internal.WSSender
 }
 
-var _ OpAMPClient = (*client)(nil)
+var _ OpAMPClient = (*wsClient)(nil)
 
-const retryAfterHTTPHeader = "Retry-After"
-
-func New(logger types.Logger) *client {
+func NewWebSocket(logger types.Logger) *wsClient {
 	if logger == nil {
 		logger = &sharedinternal.NopLogger{}
 	}
 
-	w := &client{
+	w := &wsClient{
 		logger:        logger,
 		stoppedSignal: make(chan struct{}, 1),
 		sender:        internal.NewSender(logger),
@@ -75,7 +72,7 @@ func New(logger types.Logger) *client {
 	return w
 }
 
-func (w *client) Start(settings StartSettings) error {
+func (w *wsClient) Start(settings StartSettings) error {
 	if w.isStarted {
 		return errAlreadyStarted
 	}
@@ -113,7 +110,7 @@ func (w *client) Start(settings StartSettings) error {
 	return nil
 }
 
-func (w *client) Stop(ctx context.Context) error {
+func (w *wsClient) Stop(ctx context.Context) error {
 	if !w.isStarted {
 		return errCannotStopNotStarted
 	}
@@ -147,39 +144,32 @@ func (w *client) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (w *client) SetAgentDescription(descr *protobufs.AgentDescription) error {
+func (w *wsClient) SetAgentDescription(descr *protobufs.AgentDescription) error {
 	if descr == nil {
 		return errAgentDescriptionMissing
 	}
 
 	// store the agent description to send on reconnect
 	w.settings.AgentDescription = descr
-
-	w.sender.UpdateNextStatus(func(statusReport *protobufs.StatusReport) {
+	w.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
 		statusReport.AgentDescription = descr
 	})
 	w.sender.ScheduleSend()
 	return nil
 }
 
-func (w *client) SetEffectiveConfig(config *protobufs.EffectiveConfig) error {
-	w.sender.UpdateNextStatus(func(statusReport *protobufs.StatusReport) {
+func (w *wsClient) SetEffectiveConfig(config *protobufs.EffectiveConfig) error {
+	w.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
 		statusReport.EffectiveConfig = config
 	})
 	w.sender.ScheduleSend()
 	return nil
 }
 
-type optionalDuration struct {
-	duration time.Duration
-	// true if duration field is defined.
-	defined bool
-}
-
 // Try to connect once. Returns an error if connection fails and optional retryAfter
 // duration to indicate to the caller to retry after the specified time as instructed
 // by the server.
-func (w *client) tryConnectOnce(ctx context.Context) (err error, retryAfter optionalDuration) {
+func (w *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sharedinternal.OptionalDuration) {
 	var resp *http.Response
 	conn, resp, err := w.dialer.DialContext(ctx, w.url.String(), w.requestHeader)
 	if err != nil {
@@ -188,10 +178,10 @@ func (w *client) tryConnectOnce(ctx context.Context) (err error, retryAfter opti
 		}
 		if resp != nil {
 			w.logger.Errorf("Server responded with status=%v", resp.Status)
-			duration := extractRetryAfterHeader(resp)
+			duration := sharedinternal.ExtractRetryAfterHeader(resp)
 			return err, duration
 		}
-		return err, optionalDuration{defined: false}
+		return err, sharedinternal.OptionalDuration{Defined: false}
 	}
 
 	// Successfully connected.
@@ -202,29 +192,12 @@ func (w *client) tryConnectOnce(ctx context.Context) (err error, retryAfter opti
 		w.settings.Callbacks.OnConnect()
 	}
 
-	return nil, optionalDuration{defined: false}
-}
-
-// Extract Retry-After response header if the status is 503 or 429. Returns
-// 0 duration if the header is not found or the status is different.
-func extractRetryAfterHeader(resp *http.Response) optionalDuration {
-	if resp.StatusCode == http.StatusServiceUnavailable ||
-		resp.StatusCode == http.StatusTooManyRequests {
-		retryAfter := strings.TrimSpace(resp.Header.Get(retryAfterHTTPHeader))
-		if retryAfter != "" {
-			retryIntervalSec, err := strconv.Atoi(retryAfter)
-			if err == nil {
-				retryInterval := time.Duration(retryIntervalSec) * time.Second
-				return optionalDuration{defined: true, duration: retryInterval}
-			}
-		}
-	}
-	return optionalDuration{defined: false}
+	return nil, sharedinternal.OptionalDuration{Defined: false}
 }
 
 // Continuously try until connected. Will return nil when successfully
 // connected. Will return error if it is cancelled via context.
-func (w *client) ensureConnected(ctx context.Context) error {
+func (w *wsClient) ensureConnected(ctx context.Context) error {
 	infiniteBackoff := backoff.NewExponentialBackOff()
 
 	// Make ticker run forever.
@@ -248,11 +221,11 @@ func (w *client) ensureConnected(ctx context.Context) error {
 					}
 					// Retry again a bit later.
 
-					if retryAfter.defined && retryAfter.duration > interval {
+					if retryAfter.Defined && retryAfter.Duration > interval {
 						// If the server suggested connecting later than our interval
 						// then honour server's request, otherwise wait at least
 						// as much as we calculated.
-						interval = retryAfter.duration
+						interval = retryAfter.Duration
 					}
 
 					continue
@@ -269,13 +242,13 @@ func (w *client) ensureConnected(ctx context.Context) error {
 	}
 }
 
-func (w *client) isStopping() bool {
+func (w *wsClient) isStopping() bool {
 	w.isStoppingMutex.RLock()
 	defer w.isStoppingMutex.RUnlock()
 	return w.isStoppingFlag
 }
 
-func (w *client) startConnectAndRun() {
+func (w *wsClient) startConnectAndRun() {
 	// Create a cancellable context.
 	runCtx, runCancel := context.WithCancel(context.Background())
 
@@ -297,7 +270,7 @@ func (w *client) startConnectAndRun() {
 //   3. receive and process messages until error happens.
 // If it encounters an error it closes the connection and returns.
 // Will stop and return if Stop() is called (ctx is cancelled, isStopping is set).
-func (w *client) runOneCycle(ctx context.Context) {
+func (w *wsClient) runOneCycle(ctx context.Context) {
 	if err := w.ensureConnected(ctx); err != nil {
 		// Can't connect, so can't move forward. This currently happens when we
 		// are being stopped.
@@ -313,13 +286,11 @@ func (w *client) runOneCycle(ctx context.Context) {
 	procCtx, procCancel := context.WithCancel(ctx)
 
 	// Prepare the first status report.
-	w.sender.UpdateNextStatus(
-		func(statusReport *protobufs.StatusReport) {
-			statusReport.AgentDescription = w.settings.AgentDescription
-		},
-	)
+	w.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
+		statusReport.AgentDescription = w.settings.AgentDescription
+	})
 
-	w.sender.UpdateNextMessage(
+	w.sender.NextMessage().Update(
 		func(msg *protobufs.AgentToServer) {
 			if msg.AddonStatuses == nil {
 				msg.AddonStatuses = &protobufs.AgentAddonStatuses{}
@@ -338,7 +309,7 @@ func (w *client) runOneCycle(ctx context.Context) {
 	}
 
 	// First status report sent. Now loop to receive and process messages.
-	r := internal.NewReceiver(w.logger, w.settings.Callbacks, w.conn, w.sender)
+	r := internal.NewWSReceiver(w.logger, w.settings.Callbacks, w.conn, w.sender)
 	r.ReceiverLoop(ctx)
 
 	// Stop the background processors.
@@ -347,14 +318,14 @@ func (w *client) runOneCycle(ctx context.Context) {
 	// If we exited receiverLoop it means there is a connection error, we cannot
 	// read messages anymore. We need to start over.
 
-	// Close the connection to unblock the Sender as well.
+	// Close the connection to unblock the WSSender as well.
 	w.conn.Close()
 
-	// Wait for Sender to stop.
+	// Wait for WSSender to stop.
 	w.sender.WaitToStop()
 }
 
-func (w *client) runUntilStopped(ctx context.Context) {
+func (w *wsClient) runUntilStopped(ctx context.Context) {
 
 	defer func() {
 		// We only return from runUntilStopped when we are instructed to stop.

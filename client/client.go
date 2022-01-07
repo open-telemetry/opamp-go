@@ -10,9 +10,15 @@ import (
 
 type StartSettings struct {
 	// Connection parameters.
-	OpAMPServerURL      string
+
+	// Server URL. MUST be set.
+	OpAMPServerURL string
+
+	// Optional value of "Authorization" HTTP header in the HTTP request.
 	AuthorizationHeader string
-	TLSConfig           *tls.Config
+
+	// Optional TLS config for HTTP connection.
+	TLSConfig *tls.Config
 
 	// Agent information.
 	InstanceUid string
@@ -24,7 +30,7 @@ type StartSettings struct {
 	// Callbacks that the client will call after Start() returns nil.
 	Callbacks types.Callbacks
 
-	// Previously saved state. This will be reported to the server immediately
+	// Previously saved state. These will be reported to the server immediately
 	// after the connection is established.
 
 	// The hash of the last received remote config. If nil is passed it will force
@@ -81,9 +87,11 @@ type OpAMPClient interface {
 
 	// SetAgentDescription sets attributes of the Agent. The attributes will be included
 	// in the next status report sent to the server.
-	// MUST NOT be called before Start().
-	// MAY be called after Start(), in which case the attributes will be included
-	// in the next outgoing status report.
+	// May be called after Start(), in which case the attributes will be included
+	// in the next outgoing status report. This is typically used by Agents which allow
+	// their AgentDescription to change dynamically while the OpAMPClient is started.
+	// To define the initial agent description that is included in the first status report
+	// set StartSettings.AgentDescription field.
 	SetAgentDescription(descr *protobufs.AgentDescription) error
 
 	// SetEffectiveConfig sets the effective config of the Agent. The config will be

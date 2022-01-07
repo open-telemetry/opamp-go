@@ -2,64 +2,38 @@ package internal
 
 import (
 	"context"
-	"fmt"
-
-	"github.com/gorilla/websocket"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
-// Receiver implements the client's receiving portion of OpAMP protocol.
-type Receiver struct {
-	conn      *websocket.Conn
-	logger    types.Logger
-	sender    *Sender
+// receivedProcessor handles the processing of messages received from the Server.
+type receivedProcessor struct {
+	logger types.Logger
+
+	// Callbacks to call for corresponding messages.
 	callbacks types.Callbacks
+
+	// A sender to cooperate with when the received message has an impact on
+	// what will be sent later.
+	sender sender
 }
 
-func NewReceiver(logger types.Logger, callbacks types.Callbacks, conn *websocket.Conn, sender *Sender) *Receiver {
-	return &Receiver{
-		conn:      conn,
-		logger:    logger,
-		sender:    sender,
-		callbacks: callbacks,
-	}
+type sender interface {
+	// NextMessage provides access to modify the next message that will be sent.
+	NextMessage() *nextMessage
+
+	// ScheduleSend signals the sender to send a pending next message.
+	ScheduleSend()
+
+	// SetInstanceUid sets a new instanceUid to be used when next message is being sent.
+	SetInstanceUid(instanceUid string) error
 }
 
-func (r *Receiver) ReceiverLoop(ctx context.Context) {
-	runContext, cancelFunc := context.WithCancel(ctx)
-
-out:
-	for {
-		var message protobufs.ServerToAgent
-		if err := r.receiveMessage(&message); err != nil {
-			if ctx.Err() == nil && !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-				r.logger.Errorf("Unexpected error while receiving: %v", err)
-			}
-			break out
-		} else {
-			r.processReceivedMessage(runContext, &message)
-		}
-	}
-
-	cancelFunc()
-}
-
-func (r *Receiver) receiveMessage(msg *protobufs.ServerToAgent) error {
-	_, bytes, err := r.conn.ReadMessage()
-	if err != nil {
-		return err
-	}
-	err = proto.Unmarshal(bytes, msg)
-	if err != nil {
-		return fmt.Errorf("cannot decode received message: %w", err)
-	}
-	return err
-}
-
-func (r *Receiver) processReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
+// ProcessReceivedMessage is the entry point into the processing routine. It examines
+// the received message and performs any processing necessary based on what fields are set.
+// This function will call any relevant callbacks.
+func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
 	if r.callbacks != nil {
 		// If a command message exists, other messages will be ignored
 		if msg.Command != nil {
@@ -84,7 +58,7 @@ func (r *Receiver) processReceivedMessage(ctx context.Context, msg *protobufs.Se
 	}
 }
 
-func (r *Receiver) rcvRemoteConfig(
+func (r *receivedProcessor) rcvRemoteConfig(
 	ctx context.Context,
 	config *protobufs.AgentRemoteConfig,
 	flags protobufs.ServerToAgent_Flags,
@@ -92,7 +66,7 @@ func (r *Receiver) rcvRemoteConfig(
 	effective, changed, err := r.callbacks.OnRemoteConfig(ctx, config)
 	if err != nil {
 		// Return a status message with status failed.
-		r.sender.UpdateNextStatus(func(statusReport *protobufs.StatusReport) {
+		r.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
 			statusReport.RemoteConfigStatus = &protobufs.RemoteConfigStatus{
 				Status:       protobufs.RemoteConfigStatus_Failed,
 				ErrorMessage: err.Error(),
@@ -106,7 +80,7 @@ func (r *Receiver) rcvRemoteConfig(
 	reportEffective := changed || (flags&protobufs.ServerToAgent_ReportEffectiveConfig != 0)
 
 	if reportEffective {
-		r.sender.UpdateNextStatus(func(statusReport *protobufs.StatusReport) {
+		r.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
 			statusReport.EffectiveConfig = effective
 		})
 		return true
@@ -114,7 +88,7 @@ func (r *Receiver) rcvRemoteConfig(
 	return false
 }
 
-func (r *Receiver) rcvConnectionSettings(ctx context.Context, settings *protobufs.ConnectionSettingsOffers) {
+func (r *receivedProcessor) rcvConnectionSettings(ctx context.Context, settings *protobufs.ConnectionSettingsOffers) {
 	if settings == nil {
 		return
 	}
@@ -153,7 +127,7 @@ func (r *Receiver) rcvConnectionSettings(ctx context.Context, settings *protobuf
 	}
 }
 
-func (r *Receiver) rcvOwnTelemetryConnectionSettings(
+func (r *receivedProcessor) rcvOwnTelemetryConnectionSettings(
 	ctx context.Context,
 	settings *protobufs.ConnectionSettings,
 	telemetryType types.OwnTelemetryType,
@@ -164,7 +138,7 @@ func (r *Receiver) rcvOwnTelemetryConnectionSettings(
 	}
 }
 
-func (r *Receiver) rcvOtherConnectionSettings(
+func (r *receivedProcessor) rcvOtherConnectionSettings(
 	ctx context.Context,
 	settings *protobufs.ConnectionSettings,
 	name string,
@@ -175,15 +149,16 @@ func (r *Receiver) rcvOtherConnectionSettings(
 	}
 }
 
-func (r *Receiver) processErrorResponse(body *protobufs.ServerErrorResponse) {
+func (r *receivedProcessor) processErrorResponse(body *protobufs.ServerErrorResponse) {
+	// TODO: implement this.
+	r.logger.Errorf("received an error from server: %s", body.ErrorMessage)
+}
+
+func (r *receivedProcessor) rcvAddonsAvailable(addons *protobufs.AddonsAvailable) {
 	// TODO: implement this.
 }
 
-func (r *Receiver) rcvAddonsAvailable(addons *protobufs.AddonsAvailable) {
-	// TODO: implement this.
-}
-
-func (r *Receiver) rcvAgentIdentification(ctx context.Context, agentId *protobufs.AgentIdentification) {
+func (r *receivedProcessor) rcvAgentIdentification(ctx context.Context, agentId *protobufs.AgentIdentification) {
 	if agentId == nil {
 		return
 	}
@@ -205,7 +180,7 @@ func (r *Receiver) rcvAgentIdentification(ctx context.Context, agentId *protobuf
 	}
 }
 
-func (r *Receiver) rcvCommand(command *protobufs.ServerToAgentCommand) {
+func (r *receivedProcessor) rcvCommand(command *protobufs.ServerToAgentCommand) {
 	if command != nil {
 		r.callbacks.OnCommand(command)
 	}
