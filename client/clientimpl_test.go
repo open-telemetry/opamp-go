@@ -271,15 +271,16 @@ func TestFirstStatusReport(t *testing.T) {
 				atomic.AddInt64(&connected, 1)
 			},
 			OnRemoteConfigFunc: func(
-				ctx context.Context, config *protobufs.AgentRemoteConfig,
-			) (*protobufs.EffectiveConfig, error) {
+				ctx context.Context,
+				config *protobufs.AgentRemoteConfig,
+			) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {
 				// Verify that the client received exactly the remote config that
 				// the server sent.
 				assert.True(t, proto.Equal(remoteConfig, config))
 				atomic.AddInt64(&remoteConfigReceived, 1)
 				return &protobufs.EffectiveConfig{
 					ConfigMap: remoteConfig.Config,
-				}, nil
+				}, true, nil
 			},
 		},
 		AgentDescription: &protobufs.AgentDescription{},

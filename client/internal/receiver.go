@@ -61,7 +61,7 @@ func (r *Receiver) receiveMessage(msg *protobufs.ServerToAgent) error {
 
 func (r *Receiver) processReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
 	if r.callbacks != nil {
-		reportStatus := r.rcvRemoteConfig(ctx, msg.RemoteConfig)
+		reportStatus := r.rcvRemoteConfig(ctx, msg.RemoteConfig, msg.Flags)
 
 		r.rcvConnectionSettings(ctx, msg.ConnectionSettings)
 		r.rcvAddonsAvailable(msg.AddonsAvailable)
@@ -77,15 +77,25 @@ func (r *Receiver) processReceivedMessage(ctx context.Context, msg *protobufs.Se
 	}
 }
 
-func (r *Receiver) rcvRemoteConfig(ctx context.Context, config *protobufs.AgentRemoteConfig) (reportStatus bool) {
-	effective, err := r.callbacks.OnRemoteConfig(ctx, config)
-	if err == nil {
+func (r *Receiver) rcvRemoteConfig(
+	ctx context.Context,
+	config *protobufs.AgentRemoteConfig,
+	flags protobufs.ServerToAgent_Flags,
+) (reportStatus bool) {
+	effective, changed, err := r.callbacks.OnRemoteConfig(ctx, config)
+	if err != nil {
+		return false
+	}
+
+	// Report the effective configuration if it changed or if the Server explicitly
+	// asked us to report it.
+	reportEffective := changed || (flags&protobufs.ServerToAgent_ReportEffectiveConfig != 0)
+
+	if reportEffective {
 		r.sender.UpdateNextStatus(func(statusReport *protobufs.StatusReport) {
 			statusReport.EffectiveConfig = effective
 		})
-		if effective != nil {
-			return true
-		}
+		return true
 	}
 	return false
 }
