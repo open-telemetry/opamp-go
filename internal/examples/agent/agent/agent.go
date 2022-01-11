@@ -55,6 +55,8 @@ type Agent struct {
 	opampClient client.OpAMPClient
 
 	remoteConfigHash []byte
+
+	metricReporter *MetricReporter
 }
 
 func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent {
@@ -95,7 +97,8 @@ func (agent *Agent) start() error {
 			OnErrorFunc: func(err *protobufs.ServerErrorResponse) {
 				agent.logger.Errorf("Server returned an error response: %v", err.ErrorMessage)
 			},
-			OnRemoteConfigFunc: agent.onRemoteConfig,
+			OnRemoteConfigFunc:                   agent.onRemoteConfig,
+			OnOwnTelemetryConnectionSettingsFunc: agent.onOwnTelemetryConnectionSettings,
 		},
 		LastRemoteConfigHash: agent.remoteConfigHash,
 		LastEffectiveConfig:  agent.composeEffectiveConfig(),
@@ -192,6 +195,37 @@ func (agent *Agent) onRemoteConfig(
 	}
 
 	return agent.composeEffectiveConfig(), configChanged, nil
+}
+
+func (agent *Agent) onOwnTelemetryConnectionSettings(
+	_ context.Context,
+	telemetryType types.OwnTelemetryType,
+	settings *protobufs.ConnectionSettings,
+) error {
+	switch telemetryType {
+	case types.OwnMetrics:
+		agent.initMeter(settings)
+	}
+
+	return nil
+}
+
+func (agent *Agent) initMeter(settings *protobufs.ConnectionSettings) {
+	reporter, err := NewMetricReporter(agent.logger, settings, agent.agentType, agent.agentVersion, agent.instanceId)
+	if err != nil {
+		agent.logger.Errorf("Cannot collect metrics: %v", err)
+		return
+	}
+
+	prevReporter := agent.metricReporter
+
+	agent.metricReporter = reporter
+
+	if prevReporter != nil {
+		prevReporter.Shutdown()
+	}
+
+	return
 }
 
 type agentConfigFileItem struct {
