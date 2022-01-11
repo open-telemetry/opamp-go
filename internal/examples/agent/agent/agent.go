@@ -183,14 +183,15 @@ func (agent *Agent) composeEffectiveConfig() *protobufs.EffectiveConfig {
 }
 
 func (agent *Agent) onRemoteConfig(
-	ctx context.Context,
-	config *protobufs.AgentRemoteConfig,
-) (*protobufs.EffectiveConfig, error) {
-	err := agent.applyRemoteConfig(config)
+	_ context.Context,
+	remoteConfig *protobufs.AgentRemoteConfig,
+) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {
+	configChanged, err = agent.applyRemoteConfig(remoteConfig)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return agent.composeEffectiveConfig(), nil
+
+	return agent.composeEffectiveConfig(), configChanged, nil
 }
 
 type agentConfigFileItem struct {
@@ -214,9 +215,9 @@ func (a agentConfigFileSlice) Len() int {
 	return len(a)
 }
 
-func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) error {
+func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (configChanged bool, err error) {
 	if config == nil {
-		return nil
+		return false, nil
 	}
 
 	agent.logger.Debugf("Received remote config from server, hash=%x.", config.ConfigHash)
@@ -224,7 +225,7 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) error
 	// Begin with local config. We will later merge received configs on top of it.
 	var k = koanf.New(".")
 	if err := k.Load(rawbytes.Provider([]byte(localConfig)), yaml.Parser()); err != nil {
-		return err
+		return false, err
 	}
 
 	orderedConfigs := agentConfigFileSlice{}
@@ -256,11 +257,11 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) error
 		var k2 = koanf.New(".")
 		err := k2.Load(rawbytes.Provider(item.file.Body), yaml.Parser())
 		if err != nil {
-			return fmt.Errorf("cannot parse config named %s: %v", item.name, err)
+			return false, fmt.Errorf("cannot parse config named %s: %v", item.name, err)
 		}
 		err = k.Merge(k2)
 		if err != nil {
-			return fmt.Errorf("cannot merge config named %s: %v", item.name, err)
+			return false, fmt.Errorf("cannot merge config named %s: %v", item.name, err)
 		}
 	}
 
@@ -271,16 +272,18 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) error
 	}
 
 	newEffectiveConfig := string(effectiveConfigBytes)
+	configChanged = false
 	if agent.effectiveConfig != newEffectiveConfig {
 		agent.logger.Debugf("Effective config changed. Need to report to server.")
 		agent.effectiveConfig = newEffectiveConfig
 		hash := sha256.Sum256(effectiveConfigBytes)
 		agent.effectiveConfigHash = hash[:]
+		configChanged = true
 	}
 
 	agent.remoteConfigHash = config.ConfigHash
 
-	return nil
+	return configChanged, nil
 }
 
 func (agent *Agent) Shutdown() {

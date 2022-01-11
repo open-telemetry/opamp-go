@@ -35,6 +35,10 @@ type Callbacks interface {
 	//
 	// The Agent should process the config and return the effective config if processing
 	// succeeded or an error if processing failed.
+	//
+	// configChanged must be set to true if as a result of applying the remote config
+	// the effective config has changed.
+	//
 	// The returned effective config or the error will be reported back to the server
 	// via StatusReport message (using EffectiveConfig and RemoteConfigStatus fields).
 	//
@@ -45,8 +49,8 @@ type Callbacks interface {
 	// remote config received.
 	OnRemoteConfig(
 		ctx context.Context,
-		config *protobufs.AgentRemoteConfig,
-	) (*protobufs.EffectiveConfig, error)
+		remoteConfig *protobufs.AgentRemoteConfig,
+	) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error)
 
 	// OnOpampConnectionSettings is called when the agent receives an OpAMP
 	// connection settings offer from the server. Typically the settings can specify

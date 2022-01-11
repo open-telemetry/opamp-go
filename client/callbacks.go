@@ -14,8 +14,8 @@ type CallbacksStruct struct {
 
 	OnRemoteConfigFunc func(
 		ctx context.Context,
-		config *protobufs.AgentRemoteConfig,
-	) (*protobufs.EffectiveConfig, error)
+		remoteConfig *protobufs.AgentRemoteConfig,
+	) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error)
 
 	OnOpampConnectionSettingsFunc func(
 		ctx context.Context,
@@ -62,12 +62,13 @@ func (c CallbacksStruct) OnError(err *protobufs.ServerErrorResponse) {
 }
 
 func (c CallbacksStruct) OnRemoteConfig(
-	ctx context.Context, remoteConfig *protobufs.AgentRemoteConfig,
-) (*protobufs.EffectiveConfig, error) {
+	ctx context.Context,
+	remoteConfig *protobufs.AgentRemoteConfig,
+) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {
 	if c.OnRemoteConfigFunc != nil {
 		return c.OnRemoteConfigFunc(ctx, remoteConfig)
 	}
-	return nil, nil
+	return nil, false, nil
 }
 
 func (c CallbacksStruct) OnOpampConnectionSettings(
