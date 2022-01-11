@@ -95,14 +95,13 @@ func notifyStatusWatchers(statusUpdateWatchers []chan<- struct{}) {
 	}
 }
 
-func (agent *Agent) updateStatusField(newStatus *protobufs.StatusReport) (needCalculateConfig bool) {
+func (agent *Agent) updateStatusField(newStatus *protobufs.StatusReport) (agentDescrChanged bool) {
 	prevStatus := agent.Status
 
 	if agent.Status == nil {
-		// First time this agent reports a status, remember it and ensure we calculate
-		// the config.
+		// First time this agent reports a status, remember it.
 		agent.Status = newStatus
-		needCalculateConfig = true
+		agentDescrChanged = true
 	} else {
 		// Not a new agent. Checks what's changed in the agent's description.
 		if newStatus.AgentDescription != nil {
@@ -112,18 +111,16 @@ func (agent *Agent) updateStatusField(newStatus *protobufs.StatusReport) (needCa
 			// Make full comparison of previous and new descriptions to see if it
 			// really is different.
 			if prevStatus != nil && isEqualAgentDescr(prevStatus.AgentDescription, newStatus.AgentDescription) {
-				// Agent description didn't change, no need to invalidate configuration.
-				needCalculateConfig = false
+				// Agent description didn't change.
+				agentDescrChanged = false
 			} else {
-				// Yes, the description is different, update it and force config
-				// recalculation.
+				// Yes, the description is different, update it.
 				agent.Status.AgentDescription = newStatus.AgentDescription
-				needCalculateConfig = true
+				agentDescrChanged = true
 			}
 		} else {
-			// AgentDescription field is not set, which means description didn't
-			// change, no need to invalidate configuration.
-			needCalculateConfig = false
+			// AgentDescription field is not set, which means description didn't change.
+			agentDescrChanged = false
 		}
 
 		// Update remote config status if it is provided.
@@ -132,7 +129,7 @@ func (agent *Agent) updateStatusField(newStatus *protobufs.StatusReport) (needCa
 		}
 	}
 
-	return needCalculateConfig
+	return agentDescrChanged
 }
 
 func (agent *Agent) updateEffectiveConfig(
@@ -169,12 +166,17 @@ func (agent *Agent) processStatusUpdate(
 	newStatus *protobufs.StatusReport,
 	response *protobufs.ServerToAgent,
 ) {
-	needCalculateConfig := agent.updateStatusField(newStatus)
+	agentDescrChanged := agent.updateStatusField(newStatus)
 
 	configChanged := false
-	if needCalculateConfig {
+	if agentDescrChanged {
+		// Agent description is changed.
+		//
 		// We need to recalculate the config.
 		configChanged = agent.calcRemoteConfig()
+
+		// And set connection settings that are appropriate for the agent description.
+		agent.calcConnectionSettings(response)
 	}
 
 	// If remote config is changed and different from what the agent has then
@@ -308,6 +310,27 @@ func isEqualConfigFile(f1, f2 *protobufs.AgentConfigFile) bool {
 		return false
 	}
 	return bytes.Compare(f1.Body, f2.Body) == 0 && f1.ContentType == f2.ContentType
+}
+
+func (agent *Agent) calcConnectionSettings(response *protobufs.ServerToAgent) {
+	// Here we can use agent's description to send the appropriate connection
+	// settings to the agent.
+	// In this simple example the connection settings do not depend on the
+	// agent description, so we jst set them directly.
+
+	response.ConnectionSettings = &protobufs.ConnectionSettingsOffers{
+		Hash:  nil, // TODO: calc has from settings.
+		Opamp: nil,
+		OwnMetrics: &protobufs.ConnectionSettings{
+			// We just hard-code this to a port on a localhost on which we can
+			// run an Otel Collector for demo purposes. With real production
+			// servers this should likely point to an OTLP backend.
+			DestinationEndpoint: "http://localhost:4318/v1/metrics",
+		},
+		OwnTraces:        nil,
+		OwnLogs:          nil,
+		OtherConnections: nil,
+	}
 }
 
 func (agent *Agent) SendToAgent(msg *protobufs.ServerToAgent) {
