@@ -13,15 +13,16 @@ all: test build-examples
 .PHONY: test
 test:
 	go test -race ./...
+	cd internal/examples && go test -race ./...
 
 .PHONY: build-examples
 build-examples: build-example-agent build-example-server
 
 build-example-agent:
-	go build -o internal/examples/agent/bin/agent internal/examples/agent/main.go
+	cd internal/examples && go build -o agent/bin/agent agent/main.go
 
 build-example-server:
-	go build -o internal/examples/server/bin/server internal/examples/server/main.go
+	cd internal/examples && go build -o server/bin/server server/main.go
 
 run-examples: build-examples
 	cd internal/examples/server && ./bin/server &
