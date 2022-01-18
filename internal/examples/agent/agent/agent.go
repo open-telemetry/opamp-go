@@ -87,7 +87,7 @@ func (agent *Agent) start() error {
 		OpAMPServerURL:   "ws://127.0.0.1:4320/v1/opamp",
 		InstanceUid:      agent.instanceId.String(),
 		AgentDescription: agent.agentDescription,
-		Callbacks: client.CallbacksStruct{
+		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func() {
 				agent.logger.Debugf("Connected to the server.")
 			},

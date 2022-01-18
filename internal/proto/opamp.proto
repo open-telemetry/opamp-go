@@ -111,6 +111,11 @@ message ServerToAgent {
     // be omitted in subsequent ServerToAgent messages by setting it to
     // UnspecifiedServerCapability value.
     ServerCapabilities capabilities = 8;
+
+    // Allows the Server to instruct the agent to perform a command, e.g. RESTART. This field should not be specified
+    // with fields other than instance_uid and capabilities. If specified, other fields will be ignored and the command
+    // will be performed.
+    ServerToAgentCommand command = 10;
 }
 
 enum ServerCapabilities {
@@ -412,6 +417,17 @@ message AgentPackageAvailable {
     DownloadableFile file = 2;
 }
 
+// ServerToAgentCommand is sent from the server to the agent to request that the agent
+// perform a command.
+message ServerToAgentCommand {
+    enum CommandType {
+        // The agent should restart. This request will be ignored if the agent does not
+        // support restart.
+        Restart = 0;
+    }
+    CommandType type = 1;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////
 // Status reporting
 
@@ -516,6 +532,10 @@ enum AgentCapabilities {
     // The Agent can accept connections settings for other destinations via
     // ConnectionSettingsOffers.other_connections field.
     AcceptsOtherConnectionSettings = 0x00000800;
+    // The Agent can accept restart requests.
+    AcceptsRestartCommand          = 0x00001000;
+    // The Agent can accept shutdown requests.
+    AcceptsShutdownCommand         = 0x00002000;
 
     // Add new capabilities here, continuing with the least significant unused bit.
 }

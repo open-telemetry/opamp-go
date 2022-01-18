@@ -129,7 +129,137 @@ type Callbacks interface {
 	// syncer can be used to initiate syncing the package from the server.
 	OnAgentPackageAvailable(addons *protobufs.AgentPackageAvailable, syncer AgentPackageSyncer) error
 
+	// OnCommand is called when the server requests that the connected agent perform a command.
+	OnCommand(command *protobufs.ServerToAgentCommand) error
+
 	// For all methods that accept a context parameter the caller may cancel the
 	// context if processing takes too long. In that case the method should return
 	// as soon as possible with an error.
+}
+
+type CallbacksStruct struct {
+	OnConnectFunc       func()
+	OnConnectFailedFunc func(err error)
+	OnErrorFunc         func(err *protobufs.ServerErrorResponse)
+
+	OnRemoteConfigFunc func(
+		ctx context.Context,
+		remoteConfig *protobufs.AgentRemoteConfig,
+	) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error)
+
+	OnOpampConnectionSettingsFunc func(
+		ctx context.Context,
+		settings *protobufs.ConnectionSettings,
+	) error
+	OnOpampConnectionSettingsAcceptedFunc func(
+		settings *protobufs.ConnectionSettings,
+	)
+
+	OnOwnTelemetryConnectionSettingsFunc func(
+		ctx context.Context,
+		telemetryType OwnTelemetryType,
+		settings *protobufs.ConnectionSettings,
+	) error
+
+	OnOtherConnectionSettingsFunc func(
+		ctx context.Context,
+		name string,
+		settings *protobufs.ConnectionSettings,
+	) error
+
+	OnAddonsAvailableFunc       func(ctx context.Context, addons *protobufs.AddonsAvailable, syncer AddonSyncer) error
+	OnAgentPackageAvailableFunc func(addons *protobufs.AgentPackageAvailable, syncer AgentPackageSyncer) error
+
+	OnCommandFunc func(command *protobufs.ServerToAgentCommand) error
+}
+
+var _ Callbacks = (*CallbacksStruct)(nil)
+
+func (c CallbacksStruct) OnConnect() {
+	if c.OnConnectFunc != nil {
+		c.OnConnectFunc()
+	}
+}
+
+func (c CallbacksStruct) OnConnectFailed(err error) {
+	if c.OnConnectFailedFunc != nil {
+		c.OnConnectFailedFunc(err)
+	}
+}
+
+func (c CallbacksStruct) OnError(err *protobufs.ServerErrorResponse) {
+	if c.OnErrorFunc != nil {
+		c.OnErrorFunc(err)
+	}
+}
+
+func (c CallbacksStruct) OnRemoteConfig(
+	ctx context.Context,
+	remoteConfig *protobufs.AgentRemoteConfig,
+) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {
+	if c.OnRemoteConfigFunc != nil {
+		return c.OnRemoteConfigFunc(ctx, remoteConfig)
+	}
+	return nil, false, nil
+}
+
+func (c CallbacksStruct) OnOpampConnectionSettings(
+	ctx context.Context, settings *protobufs.ConnectionSettings,
+) error {
+	if c.OnOpampConnectionSettingsFunc != nil {
+		return c.OnOpampConnectionSettingsFunc(ctx, settings)
+	}
+	return nil
+}
+
+func (c CallbacksStruct) OnOpampConnectionSettingsAccepted(settings *protobufs.ConnectionSettings) {
+	if c.OnOpampConnectionSettingsAcceptedFunc != nil {
+		c.OnOpampConnectionSettingsAcceptedFunc(settings)
+	}
+}
+
+func (c CallbacksStruct) OnOwnTelemetryConnectionSettings(
+	ctx context.Context, telemetryType OwnTelemetryType,
+	settings *protobufs.ConnectionSettings,
+) error {
+	if c.OnOwnTelemetryConnectionSettingsFunc != nil {
+		return c.OnOwnTelemetryConnectionSettingsFunc(ctx, telemetryType, settings)
+	}
+	return nil
+}
+
+func (c CallbacksStruct) OnOtherConnectionSettings(
+	ctx context.Context, name string, settings *protobufs.ConnectionSettings,
+) error {
+	if c.OnOtherConnectionSettingsFunc != nil {
+		return c.OnOtherConnectionSettingsFunc(ctx, name, settings)
+	}
+	return nil
+}
+
+func (c CallbacksStruct) OnAddonsAvailable(
+	ctx context.Context,
+	addons *protobufs.AddonsAvailable,
+	syncer AddonSyncer,
+) error {
+	if c.OnAddonsAvailableFunc != nil {
+		return c.OnAddonsAvailableFunc(ctx, addons, syncer)
+	}
+	return nil
+}
+
+func (c CallbacksStruct) OnAgentPackageAvailable(
+	addons *protobufs.AgentPackageAvailable, syncer AgentPackageSyncer,
+) error {
+	if c.OnAgentPackageAvailableFunc != nil {
+		return c.OnAgentPackageAvailableFunc(addons, syncer)
+	}
+	return nil
+}
+
+func (c CallbacksStruct) OnCommand(command *protobufs.ServerToAgentCommand) error {
+	if c.OnCommandFunc != nil {
+		return c.OnCommandFunc(command)
+	}
+	return nil
 }
