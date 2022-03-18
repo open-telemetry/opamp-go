@@ -356,6 +356,14 @@ message DownloadableFile {
     // The hash of the file content. Can be used by the Agent to verify that the file
     // was downloaded correctly.
     bytes content_hash = 2;
+
+    // Optional signature of the file content. Can be used by the Agent to verify the
+    // authenticity of the downloaded file, for example can be the
+    // [detached GPG signature](https://www.gnupg.org/gph/en/manual/x135.html#AEN160).
+    // The exact signing and verification method is Agent specific. See
+    // https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#code-signing
+    // for recommendations.
+    bytes signature = 3;
 }
 
 message ServerErrorResponse {
