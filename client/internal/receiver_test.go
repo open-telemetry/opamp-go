@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -102,4 +103,28 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 	})
 	assert.Equal(t, true, calledCommand, "OnCommand should be called when a Command is specified")
 	assert.Equal(t, false, calledRemoteConfig, "OnRemoteConfig should not be called when a Command is specified")
+}
+
+func TestOnRemoteConfigReportsError(t *testing.T) {
+	expectMsg := "error occurred while handling configuration"
+	expectStatus := protobufs.RemoteConfigStatus_Status(protobufs.RemoteConfigStatus_Failed)
+
+	callbacks := types.CallbacksStruct{
+		OnRemoteConfigFunc: func(ctx context.Context, remoteConfig *protobufs.AgentRemoteConfig) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {
+			return nil, false, errors.New(expectMsg)
+		},
+	}
+
+	sender := NewSender(TestLogger{t})
+	receiver := NewReceiver(TestLogger{t}, callbacks, nil, sender)
+
+	receiver.processReceivedMessage(context.Background(), &protobufs.ServerToAgent{
+		RemoteConfig: &protobufs.AgentRemoteConfig{},
+	})
+
+	gotStatus := receiver.sender.nextMessage.StatusReport.RemoteConfigStatus.Status
+	gotMsg := receiver.sender.nextMessage.StatusReport.RemoteConfigStatus.ErrorMessage
+
+	assert.Equal(t, expectStatus, gotStatus)
+	assert.Equal(t, expectMsg, gotMsg)
 }
