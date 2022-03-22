@@ -24,7 +24,6 @@ type commandAction int
 const (
 	none commandAction = iota
 	restart
-	shutdown
 	unknown
 )
 
@@ -49,13 +48,6 @@ func TestServerToAgentCommand(t *testing.T) {
 		},
 		{
 			command: &protobufs.ServerToAgentCommand{
-				Type: protobufs.ServerToAgentCommand_Shutdown,
-			},
-			action:  shutdown,
-			message: "A Shutdown command should result in a shutdown",
-		},
-		{
-			command: &protobufs.ServerToAgentCommand{
 				Type: -1,
 			},
 			action:  unknown,
@@ -72,8 +64,6 @@ func TestServerToAgentCommand(t *testing.T) {
 					switch command.Type {
 					case protobufs.ServerToAgentCommand_Restart:
 						action = restart
-					case protobufs.ServerToAgentCommand_Shutdown:
-						action = shutdown
 					default:
 						action = unknown
 					}
