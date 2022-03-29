@@ -47,6 +47,17 @@ message AgentToServer {
     // AgentDisconnect MUST be set in the last AgentToServer message sent from the
     // agent to the server.
     AgentDisconnect agent_disconnect = 5;
+
+    enum AgentToServerFlags {
+        FlagsUnspecified = 0;
+        // AgentToServerFlags is a bit mask. Values below define individual bits.
+
+        // The agent requests server go generate a new instance_uid, which will
+        // be sent back in ServerToAgent message
+        RequestInstanceUid     = 0x00000001;
+    }
+    // Bit flags as defined by AgentToServerFlags bit masks.
+    AgentToServerFlags flags = 6;
 }
 
 // AgentDisconnect is the last message sent from the agent to the server. The server
@@ -111,6 +122,10 @@ message ServerToAgent {
     // be omitted in subsequent ServerToAgent messages by setting it to
     // UnspecifiedServerCapability value.
     ServerCapabilities capabilities = 8;
+
+    // Properties related to identification of the agent, which can be overridden
+    // by the server if needed.
+    AgentIdentification agent_identification = 9;
 
     // Allows the Server to instruct the agent to perform a command, e.g. RESTART. This field should not be specified
     // with fields other than instance_uid and capabilities. If specified, other fields will be ignored and the command
@@ -679,6 +694,14 @@ message AgentInstallStatus {
 
     // Optional human readable error message if the status is erroneous.
     string error_message = 4;
+}
+
+// Properties related to identification of the agent, which can be overridden
+// by the server if needed
+message AgentIdentification {
+    // When new_instance_uid is set, Agent MUST update instance_uid
+    // to the value provided and use it for all further communication.
+    string new_instance_uid = 1;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////

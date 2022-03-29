@@ -71,6 +71,7 @@ func (r *Receiver) processReceivedMessage(ctx context.Context, msg *protobufs.Se
 
 		r.rcvConnectionSettings(ctx, msg.ConnectionSettings)
 		r.rcvAddonsAvailable(msg.AddonsAvailable)
+		r.rcvAgentIdentification(ctx, msg.AgentIdentification)
 
 		if reportStatus {
 			r.sender.ScheduleSend()
@@ -173,6 +174,28 @@ func (r *Receiver) processErrorResponse(body *protobufs.ServerErrorResponse) {
 
 func (r *Receiver) rcvAddonsAvailable(addons *protobufs.AddonsAvailable) {
 	// TODO: implement this.
+}
+
+func (r *Receiver) rcvAgentIdentification(ctx context.Context, agentId *protobufs.AgentIdentification) {
+	if agentId == nil {
+		return
+	}
+
+	if agentId.NewInstanceUid == "" {
+		r.logger.Debugf("Empty instance uid is not allowed")
+		return
+	}
+
+	err := r.callbacks.OnAgentIdentification(ctx, agentId)
+	if err != nil {
+		r.logger.Errorf("Error while updating agent identification: %v", err)
+		return
+	}
+
+	err = r.sender.SetInstanceUid(agentId.NewInstanceUid)
+	if err != nil {
+		r.logger.Errorf("Error while setting instance uid: %v, err")
+	}
 }
 
 func (r *Receiver) rcvCommand(command *protobufs.ServerToAgentCommand) {

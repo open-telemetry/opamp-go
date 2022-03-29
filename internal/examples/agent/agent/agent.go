@@ -14,9 +14,9 @@ import (
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/oklog/ulid/v2"
-	"github.com/open-telemetry/opamp-go/client/types"
 
 	"github.com/open-telemetry/opamp-go/client"
+	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -99,6 +99,7 @@ func (agent *Agent) start() error {
 			},
 			OnRemoteConfigFunc:                   agent.onRemoteConfig,
 			OnOwnTelemetryConnectionSettingsFunc: agent.onOwnTelemetryConnectionSettings,
+			OnAgentIdentificationFunc:            agent.onAgentIdentificationFunc,
 		},
 		LastRemoteConfigHash: agent.remoteConfigHash,
 		LastEffectiveConfig:  agent.composeEffectiveConfig(),
@@ -160,6 +161,18 @@ func (agent *Agent) createAgentIdentity() {
 	}
 }
 
+func (agent *Agent) updateAgentIdentity(instanceId ulid.ULID) {
+	agent.logger.Debugf("Agent identify is being changed from id=%v to id=%v",
+		agent.instanceId.String(),
+		instanceId.String())
+	agent.instanceId = instanceId
+
+	if agent.metricReporter != nil {
+		// TODO: reinit or update meter (possibly using a single function to update all own connection settings
+		// or with having a common resource factory or so)
+	}
+}
+
 func (agent *Agent) loadLocalConfig() {
 	var k = koanf.New(".")
 	k.Load(rawbytes.Provider([]byte(localConfig)), yaml.Parser())
@@ -207,6 +220,18 @@ func (agent *Agent) onOwnTelemetryConnectionSettings(
 		agent.initMeter(settings)
 	}
 
+	return nil
+}
+
+func (agent *Agent) onAgentIdentificationFunc(
+	_ context.Context,
+	agentId *protobufs.AgentIdentification,
+) error {
+	newInstanceId, err := ulid.Parse(agentId.NewInstanceUid)
+	if err != nil {
+		return err
+	}
+	agent.updateAgentIdentity(newInstanceId)
 	return nil
 }
 

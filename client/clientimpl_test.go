@@ -435,6 +435,68 @@ func TestSetAgentAttributes(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestAgentIdentification(t *testing.T) {
+	// Start a server.
+	srv := internal.StartMockServer(t)
+	newInstanceUid := ulid.MustNew(ulid.Timestamp(time.Now()), ulid.Monotonic(rand.New(rand.NewSource(0)), 0))
+	var rcvAgentInstanceUid atomic.Value
+	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+		rcvAgentInstanceUid.Store(msg.InstanceUid)
+		return &protobufs.ServerToAgent{
+			InstanceUid: msg.InstanceUid,
+			AgentIdentification: &protobufs.AgentIdentification{
+				NewInstanceUid: newInstanceUid.String(),
+			},
+		}
+	}
+
+	// Start a client.
+	settings := StartSettings{}
+	settings.OpAMPServerURL = "ws://" + srv.Endpoint
+	settings.AgentDescription = &protobufs.AgentDescription{}
+	settings.Callbacks = types.CallbacksStruct{
+		OnAgentIdentificationFunc: func(
+			ctx context.Context,
+			agentId *protobufs.AgentIdentification,
+		) error {
+			return nil
+		},
+	}
+	client := prepareClient(settings)
+
+	oldInstanceUid := settings.InstanceUid
+	assert.NoError(t, client.Start(settings))
+
+	// First, server gets the original instanceId
+	eventually(t, func() bool {
+		instanceUid, ok := rcvAgentInstanceUid.Load().(string)
+		if !ok {
+			return false
+		}
+		return instanceUid == oldInstanceUid
+	})
+
+	// Send a dummy message
+	client.SetAgentDescription(&protobufs.AgentDescription{})
+
+	// When it was sent, the new instance uid should have been used, which should
+	// have been observed by the server
+	eventually(t, func() bool {
+		instanceUid, ok := rcvAgentInstanceUid.Load().(string)
+		if !ok {
+			return false
+		}
+		return instanceUid == newInstanceUid.String()
+	})
+
+	// Shutdown the server.
+	srv.Close()
+
+	// Shutdown the client.
+	err := client.Stop(context.Background())
+	assert.NoError(t, err)
+}
+
 func TestConnectionSettings(t *testing.T) {
 	hash := []byte{1, 2, 3}
 	opampSettings := &protobufs.ConnectionSettings{DestinationEndpoint: "http://opamp.com"}

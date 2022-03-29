@@ -129,6 +129,11 @@ type Callbacks interface {
 	// syncer can be used to initiate syncing the package from the server.
 	OnAgentPackageAvailable(addons *protobufs.AgentPackageAvailable, syncer AgentPackageSyncer) error
 
+	// OnAgentIdentification is called when the server requests changing identification of the agent.
+	// Agent should be updated with new id and use it for all further communication.
+	// If Agent does not support the identification override from the server, the function should return an error.
+	OnAgentIdentification(ctx context.Context, agentId *protobufs.AgentIdentification) error
+
 	// OnCommand is called when the server requests that the connected agent perform a command.
 	OnCommand(command *protobufs.ServerToAgentCommand) error
 
@@ -169,6 +174,7 @@ type CallbacksStruct struct {
 
 	OnAddonsAvailableFunc       func(ctx context.Context, addons *protobufs.AddonsAvailable, syncer AddonSyncer) error
 	OnAgentPackageAvailableFunc func(addons *protobufs.AgentPackageAvailable, syncer AgentPackageSyncer) error
+	OnAgentIdentificationFunc   func(ctx context.Context, agentId *protobufs.AgentIdentification) error
 
 	OnCommandFunc func(command *protobufs.ServerToAgentCommand) error
 }
@@ -260,6 +266,16 @@ func (c CallbacksStruct) OnAgentPackageAvailable(
 func (c CallbacksStruct) OnCommand(command *protobufs.ServerToAgentCommand) error {
 	if c.OnCommandFunc != nil {
 		return c.OnCommandFunc(command)
+	}
+	return nil
+}
+
+func (c CallbacksStruct) OnAgentIdentification(
+	ctx context.Context,
+	agentId *protobufs.AgentIdentification,
+) error {
+	if c.OnAgentIdentificationFunc != nil {
+		return c.OnAgentIdentificationFunc(ctx, agentId)
 	}
 	return nil
 }

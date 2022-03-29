@@ -2,7 +2,9 @@ package internal
 
 import (
 	"context"
+	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -13,7 +15,7 @@ import (
 
 // Sender implements the client's sending portion of OpAMP protocol.
 type Sender struct {
-	instanceUid string
+	instanceUid atomic.Value
 	conn        *websocket.Conn
 
 	logger types.Logger
@@ -43,7 +45,7 @@ func NewSender(logger types.Logger) *Sender {
 // earlier. To stop the Sender cancel the ctx.
 func (s *Sender) Start(ctx context.Context, instanceUid string, conn *websocket.Conn) error {
 	s.conn = conn
-	s.instanceUid = instanceUid
+	s.instanceUid.Store(instanceUid)
 	err := s.sendNextMessage()
 
 	// Run the sender in the background.
@@ -51,6 +53,16 @@ func (s *Sender) Start(ctx context.Context, instanceUid string, conn *websocket.
 	go s.run(ctx)
 
 	return err
+}
+
+// SetInstanceUid sets a new instanceUid without closing and reopening the connection. It will be used
+// when next message is being sent.
+func (s *Sender) SetInstanceUid(instanceUid string) error {
+	if instanceUid == "" {
+		return fmt.Errorf("cannot set instance uid to empty value")
+	}
+	s.instanceUid.Store(instanceUid)
+	return nil
 }
 
 // WaitToStop blocks until the sender is stopped. To stop the sender cancel the context
@@ -125,7 +137,7 @@ func (s *Sender) sendNextMessage() error {
 	if msgToSend != nil && !proto.Equal(msgToSend, &protobufs.AgentToServer{}) {
 		// There is a pending message and the message has some fields populated.
 		// Set the InstanceUid field and send it.
-		msgToSend.InstanceUid = s.instanceUid
+		msgToSend.InstanceUid = s.instanceUid.Load().(string)
 		return s.sendMessage(msgToSend)
 	}
 	return nil
