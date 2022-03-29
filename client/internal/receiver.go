@@ -188,7 +188,7 @@ func (r *Receiver) rcvAgentIdentification(ctx context.Context, agentId *protobuf
 
 	err := r.callbacks.OnAgentIdentification(ctx, agentId)
 	if err != nil {
-		r.logger.Errorf("Error while retrieving agent identification: %v", err)
+		r.logger.Errorf("Error while updating agent identification: %v", err)
 		return
 	}
 
