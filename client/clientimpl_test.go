@@ -454,7 +454,7 @@ func TestAgentIdentification(t *testing.T) {
 	settings := StartSettings{}
 	settings.OpAMPServerURL = "ws://" + srv.Endpoint
 	settings.AgentDescription = &protobufs.AgentDescription{}
-	settings.Callbacks = CallbacksStruct{
+	settings.Callbacks = types.CallbacksStruct{
 		OnAgentIdentificationFunc: func(
 			ctx context.Context,
 			agentId *protobufs.AgentIdentification,
