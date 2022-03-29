@@ -67,7 +67,7 @@ func TestConnectNoServer(t *testing.T) {
 func TestOnConnectFail(t *testing.T) {
 	var connectErr atomic.Value
 	settings := createNoServerSettings()
-	settings.Callbacks = CallbacksStruct{
+	settings.Callbacks = types.CallbacksStruct{
 		OnConnectFailedFunc: func(err error) {
 			connectErr.Store(err)
 		},
@@ -117,7 +117,7 @@ func TestConnectWithServer(t *testing.T) {
 	// Start a client.
 	var connected int64
 	settings := StartSettings{
-		Callbacks: CallbacksStruct{
+		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func() {
 				atomic.StoreInt64(&connected, 1)
 			},
@@ -154,7 +154,7 @@ func TestConnectWithServer503(t *testing.T) {
 	var clientConnected int64
 	var connectErr atomic.Value
 	settings := StartSettings{
-		Callbacks: CallbacksStruct{
+		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func() {
 				atomic.StoreInt64(&clientConnected, 1)
 				assert.Fail(t, "Client should not be able to connect")
@@ -217,7 +217,7 @@ func TestDisconnectByServer(t *testing.T) {
 	var connected int64
 	var connectErr atomic.Value
 	settings := StartSettings{
-		Callbacks: CallbacksStruct{
+		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func() {
 				atomic.StoreInt64(&connected, 1)
 			},
@@ -266,7 +266,7 @@ func TestFirstStatusReport(t *testing.T) {
 	// Start a client.
 	var connected, remoteConfigReceived int64
 	settings := StartSettings{
-		Callbacks: CallbacksStruct{
+		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func() {
 				atomic.AddInt64(&connected, 1)
 			},
@@ -472,7 +472,7 @@ func TestConnectionSettings(t *testing.T) {
 
 	// Start a client.
 	settings := StartSettings{
-		Callbacks: CallbacksStruct{
+		Callbacks: types.CallbacksStruct{
 			OnOpampConnectionSettingsFunc: func(
 				ctx context.Context, settings *protobufs.ConnectionSettings,
 			) error {
