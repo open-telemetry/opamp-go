@@ -91,7 +91,14 @@ func (r *Receiver) rcvRemoteConfig(
 ) (reportStatus bool) {
 	effective, changed, err := r.callbacks.OnRemoteConfig(ctx, config)
 	if err != nil {
-		return false
+		// Return a status message with status failed.
+		r.sender.UpdateNextStatus(func(statusReport *protobufs.StatusReport) {
+			statusReport.RemoteConfigStatus = &protobufs.RemoteConfigStatus{
+				Status:       protobufs.RemoteConfigStatus_Failed,
+				ErrorMessage: err.Error(),
+			}
+		})
+		return true
 	}
 
 	// Report the effective configuration if it changed or if the Server explicitly
