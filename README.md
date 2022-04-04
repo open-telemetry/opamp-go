@@ -19,8 +19,8 @@
 
 ---
 
-Open Agent Management Protocol (OpAMP) is a network protocol for remote
-management of large fleets of data collection Agents.
+[Open Agent Management Protocol (OpAMP)](https://github.com/open-telemetry/opamp-spec)
+is a network protocol for remote management of large fleets of data collection Agents.
 
 OpAMP allows Agents to report their status to and receive configuration from a
 Server and to receive addons and agent installation package updates from the
