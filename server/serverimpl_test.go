@@ -89,8 +89,8 @@ func TestServerStartAcceptConnection(t *testing.T) {
 			return types.ConnectionResponse{Accept: true}
 		},
 		OnConnectedFunc: func(conn types.Connection) {
-			atomic.StoreInt32(&connectedCalled, 1)
 			srvConn = conn
+			atomic.StoreInt32(&connectedCalled, 1)
 		},
 		OnConnectionCloseFunc: func(conn types.Connection) {
 			atomic.StoreInt32(&connectionCloseCalled, 1)
@@ -113,6 +113,9 @@ func TestServerStartAcceptConnection(t *testing.T) {
 	assert.EqualValues(t, 101, resp.StatusCode)
 	eventually(t, func() bool { return atomic.LoadInt32(&connectedCalled) == 1 })
 	assert.True(t, atomic.LoadInt32(&connectionCloseCalled) == 0)
+
+	// Verify that the RemoteAddr is correct.
+	require.Equal(t, conn.LocalAddr().String(), srvConn.RemoteAddr().String())
 
 	// Close the connection from client side.
 	conn.Close()

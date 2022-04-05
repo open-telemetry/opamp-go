@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"net"
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -15,6 +16,10 @@ type connection struct {
 }
 
 var _ types.Connection = (*connection)(nil)
+
+func (c connection) RemoteAddr() net.Addr {
+	return c.wsConn.RemoteAddr()
+}
 
 func (c connection) Send(ctx context.Context, message *protobufs.ServerToAgent) error {
 	bytes, err := proto.Marshal(message)

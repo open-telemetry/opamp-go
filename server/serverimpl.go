@@ -151,7 +151,7 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Return from this func to reduce memory usage.
-	// Handle the connection on a separate gorountine.
+	// Handle the connection on a separate goroutine.
 	go s.handleWSConnection(conn)
 }
 
