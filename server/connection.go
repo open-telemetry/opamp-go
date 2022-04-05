@@ -18,7 +18,7 @@ type connection struct {
 var _ types.Connection = (*connection)(nil)
 
 func (c connection) RemoteAddr() net.Addr {
-	return c.RemoteAddr()
+	return c.wsConn.RemoteAddr()
 }
 
 func (c connection) Send(ctx context.Context, message *protobufs.ServerToAgent) error {
