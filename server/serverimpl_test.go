@@ -89,8 +89,8 @@ func TestServerStartAcceptConnection(t *testing.T) {
 			return types.ConnectionResponse{Accept: true}
 		},
 		OnConnectedFunc: func(conn types.Connection) {
-			atomic.StoreInt32(&connectedCalled, 1)
 			srvConn = conn
+			atomic.StoreInt32(&connectedCalled, 1)
 		},
 		OnConnectionCloseFunc: func(conn types.Connection) {
 			atomic.StoreInt32(&connectionCloseCalled, 1)
