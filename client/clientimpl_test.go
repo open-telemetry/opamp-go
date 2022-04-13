@@ -302,6 +302,54 @@ func TestFirstStatusReport(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestIncludesDetailsOnReconnect(t *testing.T) {
+	srv := internal.StartMockServer(t)
+
+	var receivedDetails int64
+	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+		// Track when we receive AgentDescription
+		if msg.StatusReport.AgentDescription != nil {
+			atomic.AddInt64(&receivedDetails, 1)
+		}
+
+		return &protobufs.ServerToAgent{
+			InstanceUid: msg.InstanceUid,
+		}
+	}
+
+	var connected int64
+	settings := StartSettings{
+		Callbacks: types.CallbacksStruct{
+			OnConnectFunc: func() {
+				atomic.AddInt64(&connected, 1)
+			},
+			OnRemoteConfigFunc: func(
+				ctx context.Context,
+				config *protobufs.AgentRemoteConfig,
+			) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {
+				return &protobufs.EffectiveConfig{}, false, nil
+			},
+		},
+		AgentDescription: &protobufs.AgentDescription{},
+	}
+
+	settings.OpAMPServerURL = "ws://" + srv.Endpoint
+	client := startClient(t, settings)
+
+	eventually(t, func() bool { return atomic.LoadInt64(&connected) == 1 })
+	eventually(t, func() bool { return atomic.LoadInt64(&receivedDetails) == 1 })
+
+	// close the agent connection. expect it to reconnect and send details again.
+	err := client.conn.Close()
+	assert.NoError(t, err)
+
+	eventually(t, func() bool { return atomic.LoadInt64(&connected) == 2 })
+	eventually(t, func() bool { return atomic.LoadInt64(&receivedDetails) == 2 })
+
+	err = client.Stop(context.Background())
+	assert.NoError(t, err)
+}
+
 func TestSetEffectiveConfig(t *testing.T) {
 	// Start a server.
 	srv := internal.StartMockServer(t)
