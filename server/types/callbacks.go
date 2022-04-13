@@ -29,16 +29,17 @@ type Callbacks interface {
 	//   HTTPResponseHeader may be optionally set (e.g. "Retry-After: 30").
 	OnConnecting(request *http.Request) ConnectionResponse
 
-	// OnConnected is called when the WebSocket connection is successfully established
-	// after OnConnecting() returns and the HTTP connection is upgraded to WebSocket.
+	// OnConnected is called when and incoming OpAMP connection is successfully
+	// established after OnConnecting() returns.
 	OnConnected(conn Connection)
 
 	// OnMessage is called when a message is received from the connection. Can happen
-	// only after OnConnected().
-	OnMessage(conn Connection, message *protobufs.AgentToServer)
+	// only after OnConnected(). Must return a ServerToAgent message that will be sent
+	// as a response to the agent.
+	// For plain HTTP requests once OnMessage returns and the response is sent
+	// to the agent the OnConnectionClose message will be called immediately.
+	OnMessage(conn Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent
 
-	// OnConnectionClose is called when the WebSocket connection is closed.
-	// Typically, preceded by OnDisconnect() unless the client misbehaves or the
-	// connection is lost.
+	// OnConnectionClose is called when the OpAMP connection is closed.
 	OnConnectionClose(conn Connection)
 }

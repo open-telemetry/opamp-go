@@ -10,7 +10,7 @@ import (
 type CallbacksStruct struct {
 	OnConnectingFunc      func(request *http.Request) types.ConnectionResponse
 	OnConnectedFunc       func(conn types.Connection)
-	OnMessageFunc         func(conn types.Connection, message *protobufs.AgentToServer)
+	OnMessageFunc         func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent
 	OnConnectionCloseFunc func(conn types.Connection)
 }
 
@@ -29,9 +29,14 @@ func (c CallbacksStruct) OnConnected(conn types.Connection) {
 	}
 }
 
-func (c CallbacksStruct) OnMessage(conn types.Connection, message *protobufs.AgentToServer) {
+func (c CallbacksStruct) OnMessage(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 	if c.OnMessageFunc != nil {
-		c.OnMessageFunc(conn, message)
+		return c.OnMessageFunc(conn, message)
+	} else {
+		// We will send an empty response since there is no user-defined callback to handle it.
+		return &protobufs.ServerToAgent{
+			InstanceUid: message.InstanceUid,
+		}
 	}
 }
 

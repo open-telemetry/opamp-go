@@ -53,7 +53,7 @@ func (srv *Server) onDisconnect(conn types.Connection) {
 	srv.agents.RemoveConnection(conn)
 }
 
-func (srv *Server) onMessage(conn types.Connection, msg *protobufs.AgentToServer) {
+func (srv *Server) onMessage(conn types.Connection, msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 	instanceId := data.InstanceId(msg.InstanceUid)
 
 	agent := srv.agents.FindOrCreateAgent(instanceId, conn)
@@ -69,5 +69,5 @@ func (srv *Server) onMessage(conn types.Connection, msg *protobufs.AgentToServer
 	}
 
 	// Send the response back to the agent.
-	agent.SendToAgent(response)
+	return response
 }
