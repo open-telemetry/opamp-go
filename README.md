@@ -37,6 +37,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 Approvers ([@open-telemetry/opamp-go-approvers](https://github.com/orgs/open-telemetry/teams/opamp-go-approvers)):
 
 - [Alex Boten](https://github.com/codeboten), Lightstep
+- [Andy Keller](https://github.com/andykellr), observIQ
 - [Anthony Mirabella](https://github.com/Aneurysm9), AWS
 - [Przemek Maciolek](https://github.com/pmm-sumo), Sumo Logic
 
