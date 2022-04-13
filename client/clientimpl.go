@@ -152,6 +152,9 @@ func (w *client) SetAgentDescription(descr *protobufs.AgentDescription) error {
 		return errAgentDescriptionMissing
 	}
 
+	// store the agent description to send on reconnect
+	w.settings.AgentDescription = descr
+
 	w.sender.UpdateNextStatus(func(statusReport *protobufs.StatusReport) {
 		statusReport.AgentDescription = descr
 	})
