@@ -106,22 +106,6 @@ func (w *client) Start(settings StartSettings) error {
 		w.requestHeader["Authorization"] = []string{w.settings.AuthorizationHeader}
 	}
 
-	// Prepare the first status report.
-	w.sender.UpdateNextStatus(
-		func(statusReport *protobufs.StatusReport) {
-			statusReport.AgentDescription = w.settings.AgentDescription
-		},
-	)
-
-	w.sender.UpdateNextMessage(
-		func(msg *protobufs.AgentToServer) {
-			if msg.AddonStatuses == nil {
-				msg.AddonStatuses = &protobufs.AgentAddonStatuses{}
-			}
-			msg.AddonStatuses.ServerProvidedAllAddonsHash = w.settings.LastServerProvidedAllAddonsHash
-		},
-	)
-
 	w.startConnectAndRun()
 
 	w.isStarted = true
@@ -324,6 +308,22 @@ func (w *client) runOneCycle(ctx context.Context) {
 
 	// Create a cancellable context for background processors.
 	procCtx, procCancel := context.WithCancel(ctx)
+
+	// Prepare the first status report.
+	w.sender.UpdateNextStatus(
+		func(statusReport *protobufs.StatusReport) {
+			statusReport.AgentDescription = w.settings.AgentDescription
+		},
+	)
+
+	w.sender.UpdateNextMessage(
+		func(msg *protobufs.AgentToServer) {
+			if msg.AddonStatuses == nil {
+				msg.AddonStatuses = &protobufs.AgentAddonStatuses{}
+			}
+			msg.AddonStatuses.ServerProvidedAllAddonsHash = w.settings.LastServerProvidedAllAddonsHash
+		},
+	)
 
 	// Connected successfully. Start the sender. This will also send the first
 	// status report.
