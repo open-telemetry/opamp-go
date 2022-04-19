@@ -71,8 +71,8 @@ func TestServerToAgentCommand(t *testing.T) {
 					return nil
 				},
 			}
-			receiver := NewReceiver(TestLogger{t}, callbacks, nil, nil)
-			receiver.processReceivedMessage(context.Background(), &protobufs.ServerToAgent{
+			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil)
+			receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 				Command: test.command,
 			})
 			assert.Equal(t, test.action, action, test.message)
@@ -94,8 +94,8 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 			return nil, false, nil
 		},
 	}
-	receiver := NewReceiver(TestLogger{t}, callbacks, nil, nil)
-	receiver.processReceivedMessage(context.Background(), &protobufs.ServerToAgent{
+	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil)
+	receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 		Command: &protobufs.ServerToAgentCommand{
 			Type: protobufs.ServerToAgentCommand_Restart,
 		},
@@ -116,14 +116,14 @@ func TestOnRemoteConfigReportsError(t *testing.T) {
 	}
 
 	sender := NewSender(TestLogger{t})
-	receiver := NewReceiver(TestLogger{t}, callbacks, nil, sender)
+	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, sender)
 
-	receiver.processReceivedMessage(context.Background(), &protobufs.ServerToAgent{
+	receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 		RemoteConfig: &protobufs.AgentRemoteConfig{},
 	})
 
-	gotStatus := receiver.sender.nextMessage.StatusReport.RemoteConfigStatus.Status
-	gotMsg := receiver.sender.nextMessage.StatusReport.RemoteConfigStatus.ErrorMessage
+	gotStatus := receiver.sender.NextMessage().nextMessage.StatusReport.RemoteConfigStatus.Status
+	gotMsg := receiver.sender.NextMessage().nextMessage.StatusReport.RemoteConfigStatus.ErrorMessage
 
 	assert.Equal(t, expectStatus, gotStatus)
 	assert.Equal(t, expectMsg, gotMsg)
