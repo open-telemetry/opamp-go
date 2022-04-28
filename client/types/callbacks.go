@@ -118,16 +118,11 @@ type Callbacks interface {
 		certificate *protobufs.ConnectionSettings,
 	) error
 
-	// OnAddonsAvailable is called when the server has addons available which are
+	// OnPackagesAvailable is called when the server has packages available which are
 	// different from what the agent indicated it has via
-	// LastServerProvidedAllAddonsHash.
-	// syncer can be used to initiate syncing the addons from the server.
-	OnAddonsAvailable(ctx context.Context, addons *protobufs.AddonsAvailable, syncer AddonSyncer) error
-
-	// OnAgentPackageAvailable is called when the server has an agent package available
-	// for the agent.
-	// syncer can be used to initiate syncing the package from the server.
-	OnAgentPackageAvailable(addons *protobufs.AgentPackageAvailable, syncer AgentPackageSyncer) error
+	// LastServerProvidedAllPackagesHash.
+	// syncer can be used to initiate syncing the packages from the server.
+	OnPackagesAvailable(ctx context.Context, packages *protobufs.PackagesAvailable, syncer PackagesSyncer) error
 
 	// OnAgentIdentification is called when the server requests changing identification of the agent.
 	// Agent should be updated with new id and use it for all further communication.
@@ -172,9 +167,8 @@ type CallbacksStruct struct {
 		settings *protobufs.ConnectionSettings,
 	) error
 
-	OnAddonsAvailableFunc       func(ctx context.Context, addons *protobufs.AddonsAvailable, syncer AddonSyncer) error
-	OnAgentPackageAvailableFunc func(addons *protobufs.AgentPackageAvailable, syncer AgentPackageSyncer) error
-	OnAgentIdentificationFunc   func(ctx context.Context, agentId *protobufs.AgentIdentification) error
+	OnPackagesAvailableFunc   func(ctx context.Context, packages *protobufs.PackagesAvailable, syncer PackagesSyncer) error
+	OnAgentIdentificationFunc func(ctx context.Context, agentId *protobufs.AgentIdentification) error
 
 	OnCommandFunc func(command *protobufs.ServerToAgentCommand) error
 }
@@ -243,22 +237,13 @@ func (c CallbacksStruct) OnOtherConnectionSettings(
 	return nil
 }
 
-func (c CallbacksStruct) OnAddonsAvailable(
+func (c CallbacksStruct) OnPackagesAvailable(
 	ctx context.Context,
-	addons *protobufs.AddonsAvailable,
-	syncer AddonSyncer,
+	packages *protobufs.PackagesAvailable,
+	syncer PackagesSyncer,
 ) error {
-	if c.OnAddonsAvailableFunc != nil {
-		return c.OnAddonsAvailableFunc(ctx, addons, syncer)
-	}
-	return nil
-}
-
-func (c CallbacksStruct) OnAgentPackageAvailable(
-	addons *protobufs.AgentPackageAvailable, syncer AgentPackageSyncer,
-) error {
-	if c.OnAgentPackageAvailableFunc != nil {
-		return c.OnAgentPackageAvailableFunc(addons, syncer)
+	if c.OnPackagesAvailableFunc != nil {
+		return c.OnPackagesAvailableFunc(ctx, packages, syncer)
 	}
 	return nil
 }

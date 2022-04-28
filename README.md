@@ -23,8 +23,8 @@
 is a network protocol for remote management of large fleets of data collection Agents.
 
 OpAMP allows Agents to report their status to and receive configuration from a
-Server and to receive addons and agent installation package updates from the
-server. The protocol is vendor-agnostic, so the Server can remotely monitor and
+Server and to receive agent package updates from the server.
+The protocol is vendor-agnostic, so the Server can remotely monitor and
 manage a fleet of different Agents that implement OpAMP, including a fleet of
 mixed agents from different vendors.
 

@@ -44,7 +44,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 		reportStatus := r.rcvRemoteConfig(ctx, msg.RemoteConfig, msg.Flags)
 
 		r.rcvConnectionSettings(ctx, msg.ConnectionSettings)
-		r.rcvAddonsAvailable(msg.AddonsAvailable)
+		r.rcvPackagesAvailable(msg.PackagesAvailable)
 		r.rcvAgentIdentification(ctx, msg.AgentIdentification)
 
 		if reportStatus {
@@ -154,7 +154,7 @@ func (r *receivedProcessor) processErrorResponse(body *protobufs.ServerErrorResp
 	r.logger.Errorf("received an error from server: %s", body.ErrorMessage)
 }
 
-func (r *receivedProcessor) rcvAddonsAvailable(addons *protobufs.AddonsAvailable) {
+func (r *receivedProcessor) rcvPackagesAvailable(packages *protobufs.PackagesAvailable) {
 	// TODO: implement this.
 }
 
