@@ -34,19 +34,14 @@ message AgentToServer {
     // AgentToServer message for this agent was sent in the stream.
     StatusReport status_report = 2;
 
-    // The list of the agent addons, including addon statuses.
-    // This field SHOULD be unset if this information is unchanged since the last
-    // AgentToServer message for this agent was sent in the stream.
-    AgentAddonStatuses addon_statuses = 3;
-
-    // The status of the installation operation that was previously offered by the server.
-    // This field SHOULD be unset if the installation status is unchanged since the
-    // last AgentToServer message.
-    AgentInstallStatus agent_install_status = 4;
+    // The list of the agent packages, including package statuses. This field SHOULD be
+    // unset if this information is unchanged since the last AgentToServer message for
+    // this agent was sent in the stream.
+    PackageStatuses package_statuses = 3;
 
     // AgentDisconnect MUST be set in the last AgentToServer message sent from the
     // agent to the server.
-    AgentDisconnect agent_disconnect = 5;
+    AgentDisconnect agent_disconnect = 4;
 
     enum AgentToServerFlags {
         FlagsUnspecified = 0;
@@ -57,7 +52,7 @@ message AgentToServer {
         RequestInstanceUid     = 0x00000001;
     }
     // Bit flags as defined by AgentToServerFlags bit masks.
-    AgentToServerFlags flags = 6;
+    AgentToServerFlags flags = 5;
 }
 
 // AgentDisconnect is the last message sent from the agent to the server. The server
@@ -88,12 +83,8 @@ message ServerToAgent {
     // of its client connection settings (destination, headers, certificate, etc).
     ConnectionSettingsOffers connection_settings = 4;
 
-    // addons_available field is set when the server has addons to offer to the agent.
-    AddonsAvailable addons_available = 5;
-
-    // agent_package_available field is set when the server has a different version
-    // of an agent package available for download.
-    AgentPackageAvailable agent_package_available = 6;
+    // This field is set when the Server has packages to offer to the Agent.
+    PackagesAvailable packages_available = 5;
 
     enum Flags {
         FlagsUnspecified = 0;
@@ -104,14 +95,18 @@ message ServerToAgent {
         // particular bit of information in the last status report (which is an allowed
         // optimization) but the server does not have it (e.g. was restarted and lost state).
 
-        // The server asks the agent to report effective config.
+        // The server asks the agent to report effective config. This bit MUST NOT be
+        // set if the Agent indicated it cannot report effective config by setting
+        // the ReportsEffectiveConfig bit to 0 in StatusReport.capabilities field.
         ReportEffectiveConfig = 0x00000001;
 
-        // The server asks the agent to report addon statuses.
-        ReportAddonStatus     = 0x00000002;
+        // The server asks the agent to report package statuses. This bit MUST NOT be
+        // set if the Agent indicated it cannot report package status by setting
+        // the ReportsPackagesStatus bit to 0 in StatusReport.capabilities field.
+        ReportPackagesStatus  = 0x00000002;
     }
     // Bit flags as defined by Flags bit masks.
-    Flags flags = 7;
+    Flags flags = 6;
 
     // Bitmask of flags defined by ServerCapabilities enum.
     // All bits that are not defined in ServerCapabilities enum MUST be set to 0
@@ -121,16 +116,16 @@ message ServerToAgent {
     // This field MUST be set in the first ServerToAgent sent by the Server and MAY
     // be omitted in subsequent ServerToAgent messages by setting it to
     // UnspecifiedServerCapability value.
-    ServerCapabilities capabilities = 8;
+    ServerCapabilities capabilities = 7;
 
     // Properties related to identification of the agent, which can be overridden
     // by the server if needed.
-    AgentIdentification agent_identification = 9;
+    AgentIdentification agent_identification = 8;
 
     // Allows the Server to instruct the agent to perform a command, e.g. RESTART. This field should not be specified
     // with fields other than instance_uid and capabilities. If specified, other fields will be ignored and the command
     // will be performed.
-    ServerToAgentCommand command = 10;
+    ServerToAgentCommand command = 9;
 }
 
 enum ServerCapabilities {
@@ -143,16 +138,12 @@ enum ServerCapabilities {
     OffersRemoteConfig             = 0x00000002;
     // The Server can accept EffectiveConfig in StatusReport.
     AcceptsEffectiveConfig         = 0x00000004;
-    // The Server can offer Addons.
-    OffersAddons                   = 0x00000008;
-    // The Server can accept Addon status.
-    AcceptsAddonsStatus            = 0x00000010;
-    // The Server can offer packages to install.
-    OffersAgentPackage             = 0x00000020;
-    // The Server can accept the installation status of the package.
-    AcceptsAgentPackageStatus      = 0x00000040;
+    // The Server can offer Packages.
+    OffersPackages                 = 0x00000008;
+    // The Server can accept Packages status.
+    AcceptsPackagesStatus          = 0x00000010;
     // The Server can offer connection settings.
-    OffersConnectionSettings       = 0x00000080;
+    OffersConnectionSettings       = 0x00000020;
 
     // Add new capabilities here, continuing with the least significant unused bit.
 }
@@ -325,46 +316,59 @@ message ConnectionSettingsOffers {
     map<string,ConnectionSettings> other_connections = 6;
 }
 
-// List of addons that the server offers to the agent.
-message AddonsAvailable {
-    // Map of addons. Keys are addon names, values are the addons available for download.
-    map<string, AddonAvailable> addons = 1;
+// List of packages that the server offers to the agent.
+message PackagesAvailable {
+    // Map of packages. Keys are package names, values are the packages available for download.
+    map<string, PackageAvailable> packages = 1;
 
-    // Aggregate hash of all remotely installed addons. The agent SHOULD include this
+    // Aggregate hash of all remotely installed packages. The agent SHOULD include this
     // value in subsequent StatusReport messages. This in turn allows the management
-    // server to identify that a different set of addons is available for the agent
-    // and specify the available addons in the next DataToAgent message.
+    // server to identify that a different set of packages is available for the agent
+    // and specify the available packages in the next DataToAgent message.
     //
-    // This field MUST be always set if the management server supports addons
+    // This field MUST be always set if the management server supports packages
     // of agents.
     //
-    // The hash is calculated as an aggregate of all addon names and content.
-    bytes all_addons_hash = 2;
+    // The hash is calculated as an aggregate of all packages names and content.
+    bytes all_packages_hash = 2;
 }
 
-// An Addon is a collection of named files. The content of the files, functionality
-// provided by the addons, how they are stored and used by the Agent side is agent
+// Each Agent is composed of one or more packages. A package has a name and
+// content stored in a file. The content of the files, functionality
+// provided by the packages, how they are stored and used by the Agent side is agent
 // type-specific and is outside the concerns of the OpAMP protocol.
 //
-// If the agent does not have an installed addon with the specified name then
+// If the agent does not have an installed package with the specified name then
 // it SHOULD download it from the specified URL and install it.
 //
-// If the agent already has an installed addon with the specified name
+// If the agent already has an installed package with the specified name
 // but with a different hash then the agent SHOULD download and
-// install the addon again, since it is a different version of the same addon.
+// install the package again, since it is a different version of the same package.
 //
-// If the agent has an installed addon with the specified name and the same
+// If the agent has an installed package with the specified name and the same
 // hash then the agent does not need to do anything, it already
-// has the right version of the addon.
-message AddonAvailable {
-    // The downloadable file of the addon.
-    DownloadableFile file = 1;
+// has the right version of the package.
+message PackageAvailable {
+    // The type of the package, either an addon or a top-level package.
+    enum PackageType {
+        TopLevelPackage = 0;
+        AddonPackage    = 1;
+    }
+    PackageType type = 1;
 
-    // The hash of the addon. SHOULD be calculated based on addon name and
-    // content of the file of the addon.
-    bytes hash = 2;
+    // The package version that is available on the server side. The agent may for
+    // example use this information to avoid downloading a package that was previously
+    // already downloaded and failed to install.
+    string version = 2;
 
-    // TODO: do we need other fields, e.g. addon version or description?
+    // The downloadable file of the package.
+    DownloadableFile file = 3;
+
+    // The hash of the package. SHOULD be calculated based on all other fields of the
+    // PackageAvailable message and content of the file of the package. The hash is
+    // used by the Agent to determine if the package it has is different from the
+    // package the Server is offering.
+    bytes hash = 4;
 }
 
 message DownloadableFile {
@@ -415,21 +419,6 @@ message ServerErrorResponse {
 
 message RetryInfo {
     uint64 retry_after_nanoseconds = 1;
-}
-
-// AgentPackageAvailable message is sent from the server to the agent to indicate that there
-// is an agent package available for the agent to download and self-update. Can be
-// used by the server to initiate an agent upgrade or downgrade.
-message AgentPackageAvailable {
-    // The agent version that is available on the server side. The agent may for
-    // example use this information to avoid downloading a package that was previously
-    // already downloaded and failed to install.
-    string version = 1;
-
-    // The downloadable file of the package.
-    // Executable files SHOULD be code-signed and the signature SHOULD be verified
-    // by the agent after downloading and before installing.
-    DownloadableFile file = 2;
 }
 
 // ServerToAgentCommand is sent from the server to the agent to request that the agent
@@ -524,31 +513,27 @@ enum AgentCapabilities {
     AcceptsRemoteConfig            = 0x00000002;
     // The Agent will report EffectiveConfig in StatusReport.
     ReportsEffectiveConfig         = 0x00000004;
-    // The Agent can accept Addon offers.
-    AcceptsAddons                  = 0x00000008;
-    // The Agent can report Addon status.
-    ReportsAddonsStatus            = 0x00000010;
-    // The Agent can accept packages to install.
-    AcceptsAgentPackage            = 0x00000020;
-    // The Agent can report the installation status of the package.
-    ReportsAgentPackageStatus      = 0x00000040;
-    // The Agent can report own traces to the destination specified by
+    // The Agent can accept package offers.
+    AcceptsPackages                = 0x00000008;
+    // The Agent can report package status.
+    ReportsPackagesStatus          = 0x00000010;
+    // The Agent can report own trace to the destination specified by
     // the Server via ConnectionSettingsOffers.own_traces field.
-    ReportsOwnTraces               = 0x00000080;
+    ReportsOwnTraces               = 0x00000020;
     // The Agent can report own metrics to the destination specified by
     // the Server via ConnectionSettingsOffers.own_metrics field.
-    ReportsOwnMetrics              = 0x00000100;
+    ReportsOwnMetrics              = 0x00000040;
     // The Agent can report own logs to the destination specified by
     // the Server via ConnectionSettingsOffers.own_logs field.
-    ReportsOwnLogs                 = 0x00000200;
-    // The Agent can accept connections settings for OpAMP via
+    ReportsOwnLogs                 = 0x00000080;
+    // The can accept connections settings for OpAMP via
     // ConnectionSettingsOffers.opamp field.
-    AcceptsOpAMPConnectionSettings = 0x00000400;
-    // The Agent can accept connections settings for other destinations via
+    AcceptsOpAMPConnectionSettings = 0x00000100;
+    // The can accept connections settings for other destinations via
     // ConnectionSettingsOffers.other_connections field.
-    AcceptsOtherConnectionSettings = 0x00000800;
+    AcceptsOtherConnectionSettings = 0x00000200;
     // The Agent can accept restart requests.
-    AcceptsRestartCommand          = 0x00001000;
+    AcceptsRestartCommand          = 0x00000400;
 
     // Add new capabilities here, continuing with the least significant unused bit.
 }
@@ -594,106 +579,92 @@ message RemoteConfigStatus {
     string error_message = 3;
 }
 
-// The status of all addons that the agent has or was offered.
-message AgentAddonStatuses {
-    // Map of addons. Keys are addon names, and MUST match the name field of AgentAddonStatus.
-    map<string, AgentAddonStatus> addons = 1;
+// The PackageStatuses message describes the status of all packages that the agent
+// has or was offered.
+message PackageStatuses {
+    // A map of PackageStatus messages, where the keys are package names.
+    // The key MUST match the name field of PackageStatus message.
+    map<string, PackageStatus> packages = 1;
 
-    // The aggregate hash of all addons that this Agent previously received from
-    // the server via AddonsAvailable message.
-    // The server SHOULD compare this hash to the aggregate hash of all addons that
+    // The aggregate hash of all packages that this Agent previously received from the
+    // server via PackagesAvailable message.
+    //
+    // The server SHOULD compare this hash to the aggregate hash of all packages that
     // it has for this Agent and if the hashes are different the server SHOULD send
-    // an AddonsAvailable message to the agent.
-    bytes server_provided_all_addons_hash = 2;
+    // an PackagesAvailable message to the agent.
+    bytes server_provided_all_packages_hash = 2;
 }
 
-// The status of a single addon.
-message AgentAddonStatus {
-    // Addon name. MUST be always set.
+// The status of a single package.
+message PackageStatus {
+    // Package name. MUST be always set and MUST match the key in the packages field
+    // of PackageStatuses message.
     string name = 1;
 
-    // The hash of the addon that the agent has.
-    // MUST be set if the agent has this addon.
-    // MUST be empty if the agent does not have this addon. This may be the case for
-    // example if the addon was offered by server but failed to install and the agent
-    // did not have this addon previously.
-    bytes agent_has_hash = 2;
+    // The version of the package that the Agent has.
+    // MUST be set if the Agent has this package.
+    // MUST be empty if the Agent does not have this package. This may be the case
+    // for example if the package was offered by the Server but failed to install
+    // and the agent did not have this package previously.
+    string agent_has_version = 2;
 
-    // The hash of the addon that the server offered to the agent.
-    // MUST be set if the installation is initiated by an
-    // earlier offer from the server to install this addon.
+    // The hash of the package that the Agent has.
+    // MUST be set if the Agent has this package.
+    // MUST be empty if the Agent does not have this package. This may be the case for
+    // example if the package was offered by the Server but failed to install and the
+    // agent did not have this package previously.
+    bytes agent_has_hash = 3;
+
+    // The version of the package that the server offered to the agent.
+    // MUST be set if the installation of the package is initiated by an earlier offer
+    // from the server to install this package.
     //
-    // MUST be empty if the Agent has this addon but it was installed locally and
+    // MUST be empty if the Agent has this package but it was installed locally and
     // was not offered by the server.
     //
-    // Note that it is possible for both has_hash and
-    // server_offered_hash fields to be set and to have different values.
-    // This is for example possible if the agent already has a version of the addon
-    // successfully installed, the server offers a different version, but the agent
-    // fails to install that version.
-    bytes server_offered_hash = 3;
+    // Note that it is possible for both agent_has_version and server_offered_version
+    // fields to be set and to have different values. This is for example possible if
+    // the agent already has a version of the package successfully installed, the server
+    // offers a different version, but the agent fails to install that version.
+    string server_offered_version = 4;
 
+    // The hash of the package that the server offered to the agent.
+    // MUST be set if the installation of the package is initiated by an earlier
+    // offer from the server to install this package.
+    //
+    // MUST be empty if the Agent has this package but it was installed locally and
+    // was not offered by the server.
+    //
+    // Note that it is possible for both agent_has_hash and server_offered_hash
+    // fields to be set and to have different values. This is for example possible if
+    // the agent already has a version of the package successfully installed, the
+    // server offers a different version, but the agent fails to install that version.
+    bytes server_offered_hash = 5;
+
+    // The status of this package.
     enum Status {
-        // Addon is successfully installed by the Agent. error_message MUST NOT be set.
+        // Package is successfully installed by the Agent.
+        // The error_message field MUST NOT be set.
         Installed = 0;
 
-        // Installation of this addon has not yet started.
+        // Installation of this package has not yet started.
         InstallPending = 1;
 
-        // Agent is currently downloading and installing the addon.
-        // server_offered_hash MUST be set to indicate the version
-        // that the agent is installing. error_message MUST NOT be set.
+        // Agent is currently downloading and installing the package.
+        // server_offered_hash field MUST be set to indicate the version that the
+        // agent is installing. The error_message field MUST NOT be set.
         Installing = 2;
 
-        // Agent tried to install the addon but installation failed.
-        // server_offered_hash MUST be set to indicate the version
-        // that the agent tried to install. error_message may also contain more
-        // details about the failure.
+        // Agent tried to install the package but installation failed.
+        // server_offered_hash field MUST be set to indicate the version that the agent
+        // tried to install. The error_message may also contain more details about
+        // the failure.
         InstallFailed = 3;
     }
-    Status status = 4;
+    Status status = 6;
 
     // Error message if the status is erroneous.
-    string error_message = 5;
-}
-
-// The status of the last install status performed by the agent.
-message AgentInstallStatus {
-    // The version field from the AgentPackageAvailable that the server offered
-    // to the agent. MUST be set if the agent previously received an offer from
-    // the server to install this agent.
-    string server_offered_version = 1;
-
-    // The hash of the DownloadableFileList of agent package that the server
-    // offered to the agent.
-    bytes server_offered_hash = 2;
-
-    enum Status {
-        // Agent package was successfully installed. error_message MUST NOT be set.
-        Installed = 0;
-
-        // Agent is currently downloading and installing the package.
-        // server_offered_hash MUST be set to indicate the version
-        // that the agent is installing. error_message MUST NOT be set.
-        Installing = 1;
-
-        // Agent tried to install the package but installation failed.
-        // server_offered_hash MUST be set to indicate the package
-        // that the agent tried to install. error_message may also contain more
-        // details about the failure.
-        InstallFailed = 2;
-
-        // Agent did not install the package because it is not permitted to.
-        // This may be for example the case when operating system permissions
-        // prevent the agent from self-updating or when self-updating is disabled
-        // by the user. error_message may also contain more details about
-        // what exactly is not permitted.
-        InstallNoPermission = 3;
-    }
-    Status status = 3;
-
-    // Optional human readable error message if the status is erroneous.
-    string error_message = 4;
+    string error_message = 7;
 }
 
 // Properties related to identification of the agent, which can be overridden

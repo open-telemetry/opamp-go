@@ -92,10 +92,10 @@ func (w *httpClient) Start(settings StartSettings) error {
 				msg.StatusReport = &protobufs.StatusReport{}
 			}
 			msg.StatusReport.AgentDescription = w.settings.AgentDescription
-			if msg.AddonStatuses == nil {
-				msg.AddonStatuses = &protobufs.AgentAddonStatuses{}
+			if msg.PackageStatuses == nil {
+				msg.PackageStatuses = &protobufs.PackageStatuses{}
 			}
-			msg.AddonStatuses.ServerProvidedAllAddonsHash = w.settings.LastServerProvidedAllAddonsHash
+			msg.PackageStatuses.ServerProvidedAllPackagesHash = w.settings.LastServerProvidedAllPackagesHash
 		},
 	)
 	w.looper.ScheduleSend()

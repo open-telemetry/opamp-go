@@ -292,10 +292,10 @@ func (w *wsClient) runOneCycle(ctx context.Context) {
 
 	w.sender.NextMessage().Update(
 		func(msg *protobufs.AgentToServer) {
-			if msg.AddonStatuses == nil {
-				msg.AddonStatuses = &protobufs.AgentAddonStatuses{}
+			if msg.PackageStatuses == nil {
+				msg.PackageStatuses = &protobufs.PackageStatuses{}
 			}
-			msg.AddonStatuses.ServerProvidedAllAddonsHash = w.settings.LastServerProvidedAllAddonsHash
+			msg.PackageStatuses.ServerProvidedAllPackagesHash = w.settings.LastServerProvidedAllPackagesHash
 		},
 	)
 

@@ -45,9 +45,9 @@ type StartSettings struct {
 
 	LastConnectionSettingsHash []byte
 
-	// The hash of the last locally-saved server-provided addons. If nil is passed
-	// it will force the server to send addons list back.
-	LastServerProvidedAllAddonsHash []byte
+	// The hash of the last locally-saved server-provided packages. If nil is passed
+	// it will force the server to send packages list back.
+	LastServerProvidedAllPackagesHash []byte
 }
 
 type OpAMPClient interface {
