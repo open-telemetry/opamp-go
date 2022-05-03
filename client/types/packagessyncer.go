@@ -42,8 +42,8 @@ type PackagesStateProvider interface {
 	UpdateContent(ctx context.Context, packageName string, data io.Reader, contentHash []byte) error
 
 	// SetPackageHash must remember the hash for the specified package. Must be returned
-	// later when PackageHash is called. SetPackageHash is called after all UpsertFile
-	// and DeleteFile calls complete successfully.
+	// later when PackageHash is called. SetPackageHash is called after UpdateContent
+	// call completes successfully.
 	SetPackageHash(packageName string, hash []byte) error
 
 	// DeletePackage deletes the package from the agent's local storage.

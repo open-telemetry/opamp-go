@@ -603,23 +603,43 @@ message PackageStatus {
 
     // The version of the package that the Agent has.
     // MUST be set if the Agent has this package.
+    // MUST be empty if the Agent does not have this package. This may be the case
+    // for example if the package was offered by the Server but failed to install
+    // and the agent did not have this package previously.
+    string agent_has_version = 2;
+
+    // The hash of the package that the Agent has.
+    // MUST be set if the Agent has this package.
     // MUST be empty if the Agent does not have this package. This may be the case for
     // example if the package was offered by the Server but failed to install and the
     // agent did not have this package previously.
-    bytes agent_has_hash = 2;
+    bytes agent_has_hash = 3;
 
     // The version of the package that the server offered to the agent.
-    // MUST be set if the installation of the package is initiated by an earlier
-    // offer from the server to install this package.
+    // MUST be set if the installation of the package is initiated by an earlier offer
+    // from the server to install this package.
     //
     // MUST be empty if the Agent has this package but it was installed locally and
     // was not offered by the server.
     //
     // Note that it is possible for both agent_has_version and server_offered_version
     // fields to be set and to have different values. This is for example possible if
+    // the agent already has a version of the package successfully installed, the server
+    // offers a different version, but the agent fails to install that version.
+    string server_offered_version = 4;
+
+    // The hash of the package that the server offered to the agent.
+    // MUST be set if the installation of the package is initiated by an earlier
+    // offer from the server to install this package.
+    //
+    // MUST be empty if the Agent has this package but it was installed locally and
+    // was not offered by the server.
+    //
+    // Note that it is possible for both agent_has_hash and server_offered_hash
+    // fields to be set and to have different values. This is for example possible if
     // the agent already has a version of the package successfully installed, the
     // server offers a different version, but the agent fails to install that version.
-    bytes server_offered_hash = 3;
+    bytes server_offered_hash = 5;
 
     // The status of this package.
     enum Status {
@@ -641,10 +661,10 @@ message PackageStatus {
         // the failure.
         InstallFailed = 3;
     }
-    Status status = 4;
+    Status status = 6;
 
     // Error message if the status is erroneous.
-    string error_message = 5;
+    string error_message = 7;
 }
 
 // Properties related to identification of the agent, which can be overridden
