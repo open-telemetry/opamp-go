@@ -40,19 +40,23 @@ type HTTPLooper struct {
 	hasPendingMessage chan struct{}
 
 	// The next message to send.
-	nextMessage nextMessage
+	nextMessage NextMessage
 
 	// Processor to handle received messages.
 	receiveProcessor receivedProcessor
+
+	// Client state storage. This is needed if the Server asks to report the state.
+	clientSyncedState *ClientSyncedState
 }
 
-func NewHTTPLooper(logger types.Logger) *HTTPLooper {
+func NewHTTPLooper(logger types.Logger, clientSyncedState *ClientSyncedState) *HTTPLooper {
 	h := &HTTPLooper{
 		logger:            logger,
 		client:            http.DefaultClient,
 		hasPendingMessage: make(chan struct{}, 1),
 		requestHeader:     http.Header{},
 		pollingIntervalMs: defaultPollingIntervalMs,
+		clientSyncedState: clientSyncedState,
 	}
 	h.requestHeader.Set(headerContentType, contentTypeProtobuf)
 	return h
@@ -62,16 +66,12 @@ func NewHTTPLooper(logger types.Logger) *HTTPLooper {
 // When there are no more messages to send Run will suspend until either there is
 // a new message to send or the polling interval elapses.
 // Should not be called concurrently with itself. Can be called concurrently with
-// modifying nextMessage().
+// modifying NextMessage().
 // Run continues until ctx is cancelled.
 func (h *HTTPLooper) Run(ctx context.Context, url string, callbacks types.Callbacks) {
 	h.url = url
 	h.callbacks = callbacks
-	h.receiveProcessor = receivedProcessor{
-		callbacks: callbacks,
-		logger:    h.logger,
-		sender:    h,
-	}
+	h.receiveProcessor = newReceivedProcessor(h.logger, callbacks, h, h.clientSyncedState)
 
 	for {
 		pollingTimer := time.NewTimer(time.Millisecond * time.Duration(atomic.LoadInt64(&h.pollingIntervalMs)))
@@ -95,8 +95,8 @@ func (h *HTTPLooper) Run(ctx context.Context, url string, callbacks types.Callba
 	}
 }
 
-// ScheduleSend signals to HTTPLooper that the message in nextMessage struct
-// is now ready to be sent. If there is no pending message (e.g. the nextMessage was
+// ScheduleSend signals to HTTPLooper that the message in NextMessage struct
+// is now ready to be sent. If there is no pending message (e.g. the NextMessage was
 // already sent and "pending" flag is reset) then no message will be sent.
 func (h *HTTPLooper) ScheduleSend() {
 	// Set pending flag. Don't block on writing to channel.
@@ -124,9 +124,9 @@ func (h *HTTPLooper) SetRequestHeader(key, value string) {
 	h.requestHeader.Set(key, value)
 }
 
-// nextMessage gives access to the next message that will be sent by this looper.
+// NextMessage gives access to the next message that will be sent by this looper.
 // Can be called concurrently with any other method.
-func (h *HTTPLooper) NextMessage() *nextMessage {
+func (h *HTTPLooper) NextMessage() *NextMessage {
 	return &h.nextMessage
 }
 

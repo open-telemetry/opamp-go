@@ -31,7 +31,7 @@ func TestHTTPPolling(t *testing.T) {
 	// Shorten the polling interval to speed up the test.
 	client.looper.SetPollingInterval(time.Millisecond * 10)
 
-	assert.NoError(t, client.Start(settings))
+	assert.NoError(t, client.Start(context.Background(), settings))
 
 	// Verify that status report is delivered.
 	eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) == 1 })

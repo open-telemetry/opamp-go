@@ -71,7 +71,8 @@ func TestServerToAgentCommand(t *testing.T) {
 					return nil
 				},
 			}
-			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil)
+			clientSyncedState := ClientSyncedState{}
+			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState)
 			receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 				Command: test.command,
 			})
@@ -94,7 +95,8 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 			return nil, false, nil
 		},
 	}
-	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil)
+	clientSyncedState := ClientSyncedState{}
+	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState)
 	receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 		Command: &protobufs.ServerToAgentCommand{
 			Type: protobufs.ServerToAgentCommand_Restart,
@@ -116,7 +118,8 @@ func TestOnRemoteConfigReportsError(t *testing.T) {
 	}
 
 	sender := NewSender(TestLogger{t})
-	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, sender)
+	clientSyncedState := ClientSyncedState{}
+	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, sender, &clientSyncedState)
 
 	receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 		RemoteConfig: &protobufs.AgentRemoteConfig{},

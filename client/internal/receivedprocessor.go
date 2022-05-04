@@ -16,18 +16,24 @@ type receivedProcessor struct {
 
 	// A sender to cooperate with when the received message has an impact on
 	// what will be sent later.
-	sender sender
+	sender Sender
+
+	// Client state storage. This is needed if the Server asks to report the state.
+	clientSyncedState *ClientSyncedState
 }
 
-type sender interface {
-	// NextMessage provides access to modify the next message that will be sent.
-	NextMessage() *nextMessage
-
-	// ScheduleSend signals the sender to send a pending next message.
-	ScheduleSend()
-
-	// SetInstanceUid sets a new instanceUid to be used when next message is being sent.
-	SetInstanceUid(instanceUid string) error
+func newReceivedProcessor(
+	logger types.Logger,
+	callbacks types.Callbacks,
+	sender Sender,
+	clientSyncedState *ClientSyncedState,
+) receivedProcessor {
+	return receivedProcessor{
+		logger:            logger,
+		callbacks:         callbacks,
+		sender:            sender,
+		clientSyncedState: clientSyncedState,
+	}
 }
 
 // ProcessReceivedMessage is the entry point into the processing routine. It examines
@@ -41,13 +47,20 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 			return
 		}
 
-		reportStatus := r.rcvRemoteConfig(ctx, msg.RemoteConfig, msg.Flags)
+		scheduled := r.rcvRemoteConfig(ctx, msg.RemoteConfig)
 
 		r.rcvConnectionSettings(ctx, msg.ConnectionSettings)
 		r.rcvPackagesAvailable(msg.PackagesAvailable)
 		r.rcvAgentIdentification(ctx, msg.AgentIdentification)
 
-		if reportStatus {
+		scheduled2, err := r.rcvFlags(ctx, msg.Flags)
+		if err != nil {
+			r.logger.Errorf("cannot processed received flags:%v", err)
+		}
+
+		scheduled = scheduled || scheduled2
+
+		if scheduled {
 			r.sender.ScheduleSend()
 		}
 	}
@@ -58,10 +71,54 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 	}
 }
 
+func (r *receivedProcessor) rcvFlags(
+	ctx context.Context,
+	flags protobufs.ServerToAgent_Flags,
+) (scheduleSend bool, err error) {
+	// If the Server asks to report data we fetch it from the client state storage and
+	// send to the Server.
+
+	if flags&protobufs.ServerToAgent_ReportAgentDescription != 0 {
+		r.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
+			statusReport.AgentDescription = r.clientSyncedState.AgentDescription()
+		})
+		scheduleSend = true
+	}
+
+	if flags&protobufs.ServerToAgent_ReportRemoteConfigStatus != 0 {
+		r.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
+			statusReport.RemoteConfigStatus = r.clientSyncedState.RemoteConfigStatus()
+		})
+		scheduleSend = true
+	}
+
+	if flags&protobufs.ServerToAgent_ReportPackageStatuses != 0 {
+		r.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+			msg.PackageStatuses = r.clientSyncedState.PackageStatuses()
+		})
+		scheduleSend = true
+	}
+
+	// The logic for EffectiveConfig is similar to the previous 3 messages however
+	// the EffectiveConfig is fetched using GetEffectiveConfig instead of
+	// from clientSyncedState. We do this to avoid keeping EffectiveConfig in-memory.
+	if flags&protobufs.ServerToAgent_ReportEffectiveConfig != 0 {
+		cfg, err := r.callbacks.GetEffectiveConfig(ctx)
+		if err != nil {
+			return false, err
+		}
+		r.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
+			statusReport.EffectiveConfig = cfg
+		})
+		scheduleSend = true
+	}
+
+	return scheduleSend, nil
+}
+
 func (r *receivedProcessor) rcvRemoteConfig(
 	ctx context.Context,
 	config *protobufs.AgentRemoteConfig,
-	flags protobufs.ServerToAgent_Flags,
 ) (reportStatus bool) {
 	effective, changed, err := r.callbacks.OnRemoteConfig(ctx, config)
 	if err != nil {
@@ -75,11 +132,8 @@ func (r *receivedProcessor) rcvRemoteConfig(
 		return true
 	}
 
-	// Report the effective configuration if it changed or if the Server explicitly
-	// asked us to report it.
-	reportEffective := changed || (flags&protobufs.ServerToAgent_ReportEffectiveConfig != 0)
-
-	if reportEffective {
+	// Report the effective configuration if it changed.
+	if changed {
 		r.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
 			statusReport.EffectiveConfig = effective
 		})

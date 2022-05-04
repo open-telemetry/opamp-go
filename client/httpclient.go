@@ -35,6 +35,9 @@ type httpClient struct {
 
 	// The looper performs HTTP request/response loop.
 	looper *internal.HTTPLooper
+
+	// Client state storage. This is needed if the Server asks to report the state.
+	clientSyncedState internal.ClientSyncedState
 }
 
 var _ OpAMPClient = (*httpClient)(nil)
@@ -47,17 +50,19 @@ func NewHTTP(logger types.Logger) *httpClient {
 	w := &httpClient{
 		logger:        logger,
 		stoppedSignal: make(chan struct{}, 1),
-		looper:        internal.NewHTTPLooper(logger),
 	}
+	w.looper = internal.NewHTTPLooper(logger, &w.clientSyncedState)
+
 	return w
 }
 
-func (w *httpClient) Start(settings StartSettings) error {
+func (w *httpClient) Start(ctx context.Context, settings StartSettings) error {
 	if w.isStarted {
 		return errAlreadyStarted
 	}
-	if settings.AgentDescription == nil {
-		return errAgentDescriptionMissing
+
+	if err := w.clientSyncedState.SetAgentDescription(settings.AgentDescription); err != nil {
+		return err
 	}
 
 	w.settings = settings
@@ -86,18 +91,11 @@ func (w *httpClient) Start(settings StartSettings) error {
 	}
 
 	// Prepare the first message to send.
-	w.looper.NextMessage().Update(
-		func(msg *protobufs.AgentToServer) {
-			if msg.StatusReport == nil {
-				msg.StatusReport = &protobufs.StatusReport{}
-			}
-			msg.StatusReport.AgentDescription = w.settings.AgentDescription
-			if msg.PackageStatuses == nil {
-				msg.PackageStatuses = &protobufs.PackageStatuses{}
-			}
-			msg.PackageStatuses.ServerProvidedAllPackagesHash = w.settings.LastServerProvidedAllPackagesHash
-		},
-	)
+	err = internal.PrepareFirstMessage(ctx, w.looper.NextMessage(), &w.clientSyncedState, w.settings.Callbacks)
+	if err != nil {
+		return err
+	}
+
 	w.looper.ScheduleSend()
 
 	w.startConnectAndRun()
@@ -129,25 +127,11 @@ func (w *httpClient) Stop(ctx context.Context) error {
 }
 
 func (w *httpClient) SetAgentDescription(descr *protobufs.AgentDescription) error {
-	if descr == nil {
-		return errAgentDescriptionMissing
-	}
-
-	// store the agent description to send on reconnect
-	w.settings.AgentDescription = descr
-	w.looper.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
-		statusReport.AgentDescription = descr
-	})
-	w.looper.ScheduleSend()
-	return nil
+	return internal.SetAgentDescription(w.looper, &w.clientSyncedState, descr)
 }
 
-func (w *httpClient) SetEffectiveConfig(config *protobufs.EffectiveConfig) error {
-	w.looper.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
-		statusReport.EffectiveConfig = config
-	})
-	w.looper.ScheduleSend()
-	return nil
+func (w *httpClient) UpdateEffectiveConfig(ctx context.Context) error {
+	return internal.UpdateEffectiveConfig(ctx, w.looper, w.settings.Callbacks)
 }
 
 func (w *httpClient) isStopping() bool {

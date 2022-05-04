@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	ulid "github.com/oklog/ulid/v2"
-	"github.com/open-telemetry/opamp-go/protobufshelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -22,6 +22,22 @@ import (
 )
 
 const retryAfterHTTPHeader = "Retry-After"
+
+func createAgentDescr() *protobufs.AgentDescription {
+	agentDescr := &protobufs.AgentDescription{
+		IdentifyingAttributes: []*protobufs.KeyValue{
+			{
+				Key:   "host.name",
+				Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "somehost"}},
+			},
+		},
+	}
+	err := CalcHashAgentDescription(agentDescr)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	return agentDescr
+}
 
 func testClients(t *testing.T, f func(client OpAMPClient)) {
 	// Run the test defined by f() for WebSocket and HTTP clients.
@@ -52,7 +68,7 @@ func TestConnectInvalidURL(t *testing.T) {
 			OpAMPServerURL: ":not a url",
 		}
 
-		err := client.Start(settings)
+		err := client.Start(context.Background(), settings)
 		assert.Error(t, err)
 	})
 }
@@ -77,12 +93,12 @@ func prepareClient(t *testing.T, settings *StartSettings, c OpAMPClient) {
 	}
 	settings.OpAMPServerURL = u.String()
 
-	settings.AgentDescription = &protobufs.AgentDescription{}
+	settings.AgentDescription = createAgentDescr()
 }
 
 func startClient(t *testing.T, settings StartSettings, client OpAMPClient) {
 	prepareClient(t, &settings, client)
-	err := client.Start(settings)
+	err := client.Start(context.Background(), settings)
 	assert.NoError(t, err)
 }
 
@@ -126,7 +142,7 @@ func TestStartStarted(t *testing.T) {
 		startClient(t, settings, client)
 
 		// Try to start again.
-		err := client.Start(settings)
+		err := client.Start(context.Background(), settings)
 		assert.Error(t, err)
 
 		err = client.Stop(context.Background())
@@ -221,7 +237,7 @@ func TestConnectWithServer503(t *testing.T) {
 
 		// Shutdown the server.
 		srv.Close()
-		client.Stop(context.Background())
+		_ = client.Stop(context.Background())
 	})
 }
 
@@ -248,7 +264,7 @@ func TestConnectWithHeader(t *testing.T) {
 
 		// Shutdown the server and the client.
 		srv.Close()
-		client.Stop(context.Background())
+		_ = client.Stop(context.Background())
 	})
 }
 
@@ -362,6 +378,18 @@ func TestIncludesDetailsOnReconnect(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func createEffectiveConfig() *protobufs.EffectiveConfig {
+	cfg := &protobufs.EffectiveConfig{
+		ConfigMap: &protobufs.AgentConfigMap{
+			ConfigMap: map[string]*protobufs.AgentConfigFile{
+				"key": {},
+			},
+		},
+	}
+	CalcHashEffectiveConfig(cfg)
+	return cfg
+}
+
 func TestSetEffectiveConfig(t *testing.T) {
 	testClients(t, func(client OpAMPClient) {
 		// Start a server.
@@ -377,24 +405,20 @@ func TestSetEffectiveConfig(t *testing.T) {
 		}
 
 		// Start a client.
-		settings := StartSettings{}
-		settings.OpAMPServerURL = "ws://" + srv.Endpoint
-		prepareClient(t, &settings, client)
-
-		sendConfig := &protobufs.EffectiveConfig{
-			ConfigMap: &protobufs.AgentConfigMap{
-				ConfigMap: map[string]*protobufs.AgentConfigFile{
-					"key": {},
+		sendConfig := createEffectiveConfig()
+		settings := StartSettings{
+			Callbacks: types.CallbacksStruct{
+				GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+					return sendConfig, nil
 				},
 			},
 		}
+		settings.OpAMPServerURL = "ws://" + srv.Endpoint
+		prepareClient(t, &settings, client)
 
-		// Set before start. This should be delivered immediately after Start().
-		client.SetEffectiveConfig(sendConfig)
+		assert.NoError(t, client.Start(context.Background(), settings))
 
-		assert.NoError(t, client.Start(settings))
-
-		// Verify it is delivered.
+		// Verify config is delivered.
 		eventually(
 			t,
 			func() bool {
@@ -403,9 +427,9 @@ func TestSetEffectiveConfig(t *testing.T) {
 			},
 		)
 
-		// Now change again.
+		// Now change the config.
 		sendConfig.ConfigMap.ConfigMap["key2"] = &protobufs.AgentConfigFile{}
-		client.SetEffectiveConfig(sendConfig)
+		_ = client.UpdateEffectiveConfig(context.Background())
 
 		// Verify change is delivered.
 		eventually(
@@ -426,22 +450,7 @@ func TestSetEffectiveConfig(t *testing.T) {
 	})
 }
 
-func isEqualAgentAttrs(sent []*protobufs.KeyValue, received []*protobufs.KeyValue) bool {
-	if len(sent) != len(received) {
-		return false
-	}
-
-	for i, rval := range received {
-		sval := sent[i]
-		if !protobufshelpers.IsEqualKeyValue(rval, sval) {
-			return false
-		}
-	}
-
-	return true
-}
-
-func TestSetAgentAttributes(t *testing.T) {
+func TestSetAgentDescription(t *testing.T) {
 	testClients(t, func(client OpAMPClient) {
 
 		// Start a server.
@@ -462,17 +471,10 @@ func TestSetAgentAttributes(t *testing.T) {
 		}
 		prepareClient(t, &settings, client)
 
-		agentDescr := &protobufs.AgentDescription{
-			IdentifyingAttributes: []*protobufs.KeyValue{
-				{
-					Key:   "host.name",
-					Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "somehost"}},
-				},
-			},
-		}
-		client.SetAgentDescription(agentDescr)
+		clientAgentDescr := createAgentDescr()
+		assert.NoError(t, client.SetAgentDescription(clientAgentDescr))
 
-		assert.NoError(t, client.Start(settings))
+		assert.NoError(t, client.Start(context.Background(), settings))
 
 		// Verify it is delivered.
 		eventually(
@@ -482,21 +484,19 @@ func TestSetAgentAttributes(t *testing.T) {
 				if !ok || agentDescr == nil {
 					return false
 				}
-				return isEqualAgentAttrs(
-					agentDescr.IdentifyingAttributes, agentDescr.IdentifyingAttributes,
-				)
+				return proto.Equal(clientAgentDescr, agentDescr)
 			},
 		)
 
 		// Now change again.
-		agentDescr.NonIdentifyingAttributes = []*protobufs.KeyValue{
+		clientAgentDescr.NonIdentifyingAttributes = []*protobufs.KeyValue{
 			{
 				Key:   "os.name",
 				Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "linux"}},
 			},
 		}
-
-		client.SetAgentDescription(agentDescr)
+		assert.NoError(t, CalcHashAgentDescription(clientAgentDescr))
+		assert.NoError(t, client.SetAgentDescription(clientAgentDescr))
 
 		// Verify change is delivered.
 		eventually(
@@ -506,8 +506,7 @@ func TestSetAgentAttributes(t *testing.T) {
 				if agentDescr == nil {
 					return false
 				}
-				return isEqualAgentAttrs(agentDescr.IdentifyingAttributes, agentDescr.IdentifyingAttributes) &&
-					isEqualAgentAttrs(agentDescr.NonIdentifyingAttributes, agentDescr.NonIdentifyingAttributes)
+				return proto.Equal(clientAgentDescr, agentDescr)
 			},
 		)
 
@@ -517,7 +516,6 @@ func TestSetAgentAttributes(t *testing.T) {
 		// Shutdown the client.
 		err := client.Stop(context.Background())
 		assert.NoError(t, err)
-
 	})
 }
 
@@ -542,7 +540,7 @@ func TestAgentIdentification(t *testing.T) {
 		// Start a client.
 		settings := StartSettings{}
 		settings.OpAMPServerURL = "ws://" + srv.Endpoint
-		settings.AgentDescription = &protobufs.AgentDescription{}
+		settings.AgentDescription = createAgentDescr()
 		settings.Callbacks = types.CallbacksStruct{
 			OnAgentIdentificationFunc: func(
 				ctx context.Context,
@@ -554,7 +552,7 @@ func TestAgentIdentification(t *testing.T) {
 		prepareClient(t, &settings, client)
 
 		oldInstanceUid := settings.InstanceUid
-		assert.NoError(t, client.Start(settings))
+		assert.NoError(t, client.Start(context.Background(), settings))
 
 		// First, server gets the original instanceId
 		eventually(
@@ -569,7 +567,7 @@ func TestAgentIdentification(t *testing.T) {
 		)
 
 		// Send a dummy message
-		client.SetAgentDescription(&protobufs.AgentDescription{})
+		_ = client.SetAgentDescription(createAgentDescr())
 
 		// When it was sent, the new instance uid should have been used, which should
 		// have been observed by the server
@@ -670,12 +668,145 @@ func TestConnectionSettings(t *testing.T) {
 		settings.OpAMPServerURL = "ws://" + srv.Endpoint
 		prepareClient(t, &settings, client)
 
-		assert.NoError(t, client.Start(settings))
+		assert.NoError(t, client.Start(context.Background(), settings))
 
 		eventually(t, func() bool { return atomic.LoadInt64(&gotOpampSettings) == 1 })
 		eventually(t, func() bool { return atomic.LoadInt64(&gotOwnSettings) == 3 })
 		eventually(t, func() bool { return atomic.LoadInt64(&gotOtherSettings) == 1 })
 		eventually(t, func() bool { return atomic.LoadInt64(&rcvStatus) == 1 })
+
+		// Shutdown the server.
+		srv.Close()
+
+		// Shutdown the client.
+		err := client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
+func TestReportAgentDescription(t *testing.T) {
+	testClients(t, func(client OpAMPClient) {
+
+		// Start a server.
+		srv := internal.StartMockServer(t)
+		srv.EnableExpectMode()
+
+		// Start a client.
+		settings := StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+		}
+		prepareClient(t, &settings, client)
+
+		// client --->
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		// ---> server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// The first status report after Start must have full AgentDescription.
+			assert.True(t, proto.Equal(settings.AgentDescription, msg.StatusReport.AgentDescription))
+			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+		})
+
+		// client --->
+		// Trigger a status report.
+		_ = client.UpdateEffectiveConfig(context.Background())
+
+		// ---> server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// The status report must have compressed AgentDescription.
+			descr := msg.StatusReport.AgentDescription
+			assert.Nil(t, descr.IdentifyingAttributes)
+			assert.Nil(t, descr.NonIdentifyingAttributes)
+
+			// The Hash field must be present and unchanged.
+			assert.NotNil(t, descr.Hash)
+			assert.EqualValues(t, settings.AgentDescription.Hash, descr.Hash)
+
+			// Ask client for full AgentDescription.
+			return &protobufs.ServerToAgent{
+				InstanceUid: msg.InstanceUid,
+				Flags:       protobufs.ServerToAgent_ReportAgentDescription,
+			}
+		})
+
+		// Server has requested the client to report, so there will be another message
+		// coming to the Server.
+		// ---> server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// The status report must again have full AgentDescription
+			// because the server asked for it.
+			assert.True(t, proto.Equal(settings.AgentDescription, msg.StatusReport.AgentDescription))
+			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+		})
+
+		// Shutdown the server.
+		srv.Close()
+
+		// Shutdown the client.
+		err := client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
+func TestReportEffectiveConfig(t *testing.T) {
+	testClients(t, func(client OpAMPClient) {
+
+		// Start a server.
+		srv := internal.StartMockServer(t)
+		srv.EnableExpectMode()
+
+		clientEffectiveConfig := createEffectiveConfig()
+
+		// Start a client.
+		settings := StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			Callbacks: types.CallbacksStruct{
+				GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+					return clientEffectiveConfig, nil
+				},
+			},
+		}
+		prepareClient(t, &settings, client)
+
+		// client --->
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		// ---> server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// The first status report after Start must have full EffectiveConfig.
+			assert.True(t, proto.Equal(clientEffectiveConfig, msg.StatusReport.EffectiveConfig))
+			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+		})
+
+		// client --->
+		// Trigger another status report for example by setting AgentDescription.
+		_ = client.SetAgentDescription(settings.AgentDescription)
+
+		// ---> server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// The status report must have compressed EffectiveConfig.
+			cfg := msg.StatusReport.EffectiveConfig
+			assert.Nil(t, cfg.ConfigMap)
+
+			// Hash must be present and unchanged.
+			assert.NotNil(t, cfg.Hash)
+			assert.EqualValues(t, clientEffectiveConfig.Hash, cfg.Hash)
+
+			// Ask client for full AgentDescription.
+			return &protobufs.ServerToAgent{
+				InstanceUid: msg.InstanceUid,
+				Flags:       protobufs.ServerToAgent_ReportEffectiveConfig,
+			}
+		})
+
+		// Server has requested the client to report, so there will be another message.
+		// ---> server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// The status report must again have full EffectiveConfig
+			// because server asked for it.
+			assert.True(t, proto.Equal(clientEffectiveConfig, msg.StatusReport.EffectiveConfig))
+			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+		})
 
 		// Shutdown the server.
 		srv.Close()
