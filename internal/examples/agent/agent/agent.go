@@ -83,7 +83,7 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 func (agent *Agent) start() error {
 	agent.opampClient = client.NewWebSocket(agent.logger)
 
-	settings := client.StartSettings{
+	settings := types.StartSettings{
 		OpAMPServerURL:   "ws://127.0.0.1:4320/v1/opamp",
 		InstanceUid:      agent.instanceId.String(),
 		AgentDescription: agent.agentDescription,
@@ -180,7 +180,7 @@ func (agent *Agent) updateAgentIdentity(instanceId ulid.ULID) {
 
 func (agent *Agent) loadLocalConfig() {
 	var k = koanf.New(".")
-	k.Load(rawbytes.Provider([]byte(localConfig)), yaml.Parser())
+	_ = k.Load(rawbytes.Provider([]byte(localConfig)), yaml.Parser())
 
 	effectiveConfigBytes, err := k.Marshal(yaml.Parser())
 	if err != nil {
@@ -353,6 +353,6 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 func (agent *Agent) Shutdown() {
 	agent.logger.Debugf("Agent shutting down...")
 	if agent.opampClient != nil {
-		agent.opampClient.Stop(context.Background())
+		_ = agent.opampClient.Stop(context.Background())
 	}
 }

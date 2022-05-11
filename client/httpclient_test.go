@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/open-telemetry/opamp-go/client/internal"
+	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/stretchr/testify/assert"
 )
@@ -23,13 +24,13 @@ func TestHTTPPolling(t *testing.T) {
 	}
 
 	// Start a client.
-	settings := StartSettings{}
+	settings := types.StartSettings{}
 	settings.OpAMPServerURL = "http://" + srv.Endpoint
 	client := NewHTTP(nil)
 	prepareClient(t, &settings, client)
 
 	// Shorten the polling interval to speed up the test.
-	client.looper.SetPollingInterval(time.Millisecond * 10)
+	client.sender.SetPollingInterval(time.Millisecond * 10)
 
 	assert.NoError(t, client.Start(context.Background(), settings))
 
