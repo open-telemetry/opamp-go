@@ -23,7 +23,7 @@ type WSSender struct {
 	hasMessages chan struct{}
 
 	// The next message to send.
-	nextMessage nextMessage
+	nextMessage NextMessage
 
 	// Indicates that the sender has fully stopped.
 	stopped chan struct{}
@@ -60,7 +60,7 @@ func (s *WSSender) SetInstanceUid(instanceUid string) error {
 	return nil
 }
 
-func (s *WSSender) NextMessage() *nextMessage {
+func (s *WSSender) NextMessage() *NextMessage {
 	return &s.nextMessage
 }
 

@@ -37,12 +37,6 @@ type StartSettings struct {
 	// the server to send a remote config back.
 	LastRemoteConfigHash []byte
 
-	// The last saved effective config. If nil is passed the server will
-	// keep the last reported effective config of this agent from previous
-	// client connection sessions, if any. If there were no previous connection
-	// sessions the effective config at the server will remain unknown.
-	LastEffectiveConfig *protobufs.EffectiveConfig
-
 	LastConnectionSettingsHash []byte
 
 	// The hash of the last locally-saved server-provided packages. If nil is passed
@@ -73,7 +67,7 @@ type OpAMPClient interface {
 	//
 	// Start should be called only once. It should not be called concurrently with
 	// any other OpAMPClient methods.
-	Start(settings StartSettings) error
+	Start(ctx context.Context, settings StartSettings) error
 
 	// Stop the client. May be called only after Start() returns successfully.
 	// May be called only once.
@@ -94,12 +88,7 @@ type OpAMPClient interface {
 	// set StartSettings.AgentDescription field.
 	SetAgentDescription(descr *protobufs.AgentDescription) error
 
-	// SetEffectiveConfig sets the effective config of the Agent. The config will be
-	// included in the next status report sent to the server. The behavior regarding
-	// Start() method is exactly the same as for SetAgentAttributes() method.
-	// Note that this is one of the 3 ways the effective config can be updated on the
-	// server. The other 2 ways are:
-	//   1) via StartSettings before Start()
-	//   2) by returning an effective config in OnRemoteConfig callback.
-	SetEffectiveConfig(config *protobufs.EffectiveConfig) error
+	// UpdateEffectiveConfig fetches the current local effective config using
+	// GetEffectiveConfig callback and sends it to the Server.
+	UpdateEffectiveConfig(ctx context.Context) error
 }

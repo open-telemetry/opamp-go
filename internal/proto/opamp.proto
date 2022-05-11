@@ -95,15 +95,21 @@ message ServerToAgent {
         // particular bit of information in the last status report (which is an allowed
         // optimization) but the server does not have it (e.g. was restarted and lost state).
 
-        // The server asks the agent to report effective config. This bit MUST NOT be
+        // The server asks the agent to report full AgentDescription.
+        ReportAgentDescription   = 0x00000001;
+        // The server asks the agent to report full EffectiveConfig. This bit MUST NOT be
         // set if the Agent indicated it cannot report effective config by setting
         // the ReportsEffectiveConfig bit to 0 in StatusReport.capabilities field.
-        ReportEffectiveConfig = 0x00000001;
+        ReportEffectiveConfig    = 0x00000002;
 
-        // The server asks the agent to report package statuses. This bit MUST NOT be
+        // The server asks the agent to report full RemoteConfigStatus. This bit MUST NOT be
+        // set if the Agent indicated it cannot accept remote config by setting
+        // the AcceptsRemoteConfig bit to 0 in StatusReport.capabilities field.
+        ReportRemoteConfigStatus = 0x00000004;
+        // The server asks the agent to report full PackageStatuses. This bit MUST NOT be
         // set if the Agent indicated it cannot report package status by setting
-        // the ReportsPackagesStatus bit to 0 in StatusReport.capabilities field.
-        ReportPackagesStatus  = 0x00000002;
+        // the ReportsPackageStatuses bit to 0 in StatusReport.capabilities field.
+        ReportPackageStatuses    = 0x00000008;
     }
     // Bit flags as defined by Flags bit masks.
     Flags flags = 6;
@@ -436,6 +442,10 @@ message ServerToAgentCommand {
 // Status reporting
 
 message AgentDescription {
+    // The hash of the content of all other fields (even if the other fields are omitted
+    // for compression).
+    bytes hash = 1;
+
     // Attributes that identify the agent.
     // Keys/values are according to OpenTelemetry semantic conventions, see:
     // https://github.com/open-telemetry/opentelemetry-specification/tree/main/specification/resource/semantic_conventions
@@ -456,7 +466,7 @@ message AgentDescription {
     // telemetry. The combination of identifying attributes SHOULD be sufficient to
     // uniquely identify the Agent's own telemetry in the destination system to which
     // the Agent sends its own telemetry.
-    repeated KeyValue identifying_attributes = 1;
+    repeated KeyValue identifying_attributes = 2;
 
     // Attributes that do not necessarily identify the Agent but help describe
     // where it runs.
@@ -468,7 +478,7 @@ message AgentDescription {
     //   environment it runs in.
     // - any user-defined attributes that the end user would like to associate
     //   with this agent.
-    repeated KeyValue non_identifying_attributes = 2;
+    repeated KeyValue non_identifying_attributes = 3;
 
     // TODO: add ability to specify related entities (such as the Service the Agent is
     // is responsible/associated with).
@@ -516,7 +526,7 @@ enum AgentCapabilities {
     // The Agent can accept package offers.
     AcceptsPackages                = 0x00000008;
     // The Agent can report package status.
-    ReportsPackagesStatus          = 0x00000010;
+    ReportsPackageStatuses         = 0x00000010;
     // The Agent can report own trace to the destination specified by
     // the Server via ConnectionSettingsOffers.own_traces field.
     ReportsOwnTraces               = 0x00000020;
@@ -557,11 +567,15 @@ message EffectiveConfig {
 }
 
 message RemoteConfigStatus {
+    // The hash of the content of all other fields (even if the other fields are omitted
+    // for compression).
+    bytes hash = 1;
+
     // The hash of the remote config that was last received by this agent from the
     // management server. The server SHOULD compare this hash with the config hash it has
     // for the agent and if the hashes are different the server MUST include
     // the remote_config field in the response in the DataForAgent message.
-    bytes last_remote_config_hash = 1;
+    bytes last_remote_config_hash = 2;
 
     enum Status {
         // Remote config was successfully applied by the Agent.
@@ -574,17 +588,21 @@ message RemoteConfigStatus {
         // See error_message for more details.
         Failed = 2;
     }
-    Status status = 2;
+    Status status = 3;
 
-    string error_message = 3;
+    string error_message = 4;
 }
 
 // The PackageStatuses message describes the status of all packages that the agent
 // has or was offered.
 message PackageStatuses {
+    // The hash of the content of all other fields (even if the other fields are omitted
+    // for compression).
+    bytes hash = 1;
+
     // A map of PackageStatus messages, where the keys are package names.
     // The key MUST match the name field of PackageStatus message.
-    map<string, PackageStatus> packages = 1;
+    map<string, PackageStatus> packages = 2;
 
     // The aggregate hash of all packages that this Agent previously received from the
     // server via PackagesAvailable message.
@@ -592,7 +610,7 @@ message PackageStatuses {
     // The server SHOULD compare this hash to the aggregate hash of all packages that
     // it has for this Agent and if the hashes are different the server SHOULD send
     // an PackagesAvailable message to the agent.
-    bytes server_provided_all_packages_hash = 2;
+    bytes server_provided_all_packages_hash = 3;
 }
 
 // The status of a single package.

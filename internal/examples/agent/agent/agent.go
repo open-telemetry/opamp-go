@@ -100,14 +100,16 @@ func (agent *Agent) start() error {
 			OnRemoteConfigFunc:                   agent.onRemoteConfig,
 			OnOwnTelemetryConnectionSettingsFunc: agent.onOwnTelemetryConnectionSettings,
 			OnAgentIdentificationFunc:            agent.onAgentIdentificationFunc,
+			GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+				return agent.composeEffectiveConfig(), nil
+			},
 		},
 		LastRemoteConfigHash: agent.remoteConfigHash,
-		LastEffectiveConfig:  agent.composeEffectiveConfig(),
 	}
 
 	agent.logger.Debugf("Starting OpAMP client...")
 
-	err := agent.opampClient.Start(settings)
+	err := agent.opampClient.Start(context.Background(), settings)
 	if err != nil {
 		return err
 	}
@@ -158,6 +160,9 @@ func (agent *Agent) createAgentIdentity() {
 				},
 			},
 		},
+	}
+	if err := client.CalcHashAgentDescription(agent.agentDescription); err != nil {
+		agent.logger.Errorf("Cannot calculate the hash: %v", err)
 	}
 }
 

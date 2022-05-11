@@ -18,9 +18,8 @@ import (
 )
 
 var (
-	errAlreadyStarted          = errors.New("already started")
-	errCannotStopNotStarted    = errors.New("cannot stop because not started")
-	errAgentDescriptionMissing = errors.New("AgentDescription is not set")
+	errAlreadyStarted       = errors.New("already started")
+	errCannotStopNotStarted = errors.New("cannot stop because not started")
 )
 
 // wsClient is an OpAMP Client implementation for WebSocket transport.
@@ -55,6 +54,9 @@ type wsClient struct {
 
 	// The sender is responsible for sending portion of the OpAMP protocol.
 	sender *internal.WSSender
+
+	// Client state storage. This is needed if the Server asks to report the state.
+	clientSyncedState internal.ClientSyncedState
 }
 
 var _ OpAMPClient = (*wsClient)(nil)
@@ -72,16 +74,20 @@ func NewWebSocket(logger types.Logger) *wsClient {
 	return w
 }
 
-func (w *wsClient) Start(settings StartSettings) error {
+func (w *wsClient) Start(_ context.Context, settings StartSettings) error {
 	if w.isStarted {
 		return errAlreadyStarted
 	}
 
-	if settings.AgentDescription == nil {
-		return errAgentDescriptionMissing
+	if err := w.clientSyncedState.SetAgentDescription(settings.AgentDescription); err != nil {
+		return err
 	}
 
 	w.settings = settings
+	if w.settings.Callbacks == nil {
+		// Make sure it is always safe to call Callbacks.
+		w.settings.Callbacks = types.CallbacksStruct{}
+	}
 
 	var err error
 
@@ -128,7 +134,7 @@ func (w *wsClient) Stop(ctx context.Context) error {
 	w.connMutex.RUnlock()
 
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 	// If we are not connected by this point we may still get connected because
 	// we are racing with tryConnectOnce() func. However, after tryConnectOnce we will
@@ -145,25 +151,11 @@ func (w *wsClient) Stop(ctx context.Context) error {
 }
 
 func (w *wsClient) SetAgentDescription(descr *protobufs.AgentDescription) error {
-	if descr == nil {
-		return errAgentDescriptionMissing
-	}
-
-	// store the agent description to send on reconnect
-	w.settings.AgentDescription = descr
-	w.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
-		statusReport.AgentDescription = descr
-	})
-	w.sender.ScheduleSend()
-	return nil
+	return internal.SetAgentDescription(w.sender, &w.clientSyncedState, descr)
 }
 
-func (w *wsClient) SetEffectiveConfig(config *protobufs.EffectiveConfig) error {
-	w.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
-		statusReport.EffectiveConfig = config
-	})
-	w.sender.ScheduleSend()
-	return nil
+func (w *wsClient) UpdateEffectiveConfig(ctx context.Context) error {
+	return internal.UpdateEffectiveConfig(ctx, w.sender, w.settings.Callbacks)
 }
 
 // Try to connect once. Returns an error if connection fails and optional retryAfter
@@ -257,6 +249,7 @@ func (w *wsClient) startConnectAndRun() {
 
 	if w.isStoppingFlag {
 		// Stop() was called. Don't connect.
+		runCancel()
 		return
 	}
 	w.runCancel = runCancel
@@ -278,38 +271,32 @@ func (w *wsClient) runOneCycle(ctx context.Context) {
 	}
 
 	if w.isStopping() {
-		w.conn.Close()
+		_ = w.conn.Close()
+		return
+	}
+
+	// Prepare the first status report.
+	err := internal.PrepareFirstMessage(ctx, w.sender.NextMessage(), &w.clientSyncedState, w.settings.Callbacks)
+	if err != nil {
+		w.logger.Errorf("cannot prepare the first message:%v", err)
 		return
 	}
 
 	// Create a cancellable context for background processors.
 	procCtx, procCancel := context.WithCancel(ctx)
 
-	// Prepare the first status report.
-	w.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
-		statusReport.AgentDescription = w.settings.AgentDescription
-	})
-
-	w.sender.NextMessage().Update(
-		func(msg *protobufs.AgentToServer) {
-			if msg.PackageStatuses == nil {
-				msg.PackageStatuses = &protobufs.PackageStatuses{}
-			}
-			msg.PackageStatuses.ServerProvidedAllPackagesHash = w.settings.LastServerProvidedAllPackagesHash
-		},
-	)
-
 	// Connected successfully. Start the sender. This will also send the first
 	// status report.
 	if err := w.sender.Start(procCtx, w.settings.InstanceUid, w.conn); err != nil {
 		w.logger.Errorf("Failed to send first status report: %v", err)
 		// We could not send the report, the only thing we can do is start over.
-		w.conn.Close()
+		_ = w.conn.Close()
+		procCancel()
 		return
 	}
 
 	// First status report sent. Now loop to receive and process messages.
-	r := internal.NewWSReceiver(w.logger, w.settings.Callbacks, w.conn, w.sender)
+	r := internal.NewWSReceiver(w.logger, w.settings.Callbacks, w.conn, w.sender, &w.clientSyncedState)
 	r.ReceiverLoop(ctx)
 
 	// Stop the background processors.
@@ -319,7 +306,7 @@ func (w *wsClient) runOneCycle(ctx context.Context) {
 	// read messages anymore. We need to start over.
 
 	// Close the connection to unblock the WSSender as well.
-	w.conn.Close()
+	_ = w.conn.Close()
 
 	// Wait for WSSender to stop.
 	w.sender.WaitToStop()

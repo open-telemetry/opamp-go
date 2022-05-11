@@ -52,6 +52,11 @@ type Callbacks interface {
 		remoteConfig *protobufs.AgentRemoteConfig,
 	) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error)
 
+	// GetEffectiveConfig returns the current effective config. Only one
+	// GetEffectiveConfig call can be active at any time. Until GetEffectiveConfig
+	// returns it will not be called again.
+	GetEffectiveConfig(ctx context.Context) (*protobufs.EffectiveConfig, error)
+
 	// OnOpampConnectionSettings is called when the agent receives an OpAMP
 	// connection settings offer from the server. Typically the settings can specify
 	// authorization headers or TLS certificate, potentially also a different
@@ -147,6 +152,8 @@ type CallbacksStruct struct {
 		remoteConfig *protobufs.AgentRemoteConfig,
 	) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error)
 
+	GetEffectiveConfigFunc func(ctx context.Context) (*protobufs.EffectiveConfig, error)
+
 	OnOpampConnectionSettingsFunc func(
 		ctx context.Context,
 		settings *protobufs.ConnectionSettings,
@@ -201,6 +208,13 @@ func (c CallbacksStruct) OnRemoteConfig(
 		return c.OnRemoteConfigFunc(ctx, remoteConfig)
 	}
 	return nil, false, nil
+}
+
+func (c CallbacksStruct) GetEffectiveConfig(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+	if c.GetEffectiveConfigFunc != nil {
+		return c.GetEffectiveConfigFunc(ctx)
+	}
+	return nil, nil
 }
 
 func (c CallbacksStruct) OnOpampConnectionSettings(

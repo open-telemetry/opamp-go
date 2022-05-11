@@ -20,18 +20,22 @@ type wsReceiver struct {
 	processor receivedProcessor
 }
 
-func NewWSReceiver(logger types.Logger, callbacks types.Callbacks, conn *websocket.Conn, sender *WSSender) *wsReceiver {
-	return &wsReceiver{
+func NewWSReceiver(
+	logger types.Logger,
+	callbacks types.Callbacks,
+	conn *websocket.Conn,
+	sender *WSSender,
+	clientSyncedState *ClientSyncedState,
+) *wsReceiver {
+	w := &wsReceiver{
 		conn:      conn,
 		logger:    logger,
 		sender:    sender,
 		callbacks: callbacks,
-		processor: receivedProcessor{
-			callbacks: callbacks,
-			logger:    logger,
-			sender:    sender,
-		},
+		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState),
 	}
+
+	return w
 }
 
 func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
