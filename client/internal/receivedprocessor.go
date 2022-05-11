@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 
 	"github.com/open-telemetry/opamp-go/client/types"
@@ -41,9 +42,9 @@ func newReceivedProcessor(
 // This function will call any relevant callbacks.
 func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
 	if r.callbacks != nil {
-		// If a command message exists, other messages will be ignored
 		if msg.Command != nil {
 			r.rcvCommand(msg.Command)
+			// If a command message exists, other messages will be ignored
 			return
 		}
 
@@ -118,28 +119,64 @@ func (r *receivedProcessor) rcvFlags(
 
 func (r *receivedProcessor) rcvRemoteConfig(
 	ctx context.Context,
-	config *protobufs.AgentRemoteConfig,
+	remoteCfg *protobufs.AgentRemoteConfig,
 ) (reportStatus bool) {
-	effective, changed, err := r.callbacks.OnRemoteConfig(ctx, config)
-	if err != nil {
-		// Return a status message with status failed.
-		r.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
-			statusReport.RemoteConfigStatus = &protobufs.RemoteConfigStatus{
-				Status:       protobufs.RemoteConfigStatus_Failed,
-				ErrorMessage: err.Error(),
-			}
-		})
-		return true
+	if remoteCfg == nil {
+		return false
 	}
 
-	// Report the effective configuration if it changed.
-	if changed {
+	// Ask the agent to apply the remote config.
+	effective, changed, applyErr := r.callbacks.OnRemoteConfig(ctx, remoteCfg)
+
+	// Begin creating the new status.
+	cfgStatus := &protobufs.RemoteConfigStatus{}
+
+	if applyErr != nil {
+		// Remote config applying failed.
+		cfgStatus.Status = protobufs.RemoteConfigStatus_FAILED
+		cfgStatus.ErrorMessage = applyErr.Error()
+	} else {
+		// Applied successfully.
+		cfgStatus.Status = protobufs.RemoteConfigStatus_APPLIED
+	}
+
+	// Respond back with the hash of the config received from the server.
+	cfgStatus.LastRemoteConfigHash = remoteCfg.ConfigHash
+	calcHashRemoteConfigStatus(cfgStatus)
+
+	// Get the hash of the status before we update it.
+	prevStatus := r.clientSyncedState.RemoteConfigStatus()
+	var cfgStatusHash []byte
+	if prevStatus != nil {
+		cfgStatusHash = prevStatus.Hash
+	}
+
+	// Remember the status for the future use.
+	_ = r.clientSyncedState.SetRemoteConfigStatus(cfgStatus)
+
+	// Check if the status has changed by comparing the hashes.
+	if !bytes.Equal(cfgStatusHash, cfgStatus.Hash) {
+		// Let the agent know about the status.
+		r.callbacks.SaveRemoteConfigStatus(ctx, cfgStatus)
+
+		// Include the config status in the next message to the server.
+		r.sender.NextMessage().UpdateStatus(
+			func(statusReport *protobufs.StatusReport) {
+				statusReport.RemoteConfigStatus = cfgStatus
+			})
+
+		reportStatus = true
+	}
+
+	// Report the effective configuration if it changed and remote config was applied
+	// successfully.
+	if changed && applyErr == nil {
 		r.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
 			statusReport.EffectiveConfig = effective
 		})
-		return true
+		reportStatus = true
 	}
-	return false
+	return reportStatus
 }
 
 func (r *receivedProcessor) rcvConnectionSettings(ctx context.Context, settings *protobufs.ConnectionSettingsOffers) {

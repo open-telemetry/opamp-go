@@ -123,9 +123,16 @@ func (agent *Agent) updateStatusField(newStatus *protobufs.StatusReport) (agentD
 			agentDescrChanged = false
 		}
 
-		// Update remote config status if it is provided.
-		if newStatus.RemoteConfigStatus != nil {
-			agent.Status.RemoteConfigStatus = newStatus.RemoteConfigStatus
+		// Update remote config status if it is included and is different from what we have.
+		if newStatus.RemoteConfigStatus != nil &&
+			!bytes.Equal(agent.Status.RemoteConfigStatus.Hash, newStatus.RemoteConfigStatus.Hash) {
+
+			if newStatus.RemoteConfigStatus.Status == protobufs.RemoteConfigStatus_UNSET {
+				// TODO: Request full RemoteConfigStatus using
+				// ServerToAgent_ReportRemoteConfigStatus flag.
+			} else {
+				agent.Status.RemoteConfigStatus = newStatus.RemoteConfigStatus
+			}
 		}
 	}
 

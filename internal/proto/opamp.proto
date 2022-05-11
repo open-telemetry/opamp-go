@@ -572,24 +572,28 @@ message RemoteConfigStatus {
     bytes hash = 1;
 
     // The hash of the remote config that was last received by this agent from the
-    // management server. The server SHOULD compare this hash with the config hash it has
-    // for the agent and if the hashes are different the server MUST include
-    // the remote_config field in the response in the DataForAgent message.
+    // management server. The server SHOULD compare this hash with the config hash
+    // it has for the agent and if the hashes are different the server MUST include
+    // the remote_config field in the response in the ServerToAgent message.
     bytes last_remote_config_hash = 2;
 
     enum Status {
+        // The value of status field is not set.
+        UNSET = 0;
+
         // Remote config was successfully applied by the Agent.
-        Applied = 0;
+        APPLIED = 1;
 
         // Agent is currently applying the remote config that it received earlier.
-        Applying = 1;
+        APPLYING = 2;
 
         // Agent tried to apply the config received earlier, but it failed.
         // See error_message for more details.
-        Failed = 2;
+        FAILED = 3;
     }
     Status status = 3;
 
+    // Optional error message if status==FAILED.
     string error_message = 4;
 }
 

@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"log"
 	"math/rand"
 	"net/http"
@@ -268,15 +269,19 @@ func TestConnectWithHeader(t *testing.T) {
 	})
 }
 
+func createRemoteConfig() *protobufs.AgentRemoteConfig {
+	return &protobufs.AgentRemoteConfig{
+		Config: &protobufs.AgentConfigMap{
+			ConfigMap: map[string]*protobufs.AgentConfigFile{},
+		},
+		ConfigHash: []byte{1, 2, 3, 4},
+	}
+}
+
 func TestFirstStatusReport(t *testing.T) {
 	testClients(t, func(client OpAMPClient) {
 
-		remoteConfig := &protobufs.AgentRemoteConfig{
-			Config: &protobufs.AgentConfigMap{
-				ConfigMap: map[string]*protobufs.AgentConfigFile{},
-			},
-			ConfigHash: []byte{1, 2, 3, 4},
-		}
+		remoteConfig := createRemoteConfig()
 
 		// Start a server.
 		srv := internal.StartMockServer(t)
@@ -815,4 +820,134 @@ func TestReportEffectiveConfig(t *testing.T) {
 		err := client.Stop(context.Background())
 		assert.NoError(t, err)
 	})
+}
+
+func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *protobufs.RemoteConfigStatus) {
+	testClients(t, func(client OpAMPClient) {
+
+		// Start a server.
+		srv := internal.StartMockServer(t)
+		srv.EnableExpectMode()
+
+		// Prepare a callback that returns either success or failure.
+		onRemoteConfigFunc := func(
+			ctx context.Context, remoteConfig *protobufs.AgentRemoteConfig,
+		) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {
+			if successCase {
+				return createEffectiveConfig(), true, nil
+			} else {
+				return nil, false, errors.New("cannot update remote config")
+			}
+		}
+
+		// Start a client.
+		settings := types.StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			Callbacks: types.CallbacksStruct{
+				OnRemoteConfigFunc: onRemoteConfigFunc,
+			},
+		}
+		prepareClient(t, &settings, client)
+
+		// client --->
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		remoteCfg := createRemoteConfig()
+		// ---> server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// Send the remote config to the agent.
+			return &protobufs.ServerToAgent{
+				InstanceUid:  msg.InstanceUid,
+				RemoteConfig: remoteCfg,
+			}
+		})
+
+		// The agent will try to apply the remote config and will send the status
+		// report about it back to the server.
+
+		var firstConfigStatus *protobufs.RemoteConfigStatus
+
+		// ---> server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// Verify that the remote config status is as expected.
+			status := msg.StatusReport.RemoteConfigStatus
+			assert.EqualValues(t, expectStatus.Status, status.Status)
+			assert.Equal(t, expectStatus.ErrorMessage, status.ErrorMessage)
+			assert.EqualValues(t, remoteCfg.ConfigHash, status.LastRemoteConfigHash)
+			assert.NotNil(t, status.Hash)
+
+			firstConfigStatus = proto.Clone(status).(*protobufs.RemoteConfigStatus)
+
+			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+		})
+
+		// client --->
+		// Trigger another status report by setting AgentDescription.
+		_ = client.SetAgentDescription(settings.AgentDescription)
+
+		// ---> server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// This time all fields except Hash must be unset. This is expected
+			// as compression in OpAMP.
+			status := msg.StatusReport.RemoteConfigStatus
+			assert.EqualValues(t, firstConfigStatus.Hash, status.Hash)
+			assert.EqualValues(t, protobufs.RemoteConfigStatus_UNSET, status.Status)
+			assert.EqualValues(t, "", status.ErrorMessage)
+			assert.Nil(t, status.LastRemoteConfigHash)
+
+			return &protobufs.ServerToAgent{
+				InstanceUid: msg.InstanceUid,
+				// Ask client to report full status.
+				Flags: protobufs.ServerToAgent_ReportRemoteConfigStatus,
+			}
+		})
+
+		// ---> server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// Exact same full status must be present again.
+			status := msg.StatusReport.RemoteConfigStatus
+			assert.True(t, proto.Equal(status, firstConfigStatus))
+
+			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+		})
+
+		// Shutdown the server.
+		srv.Close()
+
+		// Shutdown the client.
+		err := client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
+func TestRemoteConfigUpdate(t *testing.T) {
+
+	tests := []struct {
+		name           string
+		success        bool
+		expectedStatus *protobufs.RemoteConfigStatus
+	}{
+		{
+			name:    "success",
+			success: true,
+			expectedStatus: &protobufs.RemoteConfigStatus{
+				Status:       protobufs.RemoteConfigStatus_APPLIED,
+				ErrorMessage: "",
+			},
+		},
+		{
+			name:    "fail",
+			success: false,
+			expectedStatus: &protobufs.RemoteConfigStatus{
+				Status:       protobufs.RemoteConfigStatus_FAILED,
+				ErrorMessage: "cannot update remote config",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			verifyRemoteConfigUpdate(t, test.success, test.expectedStatus)
+		})
+	}
 }

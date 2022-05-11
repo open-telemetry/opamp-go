@@ -55,6 +55,18 @@ func (c *ClientCommon) PrepareStart(_ context.Context, settings types.StartSetti
 		return err
 	}
 
+	if settings.RemoteConfigStatus == nil {
+		// RemoteConfigStatus is not provided. Start with empty.
+		settings.RemoteConfigStatus = &protobufs.RemoteConfigStatus{
+			Status: protobufs.RemoteConfigStatus_UNSET,
+		}
+		calcHashRemoteConfigStatus(settings.RemoteConfigStatus)
+	}
+
+	if err := c.ClientSyncedState.SetRemoteConfigStatus(settings.RemoteConfigStatus); err != nil {
+		return err
+	}
+
 	c.Callbacks = settings.Callbacks
 	if c.Callbacks == nil {
 		// Make sure it is always safe to call Callbacks.
@@ -141,6 +153,8 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.StatusReport.AgentDescription = c.ClientSyncedState.AgentDescription()
 
 			msg.StatusReport.EffectiveConfig = cfg
+
+			msg.StatusReport.RemoteConfigStatus = c.ClientSyncedState.RemoteConfigStatus()
 
 			if msg.PackageStatuses == nil {
 				msg.PackageStatuses = &protobufs.PackageStatuses{}
