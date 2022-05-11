@@ -64,7 +64,7 @@ func testClients(t *testing.T, f func(client OpAMPClient)) {
 
 func TestConnectInvalidURL(t *testing.T) {
 	testClients(t, func(client OpAMPClient) {
-		settings := StartSettings{
+		settings := types.StartSettings{
 			OpAMPServerURL: ":not a url",
 		}
 
@@ -77,7 +77,7 @@ func eventually(t *testing.T, f func() bool) {
 	assert.Eventually(t, f, 5*time.Second, 10*time.Millisecond)
 }
 
-func prepareClient(t *testing.T, settings *StartSettings, c OpAMPClient) {
+func prepareClient(t *testing.T, settings *types.StartSettings, c OpAMPClient) {
 	// Autogenerate instance id.
 	entropy := ulid.Monotonic(rand.New(rand.NewSource(99)), 0)
 	settings.InstanceUid = ulid.MustNew(ulid.Timestamp(time.Now()), entropy).String()
@@ -96,15 +96,15 @@ func prepareClient(t *testing.T, settings *StartSettings, c OpAMPClient) {
 	settings.AgentDescription = createAgentDescr()
 }
 
-func startClient(t *testing.T, settings StartSettings, client OpAMPClient) {
+func startClient(t *testing.T, settings types.StartSettings, client OpAMPClient) {
 	prepareClient(t, &settings, client)
 	err := client.Start(context.Background(), settings)
 	assert.NoError(t, err)
 }
 
 // Create start settings that point to a non-existing server.
-func createNoServerSettings() StartSettings {
-	return StartSettings{
+func createNoServerSettings() types.StartSettings {
+	return types.StartSettings{
 		OpAMPServerURL: "ws://" + testhelpers.GetAvailableLocalAddress(),
 	}
 }
@@ -177,7 +177,7 @@ func TestConnectWithServer(t *testing.T) {
 
 		// Start a client.
 		var connected int64
-		settings := StartSettings{
+		settings := types.StartSettings{
 			Callbacks: types.CallbacksStruct{
 				OnConnectFunc: func() {
 					atomic.StoreInt64(&connected, 1)
@@ -215,7 +215,7 @@ func TestConnectWithServer503(t *testing.T) {
 		// Start a client.
 		var clientConnected int64
 		var connectErr atomic.Value
-		settings := StartSettings{
+		settings := types.StartSettings{
 			Callbacks: types.CallbacksStruct{
 				OnConnectFunc: func() {
 					atomic.StoreInt64(&clientConnected, 1)
@@ -253,7 +253,7 @@ func TestConnectWithHeader(t *testing.T) {
 		}
 
 		// Start a client.
-		settings := StartSettings{
+		settings := types.StartSettings{
 			OpAMPServerURL:      "ws://" + srv.Endpoint,
 			AuthorizationHeader: "Bearer 12345678",
 		}
@@ -289,7 +289,7 @@ func TestFirstStatusReport(t *testing.T) {
 
 		// Start a client.
 		var connected, remoteConfigReceived int64
-		settings := StartSettings{
+		settings := types.StartSettings{
 			Callbacks: types.CallbacksStruct{
 				OnConnectFunc: func() {
 					atomic.AddInt64(&connected, 1)
@@ -345,7 +345,7 @@ func TestIncludesDetailsOnReconnect(t *testing.T) {
 	}
 
 	var connected int64
-	settings := StartSettings{
+	settings := types.StartSettings{
 		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func() {
 				atomic.AddInt64(&connected, 1)
@@ -406,7 +406,7 @@ func TestSetEffectiveConfig(t *testing.T) {
 
 		// Start a client.
 		sendConfig := createEffectiveConfig()
-		settings := StartSettings{
+		settings := types.StartSettings{
 			Callbacks: types.CallbacksStruct{
 				GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 					return sendConfig, nil
@@ -466,7 +466,7 @@ func TestSetAgentDescription(t *testing.T) {
 		}
 
 		// Start a client.
-		settings := StartSettings{
+		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
 		}
 		prepareClient(t, &settings, client)
@@ -538,7 +538,7 @@ func TestAgentIdentification(t *testing.T) {
 		}
 
 		// Start a client.
-		settings := StartSettings{}
+		settings := types.StartSettings{}
 		settings.OpAMPServerURL = "ws://" + srv.Endpoint
 		settings.AgentDescription = createAgentDescr()
 		settings.Callbacks = types.CallbacksStruct{
@@ -628,7 +628,7 @@ func TestConnectionSettings(t *testing.T) {
 		var gotOtherSettings int64
 
 		// Start a client.
-		settings := StartSettings{
+		settings := types.StartSettings{
 			Callbacks: types.CallbacksStruct{
 				OnOpampConnectionSettingsFunc: func(
 					ctx context.Context, settings *protobufs.ConnectionSettings,
@@ -692,7 +692,7 @@ func TestReportAgentDescription(t *testing.T) {
 		srv.EnableExpectMode()
 
 		// Start a client.
-		settings := StartSettings{
+		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
 		}
 		prepareClient(t, &settings, client)
@@ -758,7 +758,7 @@ func TestReportEffectiveConfig(t *testing.T) {
 		clientEffectiveConfig := createEffectiveConfig()
 
 		// Start a client.
-		settings := StartSettings{
+		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
 			Callbacks: types.CallbacksStruct{
 				GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {

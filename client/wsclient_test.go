@@ -22,7 +22,7 @@ func TestDisconnectWSByServer(t *testing.T) {
 	// Start an OpAMP/WebSocket client.
 	var connected int64
 	var connectErr atomic.Value
-	settings := StartSettings{
+	settings := types.StartSettings{
 		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func() {
 				atomic.StoreInt64(&connected, 1)
@@ -42,7 +42,7 @@ func TestDisconnectWSByServer(t *testing.T) {
 
 	// Close the server and forcefully disconnect.
 	srv.Close()
-	conn.Load().(*websocket.Conn).Close()
+	_ = conn.Load().(*websocket.Conn).Close()
 
 	// The client must retry and must fail now.
 	eventually(t, func() bool { return connectErr.Load() != nil })
