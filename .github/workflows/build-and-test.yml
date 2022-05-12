@@ -29,6 +29,16 @@ jobs:
       - name: Install dependencies
         if: steps.module-cache.outputs.cache-hit != 'true'
         run: make gomoddownload
+      - name: Cache Tools
+        id: tool-cache
+        uses: actions/cache@v3
+        with:
+          path: /home/runner/go/bin
+          key: tools-${{ runner.os }}-${{ hashFiles('./internal/tools/go.mod') }}
+      - name: Install Tools
+        if: steps.tool-cache.outputs.cache-hit != 'true'
+        run: make install-tools
+
   build-and-test:
     runs-on: ubuntu-latest
     needs: [setup-environment]
@@ -56,3 +66,43 @@ jobs:
           key: go-build-unittest-${{ runner.os }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
       - name: Build and Test
         run: make
+
+  test-coverage:
+    runs-on: ubuntu-latest
+    needs: [setup-environment]
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.17
+      - name: Setup Go Environment
+        run: |
+          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+      - name: Cache Go
+        id: module-cache
+        uses: actions/cache@v3
+        with:
+          path: /home/runner/go/pkg/mod
+          key: go-pkg-mod-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+      - name: Cache Tools
+        id: tool-cache
+        uses: actions/cache@v3
+        with:
+          path: /home/runner/go/bin
+          key: tools-${{ runner.os }}-${{ hashFiles('./internal/tools/go.mod') }}
+      - name: Cache Build
+        uses: actions/cache@v3
+        with:
+          path: /home/runner/.cache/go-build
+          key: go-build-coverage-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+      - name: Run Unit Tests With Coverage
+        run: make test-with-cover
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          fail_ci_if_error: true
+          verbose: true
