@@ -45,6 +45,9 @@ type Callbacks interface {
 	// the Server while OnRemoteConfig call has not returned will be remembered.
 	// Once OnRemoteConfig call returns it will be called again with the most recent
 	// remote config received.
+	//
+	// The EffectiveConfig.Hash field will be calculated and updated from the content
+	// of the rest of the fields.
 	OnRemoteConfig(
 		ctx context.Context,
 		remoteConfig *protobufs.AgentRemoteConfig,
@@ -60,6 +63,9 @@ type Callbacks interface {
 	// GetEffectiveConfig returns the current effective config. Only one
 	// GetEffectiveConfig call can be active at any time. Until GetEffectiveConfig
 	// returns it will not be called again.
+	//
+	// The Hash field in the returned EffectiveConfig will be calculated and updated
+	// by the caller from the content of the rest of the fields.
 	GetEffectiveConfig(ctx context.Context) (*protobufs.EffectiveConfig, error)
 
 	// OnOpampConnectionSettings is called when the Agent receives an OpAMP

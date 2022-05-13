@@ -47,6 +47,10 @@ type OpAMPClient interface {
 	// May be also called after Start(), in which case the attributes will be included
 	// in the next outgoing status report. This is typically used by Agents which allow
 	// their AgentDescription to change dynamically while the OpAMPClient is started.
+	//
+	// The Hash field will be calculated and updated from the content of the rest of
+	// the fields.
+	//
 	// nil values are not allowed and will return an error.
 	SetAgentDescription(descr *protobufs.AgentDescription) error
 

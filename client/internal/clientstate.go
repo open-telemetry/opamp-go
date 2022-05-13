@@ -2,10 +2,11 @@ package internal
 
 import (
 	"crypto/sha256"
-	"errors"
+	"hash"
 	"sync"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -50,7 +51,43 @@ func (s *ClientSyncedState) PackageStatuses() *protobufs.PackageStatuses {
 	return s.packageStatuses
 }
 
+func writeHashKV(hash hash.Hash, kv *protobufs.KeyValue) error {
+	// To keep the implementation simple we convert the data to an equivalent JSON
+	// string and calculate the hash from the string bytes.
+	b, err := protojson.Marshal(kv)
+	if err != nil {
+		return err
+	}
+	hash.Write(b)
+	return nil
+}
+
+func writeHashKVList(hash hash.Hash, kvl []*protobufs.KeyValue) error {
+	for _, kv := range kvl {
+		err := writeHashKV(hash, kv)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func calcHashAgentDescription(msg *protobufs.AgentDescription) error {
+	h := sha256.New()
+	err := writeHashKVList(h, msg.IdentifyingAttributes)
+	if err != nil {
+		return err
+	}
+	err = writeHashKVList(h, msg.NonIdentifyingAttributes)
+	if err != nil {
+		return err
+	}
+	msg.Hash = h.Sum(nil)
+	return nil
+}
+
 // SetAgentDescription sets the AgentDescription in the state.
+// Will calculate the Hash from the content of the other fields.
 func (s *ClientSyncedState) SetAgentDescription(descr *protobufs.AgentDescription) error {
 	if descr == nil {
 		return ErrAgentDescriptionMissing
@@ -60,11 +97,11 @@ func (s *ClientSyncedState) SetAgentDescription(descr *protobufs.AgentDescriptio
 		return ErrAgentDescriptionNoAttributes
 	}
 
-	clone := proto.Clone(descr).(*protobufs.AgentDescription)
-
-	if len(descr.Hash) == 0 {
-		return errors.New("hash field must be set, use CalcHashAgentDescription")
+	if err := calcHashAgentDescription(descr); err != nil {
+		return err
 	}
+
+	clone := proto.Clone(descr).(*protobufs.AgentDescription)
 
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
@@ -74,7 +111,6 @@ func (s *ClientSyncedState) SetAgentDescription(descr *protobufs.AgentDescriptio
 }
 
 func calcHashRemoteConfigStatus(status *protobufs.RemoteConfigStatus) {
-	// Calculate and set the Hash field from the rest of the fields in the message.
 	h := sha256.New()
 	h.Write(status.LastRemoteConfigHash)
 	h.Write([]byte(status.Status.String()))
@@ -82,14 +118,14 @@ func calcHashRemoteConfigStatus(status *protobufs.RemoteConfigStatus) {
 	status.Hash = h.Sum(nil)
 }
 
+// SetRemoteConfigStatus sets the RemoteConfigStatus in the state.
+// Will calculate the Hash from the content of the other fields.
 func (s *ClientSyncedState) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) error {
 	if status == nil {
 		return errRemoteConfigStatusMissing
 	}
 
-	if len(status.Hash) == 0 {
-		return errors.New("hash field must be set, use CalcHashRemoteConfigStatus")
-	}
+	calcHashRemoteConfigStatus(status)
 
 	clone := proto.Clone(status).(*protobufs.RemoteConfigStatus)
 

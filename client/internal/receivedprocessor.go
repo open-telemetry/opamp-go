@@ -142,20 +142,19 @@ func (r *receivedProcessor) rcvRemoteConfig(
 
 	// Respond back with the hash of the config received from the Server.
 	cfgStatus.LastRemoteConfigHash = remoteCfg.ConfigHash
-	calcHashRemoteConfigStatus(cfgStatus)
 
 	// Get the hash of the status before we update it.
 	prevStatus := r.clientSyncedState.RemoteConfigStatus()
-	var cfgStatusHash []byte
+	var prevCfgStatusHash []byte
 	if prevStatus != nil {
-		cfgStatusHash = prevStatus.Hash
+		prevCfgStatusHash = prevStatus.Hash
 	}
 
 	// Remember the status for the future use.
 	_ = r.clientSyncedState.SetRemoteConfigStatus(cfgStatus)
 
 	// Check if the status has changed by comparing the hashes.
-	if !bytes.Equal(cfgStatusHash, cfgStatus.Hash) {
+	if !bytes.Equal(prevCfgStatusHash, cfgStatus.Hash) {
 		// Let the Agent know about the status.
 		r.callbacks.SaveRemoteConfigStatus(ctx, cfgStatus)
 
