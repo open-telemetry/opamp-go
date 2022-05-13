@@ -129,7 +129,7 @@ func (agent *Agent) createAgentIdentity() {
 
 	hostname, _ := os.Hostname()
 
-	// Create agent description.
+	// Create Agent description.
 	agent.agentDescription = &protobufs.AgentDescription{
 		IdentifyingAttributes: []*protobufs.KeyValue{
 			{

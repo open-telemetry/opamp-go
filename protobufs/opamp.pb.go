@@ -203,7 +203,7 @@ type AgentToServer_AgentToServerFlags int32
 
 const (
 	AgentToServer_FlagsUnspecified AgentToServer_AgentToServerFlags = 0 // AgentToServerFlags is a bit mask. Values below define individual bits.
-	// The agent requests server go generate a new instance_uid, which will
+	// The Agent requests Server go generate a new instance_uid, which will
 	// be sent back in ServerToAgent message
 	AgentToServer_RequestInstanceUid AgentToServer_AgentToServerFlags = 1
 )
@@ -251,17 +251,17 @@ type ServerToAgent_Flags int32
 
 const (
 	ServerToAgent_FlagsUnspecified ServerToAgent_Flags = 0
-	// The server asks the agent to report full AgentDescription.
+	// The Server asks the Agent to report full AgentDescription.
 	ServerToAgent_ReportAgentDescription ServerToAgent_Flags = 1
-	// The server asks the agent to report full EffectiveConfig. This bit MUST NOT be
+	// The Server asks the Agent to report full EffectiveConfig. This bit MUST NOT be
 	// set if the Agent indicated it cannot report effective config by setting
 	// the ReportsEffectiveConfig bit to 0 in StatusReport.capabilities field.
 	ServerToAgent_ReportEffectiveConfig ServerToAgent_Flags = 2
-	// The server asks the agent to report full RemoteConfigStatus. This bit MUST NOT be
+	// The Server asks the Agent to report full RemoteConfigStatus. This bit MUST NOT be
 	// set if the Agent indicated it cannot accept remote config by setting
 	// the AcceptsRemoteConfig bit to 0 in StatusReport.capabilities field.
 	ServerToAgent_ReportRemoteConfigStatus ServerToAgent_Flags = 4
-	// The server asks the agent to report full PackageStatuses. This bit MUST NOT be
+	// The Server asks the Agent to report full PackageStatuses. This bit MUST NOT be
 	// set if the Agent indicated it cannot report package status by setting
 	// the ReportsPackageStatuses bit to 0 in StatusReport.capabilities field.
 	ServerToAgent_ReportPackageStatuses ServerToAgent_Flags = 8
@@ -418,7 +418,7 @@ const (
 	// The AgentToServer message was malformed. The Agent SHOULD NOT retry
 	// the message.
 	ServerErrorResponse_BadRequest ServerErrorResponse_Type = 1
-	// The server is overloaded and unable to process the request. The agent
+	// The Server is overloaded and unable to process the request. The Agent
 	// should retry the message later. retry_info field may be optionally
 	// set with additional information about retrying.
 	ServerErrorResponse_Unavailable ServerErrorResponse_Type = 2
@@ -468,7 +468,7 @@ func (ServerErrorResponse_Type) EnumDescriptor() ([]byte, []int) {
 type ServerToAgentCommand_CommandType int32
 
 const (
-	// The agent should restart. This request will be ignored if the agent does not
+	// The Agent should restart. This request will be ignored if the Agent does not
 	// support restart.
 	ServerToAgentCommand_Restart ServerToAgentCommand_CommandType = 0
 )
@@ -578,10 +578,10 @@ const (
 	PackageStatus_InstallPending PackageStatus_Status = 1
 	// Agent is currently downloading and installing the package.
 	// server_offered_hash field MUST be set to indicate the version that the
-	// agent is installing. The error_message field MUST NOT be set.
+	// Agent is installing. The error_message field MUST NOT be set.
 	PackageStatus_Installing PackageStatus_Status = 2
 	// Agent tried to install the package but installation failed.
-	// server_offered_hash field MUST be set to indicate the version that the agent
+	// server_offered_hash field MUST be set to indicate the version that the Agent
 	// tried to install. The error_message may also contain more details about
 	// the failure.
 	PackageStatus_InstallFailed PackageStatus_Status = 3
@@ -635,21 +635,21 @@ type AgentToServer struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// Globally unique identifier of the running instance of the agent. SHOULD remain
-	// unchanged for the lifetime of the agent process.
+	// Globally unique identifier of the running instance of the Agent. SHOULD remain
+	// unchanged for the lifetime of the Agent process.
 	// Recommended format: https://github.com/ulid/spec
 	InstanceUid string `protobuf:"bytes,1,opt,name=instance_uid,json=instanceUid,proto3" json:"instance_uid,omitempty"`
 	// The status of the Agent. MUST be set in the first AgentToServer message that the
 	// Agent sends after connecting.
 	// This field SHOULD be unset if this information is unchanged since the last
-	// AgentToServer message for this agent was sent in the stream.
+	// AgentToServer message for this Agent was sent in the stream.
 	StatusReport *StatusReport `protobuf:"bytes,2,opt,name=status_report,json=statusReport,proto3" json:"status_report,omitempty"`
-	// The list of the agent packages, including package statuses. This field SHOULD be
+	// The list of the Agent packages, including package statuses. This field SHOULD be
 	// unset if this information is unchanged since the last AgentToServer message for
-	// this agent was sent in the stream.
+	// this Agent was sent in the stream.
 	PackageStatuses *PackageStatuses `protobuf:"bytes,3,opt,name=package_statuses,json=packageStatuses,proto3" json:"package_statuses,omitempty"`
 	// AgentDisconnect MUST be set in the last AgentToServer message sent from the
-	// agent to the server.
+	// Agent to the Server.
 	AgentDisconnect *AgentDisconnect `protobuf:"bytes,4,opt,name=agent_disconnect,json=agentDisconnect,proto3" json:"agent_disconnect,omitempty"`
 	// Bit flags as defined by AgentToServerFlags bit masks.
 	Flags AgentToServer_AgentToServerFlags `protobuf:"varint,5,opt,name=flags,proto3,enum=opamp.proto.AgentToServer_AgentToServerFlags" json:"flags,omitempty"`
@@ -722,13 +722,13 @@ func (x *AgentToServer) GetFlags() AgentToServer_AgentToServerFlags {
 	return AgentToServer_FlagsUnspecified
 }
 
-// AgentDisconnect is the last message sent from the agent to the server. The server
-// SHOULD forget the association of the agent instance with the message stream.
+// AgentDisconnect is the last message sent from the Agent to the Server. The Server
+// SHOULD forget the association of the Agent instance with the message stream.
 //
-// If the message stream is closed in the transport layer then the server SHOULD
-// forget association of all agent instances that were previously established for
+// If the message stream is closed in the transport layer then the Server SHOULD
+// forget association of all Agent instances that were previously established for
 // this message stream using AgentConnect message, even if the corresponding
-// AgentDisconnect message were not explicitly received from the agent.
+// AgentDisconnect message were not explicitly received from the Agent.
 type AgentDisconnect struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -780,7 +780,7 @@ type ServerToAgent struct {
 	// all other fields below must be unset and vice versa, if any of the fields below is
 	// set then error_response must be unset.
 	ErrorResponse *ServerErrorResponse `protobuf:"bytes,2,opt,name=error_response,json=errorResponse,proto3" json:"error_response,omitempty"`
-	// remote_config field is set when the server has a remote config offer for the agent.
+	// remote_config field is set when the Server has a remote config offer for the Agent.
 	RemoteConfig *AgentRemoteConfig `protobuf:"bytes,3,opt,name=remote_config,json=remoteConfig,proto3" json:"remote_config,omitempty"`
 	// This field is set when the Server wants the Agent to change one or more
 	// of its client connection settings (destination, headers, certificate, etc).
@@ -798,10 +798,10 @@ type ServerToAgent struct {
 	// be omitted in subsequent ServerToAgent messages by setting it to
 	// UnspecifiedServerCapability value.
 	Capabilities ServerCapabilities `protobuf:"varint,7,opt,name=capabilities,proto3,enum=opamp.proto.ServerCapabilities" json:"capabilities,omitempty"`
-	// Properties related to identification of the agent, which can be overridden
-	// by the server if needed.
+	// Properties related to identification of the Agent, which can be overridden
+	// by the Server if needed.
 	AgentIdentification *AgentIdentification `protobuf:"bytes,8,opt,name=agent_identification,json=agentIdentification,proto3" json:"agent_identification,omitempty"`
-	// Allows the Server to instruct the agent to perform a command, e.g. RESTART. This field should not be specified
+	// Allows the Server to instruct the Agent to perform a command, e.g. RESTART. This field should not be specified
 	// with fields other than instance_uid and capabilities. If specified, other fields will be ignored and the command
 	// will be performed.
 	Command *ServerToAgentCommand `protobuf:"bytes,9,opt,name=command,proto3" json:"command,omitempty"`
@@ -903,15 +903,15 @@ func (x *ServerToAgent) GetCommand() *ServerToAgentCommand {
 }
 
 // The ConnectionSettings message is a collection of fields which comprise an
-// offer from the server to the agent to use the specified settings for a network
+// offer from the Server to the Agent to use the specified settings for a network
 // connection. It is not required that all fields in this message are specified.
-// The server may specify only some of the fields, in which case it means that
-// the server offers the agent to change only those fields, while keeping the
+// The Server may specify only some of the fields, in which case it means that
+// the Server offers the Agent to change only those fields, while keeping the
 // rest of the fields unchanged.
 //
-// For example the server may send a ConnectionSettings message with only the
+// For example the Server may send a ConnectionSettings message with only the
 // certificate field set, while all other fields are unset. This means that
-// the server wants the agent to use a new certificate and continue sending to
+// the Server wants the Agent to use a new certificate and continue sending to
 // the destination it is currently sending using the current header and other
 // settings.
 //
@@ -939,11 +939,11 @@ type ConnectionSettings struct {
 	// The field is considered unset if (flags & DestinationEndpointSet)==0.
 	DestinationEndpoint string `protobuf:"bytes,1,opt,name=destination_endpoint,json=destinationEndpoint,proto3" json:"destination_endpoint,omitempty"`
 	// Headers to use when connecting. Typically used to set access tokens or
-	// other authorization headers. For HTTP-based protocols the agent should
+	// other authorization headers. For HTTP-based protocols the Agent should
 	// set these in the request headers.
 	// For example:
 	// key="Authorization", Value="Basic YWxhZGRpbjpvcGVuc2VzYW1l".
-	// if the field is unset then the agent SHOULD continue using the headers
+	// if the field is unset then the Agent SHOULD continue using the headers
 	// that it currently has (if any).
 	Headers *Headers `protobuf:"bytes,2,opt,name=headers,proto3" json:"headers,omitempty"`
 	// A URL, host:port or some other specifier of an intermediary proxy.
@@ -959,19 +959,19 @@ type ConnectionSettings struct {
 	// The field is considered unset if (flags & ProxyEndpointSet)==0.
 	ProxyEndpoint string `protobuf:"bytes,3,opt,name=proxy_endpoint,json=proxyEndpoint,proto3" json:"proxy_endpoint,omitempty"`
 	// Headers to use when connecting to a proxy.  For HTTP-based protocols
-	// the agent should set these in the request headers.
+	// the Agent should set these in the request headers.
 	// If no proxy is used the Headers field must be present and must contain no headers.
 	// For example:
 	// key="Proxy-Authorization", value="Basic YWxhZGRpbjpvcGVuc2VzYW1l".
-	// if the field is unset then the agent SHOULD continue using the proxy headers
+	// if the field is unset then the Agent SHOULD continue using the proxy headers
 	// that it currently has (if any).
 	ProxyHeaders *Headers `protobuf:"bytes,4,opt,name=proxy_headers,json=proxyHeaders,proto3" json:"proxy_headers,omitempty"`
-	// The agent should use the offered certificate to connect to the destination
-	// from now on. If the agent is able to validate and connect using the offered
-	// certificate the agent SHOULD forget any previous client certificates
+	// The Agent should use the offered certificate to connect to the destination
+	// from now on. If the Agent is able to validate and connect using the offered
+	// certificate the Agent SHOULD forget any previous client certificates
 	// for this connection.
 	// This field is used to perform a client certificate revocation/rotation.
-	// if the field is unset then the agent SHOULD continue using the certificate
+	// if the field is unset then the Agent SHOULD continue using the certificate
 	// that it currently has (if any).
 	Certificate *TLSCertificate `protobuf:"bytes,5,opt,name=certificate,proto3" json:"certificate,omitempty"`
 	// Bitfield of Flags.
@@ -1167,7 +1167,7 @@ type TLSCertificate struct {
 	// Optional. MUST be specified if the certificate is CA-signed.
 	// Can be stored by TLS-terminating intermediary proxies in order to verify
 	// the connecting client's certificate in the future.
-	// It is not recommended that the agent accepts this CA as an authority for
+	// It is not recommended that the Agent accepts this CA as an authority for
 	// any purposes.
 	CaPublicKey []byte `protobuf:"bytes,3,opt,name=ca_public_key,json=caPublicKey,proto3" json:"ca_public_key,omitempty"`
 }
@@ -1231,24 +1231,24 @@ type ConnectionSettingsOffers struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Hash of all settings, including settings that may be omitted from this message
-	// because they are unchanged. The agent should remember the hash and include
+	// because they are unchanged. The Agent should remember the hash and include
 	// it in the subsequent ConnectionStatuses message, in the last_connection_settings_hash
 	// field.
 	Hash []byte `protobuf:"bytes,1,opt,name=hash,proto3" json:"hash,omitempty"`
-	// Settings to connect to the OpAMP server.
-	// If this field is not set then the agent should assume that the settings are
+	// Settings to connect to the OpAMP Server.
+	// If this field is not set then the Agent should assume that the settings are
 	// unchanged and should continue using existing settings.
-	// The agent MUST verify the offered connection settings by actually connecting
+	// The Agent MUST verify the offered connection settings by actually connecting
 	// before accepting the setting to ensure it does not loose access to the OpAMP
-	// server due to invalid settings.
+	// Server due to invalid settings.
 	Opamp *ConnectionSettings `protobuf:"bytes,2,opt,name=opamp,proto3" json:"opamp,omitempty"`
-	// Settings to connect to an OTLP metrics backend to send agent's own metrics to.
-	// If this field is not set then the agent should assume that the settings
+	// Settings to connect to an OTLP metrics backend to send Agent's own metrics to.
+	// If this field is not set then the Agent should assume that the settings
 	// are unchanged.
 	//
-	// Once accepted the agent should periodically send to the specified destination
-	// its own metrics, i.e. metrics of the agent process and any custom metrics that
-	// describe the agent state.
+	// Once accepted the Agent should periodically send to the specified destination
+	// its own metrics, i.e. metrics of the Agent process and any custom metrics that
+	// describe the Agent state.
 	//
 	// All attributes specified in the identifying_attributes field in AgentDescription
 	// message SHOULD be also specified in the Resource of the reported OTLP metrics.
@@ -1265,9 +1265,9 @@ type ConnectionSettingsOffers struct {
 	// Similar to own_metrics, but for logs.
 	OwnLogs *ConnectionSettings `protobuf:"bytes,5,opt,name=own_logs,json=ownLogs,proto3" json:"own_logs,omitempty"`
 	// Another set of connection settings, with a string name associated with each.
-	// How the agent uses these is agent-specific. Typically the name represents
-	// the name of the destination to connect to (as it is known to the agent).
-	// If this field is not set then the agent should assume that the other_connections
+	// How the Agent uses these is Agent-specific. Typically the name represents
+	// the name of the destination to connect to (as it is known to the Agent).
+	// If this field is not set then the Agent should assume that the other_connections
 	// settings are unchanged.
 	OtherConnections map[string]*ConnectionSettings `protobuf:"bytes,6,rep,name=other_connections,json=otherConnections,proto3" json:"other_connections,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
 }
@@ -1346,7 +1346,7 @@ func (x *ConnectionSettingsOffers) GetOtherConnections() map[string]*ConnectionS
 	return nil
 }
 
-// List of packages that the server offers to the agent.
+// List of packages that the Server offers to the Agent.
 type PackagesAvailable struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -1354,12 +1354,12 @@ type PackagesAvailable struct {
 
 	// Map of packages. Keys are package names, values are the packages available for download.
 	Packages map[string]*PackageAvailable `protobuf:"bytes,1,rep,name=packages,proto3" json:"packages,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
-	// Aggregate hash of all remotely installed packages. The agent SHOULD include this
+	// Aggregate hash of all remotely installed packages. The Agent SHOULD include this
 	// value in subsequent StatusReport messages. This in turn allows the management
-	// server to identify that a different set of packages is available for the agent
+	// Server to identify that a different set of packages is available for the Agent
 	// and specify the available packages in the next DataToAgent message.
 	//
-	// This field MUST be always set if the management server supports packages
+	// This field MUST be always set if the management Server supports packages
 	// of agents.
 	//
 	// The hash is calculated as an aggregate of all packages names and content.
@@ -1414,18 +1414,18 @@ func (x *PackagesAvailable) GetAllPackagesHash() []byte {
 
 // Each Agent is composed of one or more packages. A package has a name and
 // content stored in a file. The content of the files, functionality
-// provided by the packages, how they are stored and used by the Agent side is agent
+// provided by the packages, how they are stored and used by the Agent side is Agent
 // type-specific and is outside the concerns of the OpAMP protocol.
 //
-// If the agent does not have an installed package with the specified name then
+// If the Agent does not have an installed package with the specified name then
 // it SHOULD download it from the specified URL and install it.
 //
-// If the agent already has an installed package with the specified name
-// but with a different hash then the agent SHOULD download and
+// If the Agent already has an installed package with the specified name
+// but with a different hash then the Agent SHOULD download and
 // install the package again, since it is a different version of the same package.
 //
-// If the agent has an installed package with the specified name and the same
-// hash then the agent does not need to do anything, it already
+// If the Agent has an installed package with the specified name and the same
+// hash then the Agent does not need to do anything, it already
 // has the right version of the package.
 type PackageAvailable struct {
 	state         protoimpl.MessageState
@@ -1433,7 +1433,7 @@ type PackageAvailable struct {
 	unknownFields protoimpl.UnknownFields
 
 	Type PackageAvailable_PackageType `protobuf:"varint,1,opt,name=type,proto3,enum=opamp.proto.PackageAvailable_PackageType" json:"type,omitempty"`
-	// The package version that is available on the server side. The agent may for
+	// The package version that is available on the Server side. The Agent may for
 	// example use this information to avoid downloading a package that was previously
 	// already downloaded and failed to install.
 	Version string `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
@@ -1512,7 +1512,7 @@ type DownloadableFile struct {
 	unknownFields protoimpl.UnknownFields
 
 	// The URL from which the file can be downloaded using HTTP GET request.
-	// The server at the specified URL SHOULD support range requests
+	// The Server at the specified URL SHOULD support range requests
 	// to allow for resuming downloads.
 	DownloadUrl string `protobuf:"bytes,1,opt,name=download_url,json=downloadUrl,proto3" json:"download_url,omitempty"`
 	// The hash of the file content. Can be used by the Agent to verify that the file
@@ -1711,7 +1711,7 @@ func (x *RetryInfo) GetRetryAfterNanoseconds() uint64 {
 	return 0
 }
 
-// ServerToAgentCommand is sent from the server to the agent to request that the agent
+// ServerToAgentCommand is sent from the Server to the Agent to request that the Agent
 // perform a command.
 type ServerToAgentCommand struct {
 	state         protoimpl.MessageState
@@ -1768,14 +1768,14 @@ type AgentDescription struct {
 	// The hash of the content of all other fields (even if the other fields are omitted
 	// for compression).
 	Hash []byte `protobuf:"bytes,1,opt,name=hash,proto3" json:"hash,omitempty"`
-	// Attributes that identify the agent.
+	// Attributes that identify the Agent.
 	// Keys/values are according to OpenTelemetry semantic conventions, see:
 	// https://github.com/open-telemetry/opentelemetry-specification/tree/main/specification/resource/semantic_conventions
 	//
 	// For standalone running Agents (such as OpenTelemetry Collector) the following
 	// attributes SHOULD be specified:
 	// - service.name should be set to a reverse FQDN that uniquely identifies the
-	//   agent type, e.g. "io.opentelemetry.collector"
+	//   Agent type, e.g. "io.opentelemetry.collector"
 	// - service.namespace if it is used in the environment where the Agent runs.
 	// - service.version should be set to version number of the Agent build.
 	// - service.instance.id should be set. It may be be set equal to the Agent's
@@ -1792,13 +1792,13 @@ type AgentDescription struct {
 	// Attributes that do not necessarily identify the Agent but help describe
 	// where it runs.
 	// The following attributes SHOULD be included:
-	// - os.type, os.version - to describe where the agent runs.
-	// - host.* to describe the host the agent runs on.
+	// - os.type, os.version - to describe where the Agent runs.
+	// - host.* to describe the host the Agent runs on.
 	// - cloud.* to describe the cloud where the host is located.
-	// - any other relevant Resource attributes that describe this agent and the
+	// - any other relevant Resource attributes that describe this Agent and the
 	//   environment it runs in.
 	// - any user-defined attributes that the end user would like to associate
-	//   with this agent.
+	//   with this Agent.
 	NonIdentifyingAttributes []*KeyValue `protobuf:"bytes,3,rep,name=non_identifying_attributes,json=nonIdentifyingAttributes,proto3" json:"non_identifying_attributes,omitempty"`
 }
 
@@ -1860,17 +1860,17 @@ type StatusReport struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// Data that describes the agent, its type, where it runs, etc.
+	// Data that describes the Agent, its type, where it runs, etc.
 	// May be omitted if nothing changed since last StatusReport.
 	AgentDescription *AgentDescription `protobuf:"bytes,1,opt,name=agent_description,json=agentDescription,proto3" json:"agent_description,omitempty"`
-	// Current effective config of the agent. May be different from the remote config
-	// received from the management server, e.g. because the agent uses a local
+	// Current effective config of the Agent. May be different from the remote config
+	// received from the management Server, e.g. because the Agent uses a local
 	// config instead (or in addition).
 	//
 	// This field SHOULD be unset if the effective config is unchanged since the last
 	// StatusReport message.
 	EffectiveConfig *EffectiveConfig `protobuf:"bytes,2,opt,name=effective_config,json=effectiveConfig,proto3" json:"effective_config,omitempty"`
-	// The status of the remote config that was previously received from the server.
+	// The status of the remote config that was previously received from the Server.
 	// This field SHOULD be unset if the remote config status is unchanged since the
 	// last StatusReport message.
 	RemoteConfigStatus *RemoteConfigStatus `protobuf:"bytes,3,opt,name=remote_config_status,json=remoteConfigStatus,proto3" json:"remote_config_status,omitempty"`
@@ -2020,9 +2020,9 @@ type RemoteConfigStatus struct {
 	// The hash of the content of all other fields (even if the other fields are omitted
 	// for compression).
 	Hash []byte `protobuf:"bytes,1,opt,name=hash,proto3" json:"hash,omitempty"`
-	// The hash of the remote config that was last received by this agent from the
-	// management server. The server SHOULD compare this hash with the config hash
-	// it has for the agent and if the hashes are different the server MUST include
+	// The hash of the remote config that was last received by this Agent from the
+	// management Server. The Server SHOULD compare this hash with the config hash
+	// it has for the Agent and if the hashes are different the Server MUST include
 	// the remote_config field in the response in the ServerToAgent message.
 	LastRemoteConfigHash []byte                    `protobuf:"bytes,2,opt,name=last_remote_config_hash,json=lastRemoteConfigHash,proto3" json:"last_remote_config_hash,omitempty"`
 	Status               RemoteConfigStatus_Status `protobuf:"varint,3,opt,name=status,proto3,enum=opamp.proto.RemoteConfigStatus_Status" json:"status,omitempty"`
@@ -2090,7 +2090,7 @@ func (x *RemoteConfigStatus) GetErrorMessage() string {
 	return ""
 }
 
-// The PackageStatuses message describes the status of all packages that the agent
+// The PackageStatuses message describes the status of all packages that the Agent
 // has or was offered.
 type PackageStatuses struct {
 	state         protoimpl.MessageState
@@ -2104,11 +2104,11 @@ type PackageStatuses struct {
 	// The key MUST match the name field of PackageStatus message.
 	Packages map[string]*PackageStatus `protobuf:"bytes,2,rep,name=packages,proto3" json:"packages,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
 	// The aggregate hash of all packages that this Agent previously received from the
-	// server via PackagesAvailable message.
+	// Server via PackagesAvailable message.
 	//
-	// The server SHOULD compare this hash to the aggregate hash of all packages that
-	// it has for this Agent and if the hashes are different the server SHOULD send
-	// an PackagesAvailable message to the agent.
+	// The Server SHOULD compare this hash to the aggregate hash of all packages that
+	// it has for this Agent and if the hashes are different the Server SHOULD send
+	// an PackagesAvailable message to the Agent.
 	ServerProvidedAllPackagesHash []byte `protobuf:"bytes,3,opt,name=server_provided_all_packages_hash,json=serverProvidedAllPackagesHash,proto3" json:"server_provided_all_packages_hash,omitempty"`
 }
 
@@ -2178,37 +2178,37 @@ type PackageStatus struct {
 	// MUST be set if the Agent has this package.
 	// MUST be empty if the Agent does not have this package. This may be the case
 	// for example if the package was offered by the Server but failed to install
-	// and the agent did not have this package previously.
+	// and the Agent did not have this package previously.
 	AgentHasVersion string `protobuf:"bytes,2,opt,name=agent_has_version,json=agentHasVersion,proto3" json:"agent_has_version,omitempty"`
 	// The hash of the package that the Agent has.
 	// MUST be set if the Agent has this package.
 	// MUST be empty if the Agent does not have this package. This may be the case for
 	// example if the package was offered by the Server but failed to install and the
-	// agent did not have this package previously.
+	// Agent did not have this package previously.
 	AgentHasHash []byte `protobuf:"bytes,3,opt,name=agent_has_hash,json=agentHasHash,proto3" json:"agent_has_hash,omitempty"`
-	// The version of the package that the server offered to the agent.
+	// The version of the package that the Server offered to the Agent.
 	// MUST be set if the installation of the package is initiated by an earlier offer
-	// from the server to install this package.
+	// from the Server to install this package.
 	//
 	// MUST be empty if the Agent has this package but it was installed locally and
-	// was not offered by the server.
+	// was not offered by the Server.
 	//
 	// Note that it is possible for both agent_has_version and server_offered_version
 	// fields to be set and to have different values. This is for example possible if
-	// the agent already has a version of the package successfully installed, the server
-	// offers a different version, but the agent fails to install that version.
+	// the Agent already has a version of the package successfully installed, the Server
+	// offers a different version, but the Agent fails to install that version.
 	ServerOfferedVersion string `protobuf:"bytes,4,opt,name=server_offered_version,json=serverOfferedVersion,proto3" json:"server_offered_version,omitempty"`
-	// The hash of the package that the server offered to the agent.
+	// The hash of the package that the Server offered to the Agent.
 	// MUST be set if the installation of the package is initiated by an earlier
-	// offer from the server to install this package.
+	// offer from the Server to install this package.
 	//
 	// MUST be empty if the Agent has this package but it was installed locally and
-	// was not offered by the server.
+	// was not offered by the Server.
 	//
 	// Note that it is possible for both agent_has_hash and server_offered_hash
 	// fields to be set and to have different values. This is for example possible if
-	// the agent already has a version of the package successfully installed, the
-	// server offers a different version, but the agent fails to install that version.
+	// the Agent already has a version of the package successfully installed, the
+	// Server offers a different version, but the Agent fails to install that version.
 	ServerOfferedHash []byte               `protobuf:"bytes,5,opt,name=server_offered_hash,json=serverOfferedHash,proto3" json:"server_offered_hash,omitempty"`
 	Status            PackageStatus_Status `protobuf:"varint,6,opt,name=status,proto3,enum=opamp.proto.PackageStatus_Status" json:"status,omitempty"`
 	// Error message if the status is erroneous.
@@ -2296,8 +2296,8 @@ func (x *PackageStatus) GetErrorMessage() string {
 	return ""
 }
 
-// Properties related to identification of the agent, which can be overridden
-// by the server if needed
+// Properties related to identification of the Agent, which can be overridden
+// by the Server if needed
 type AgentIdentification struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -2352,19 +2352,19 @@ type AgentRemoteConfig struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// Agent config offered by the management server to the agent instance. SHOULD NOT be
-	// set if the config for this agent has not changed since it was last requested (i.e.
+	// Agent config offered by the management Server to the Agent instance. SHOULD NOT be
+	// set if the config for this Agent has not changed since it was last requested (i.e.
 	// AgentConfigRequest.last_remote_config_hash field is equal to
 	// AgentConfigResponse.config_hash field).
 	Config *AgentConfigMap `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
-	// Hash of "config". The agent SHOULD include this value in subsequent StatusReport
-	// messages. This in turn allows the management server to identify that a new config is
-	// available for the agent.
+	// Hash of "config". The Agent SHOULD include this value in subsequent StatusReport
+	// messages. This in turn allows the management Server to identify that a new config is
+	// available for the Agent.
 	//
-	// This field MUST be always set if the management server supports remote configuration
+	// This field MUST be always set if the management Server supports remote configuration
 	// of agents.
 	//
-	// Management server must choose a hashing function that guarantees lack of hash
+	// Management Server must choose a hashing function that guarantees lack of hash
 	// collisions in practice.
 	ConfigHash []byte `protobuf:"bytes,2,opt,name=config_hash,json=configHash,proto3" json:"config_hash,omitempty"`
 }
@@ -2472,7 +2472,7 @@ type AgentConfigFile struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// Config file or section body. The content, format and encoding depends on the agent
+	// Config file or section body. The content, format and encoding depends on the Agent
 	// type. The content_type field may optionally describe the MIME type of the body.
 	Body []byte `protobuf:"bytes,1,opt,name=body,proto3" json:"body,omitempty"`
 	// Optional MIME Content-Type that describes what's in the body field, for

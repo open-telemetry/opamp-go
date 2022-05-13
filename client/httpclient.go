@@ -40,7 +40,7 @@ func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) er
 
 	c.opAMPServerURL = settings.OpAMPServerURL
 
-	// Prepare server connection settings.
+	// Prepare Server connection settings.
 	if settings.AuthorizationHeader != "" {
 		c.sender.SetRequestHeader("Authorization", settings.AuthorizationHeader)
 	}

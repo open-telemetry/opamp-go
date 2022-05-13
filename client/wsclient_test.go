@@ -12,7 +12,7 @@ import (
 )
 
 func TestDisconnectWSByServer(t *testing.T) {
-	// Start a server.
+	// Start a Server.
 	srv := internal.StartMockServer(t)
 	var conn atomic.Value
 	srv.OnWSConnect = func(c *websocket.Conn) {
@@ -40,7 +40,7 @@ func TestDisconnectWSByServer(t *testing.T) {
 	eventually(t, func() bool { return conn.Load() != nil })
 	assert.True(t, connectErr.Load() == nil)
 
-	// Close the server and forcefully disconnect.
+	// Close the Server and forcefully disconnect.
 	srv.Close()
 	_ = conn.Load().(*websocket.Conn).Close()
 

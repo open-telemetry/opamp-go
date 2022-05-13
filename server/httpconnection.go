@@ -13,7 +13,7 @@ var errInvalidHTTPConnection = errors.New("cannot Send() over HTTP connection")
 
 // httpConnection represents an OpAMP connection over a plain HTTP connection.
 // Only one response is possible to send when using plain HTTP connection
-// and that response will be sent by OpAMP server's HTTP request handler after the
+// and that response will be sent by OpAMP Server's HTTP request handler after the
 // onMessage callback returns.
 type httpConnection struct {
 	conn net.Conn

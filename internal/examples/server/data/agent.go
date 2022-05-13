@@ -40,7 +40,7 @@ type Agent struct {
 	// Remote config that we will give to this Agent.
 	remoteConfig *protobufs.AgentRemoteConfig
 
-	// Channels to notify when this agent's status is updated next time.
+	// Channels to notify when this Agent's status is updated next time.
 	statusUpdateWatchers []chan<- struct{}
 }
 
@@ -86,7 +86,7 @@ func (agent *Agent) UpdateStatus(
 }
 
 func notifyStatusWatchers(statusUpdateWatchers []chan<- struct{}) {
-	// Notify everyone who is waiting on this agent's status updates.
+	// Notify everyone who is waiting on this Agent's status updates.
 	for _, ch := range statusUpdateWatchers {
 		select {
 		case ch <- struct{}{}:
@@ -99,13 +99,13 @@ func (agent *Agent) updateStatusField(newStatus *protobufs.StatusReport) (agentD
 	prevStatus := agent.Status
 
 	if agent.Status == nil {
-		// First time this agent reports a status, remember it.
+		// First time this Agent reports a status, remember it.
 		agent.Status = newStatus
 		agentDescrChanged = true
 	} else {
-		// Not a new agent. Checks what's changed in the agent's description.
+		// Not a new Agent. Checks what's changed in the Agent's description.
 		if newStatus.AgentDescription != nil {
-			// If the AgentDescription field is set it means the agent tells us
+			// If the AgentDescription field is set it means the Agent tells us
 			// something is changed in the field since the last status report
 			// (or this is the first report).
 			// Make full comparison of previous and new descriptions to see if it
@@ -163,8 +163,8 @@ func (agent *Agent) updateEffectiveConfig(
 		newStatus.EffectiveConfig == nil ||
 		agent.Status.EffectiveConfig.ConfigMap == nil ||
 		!bytes.Equal(agent.Status.EffectiveConfig.Hash, newStatus.EffectiveConfig.Hash) {
-		// Ask the agent to report back the effective config since we don't have it
-		// or what we have is different from what the agent has because hashes don't match.
+		// Ask the Agent to report back the effective config since we don't have it
+		// or what we have is different from what the Agent has because hashes don't match.
 		response.Flags = response.Flags | protobufs.ServerToAgent_ReportEffectiveConfig
 	}
 }
@@ -182,28 +182,28 @@ func (agent *Agent) processStatusUpdate(
 		// We need to recalculate the config.
 		configChanged = agent.calcRemoteConfig()
 
-		// And set connection settings that are appropriate for the agent description.
+		// And set connection settings that are appropriate for the Agent description.
 		agent.calcConnectionSettings(response)
 	}
 
-	// If remote config is changed and different from what the agent has then
-	// send the new remote config to the agent.
+	// If remote config is changed and different from what the Agent has then
+	// send the new remote config to the Agent.
 	if configChanged ||
 		(newStatus.RemoteConfigStatus != nil &&
 			bytes.Compare(newStatus.RemoteConfigStatus.LastRemoteConfigHash, agent.remoteConfig.ConfigHash) != 0) {
-		// The new status resulted in a change in the config of the agent or the agent
-		// does not have this config (hash is different). Send the new config the agent.
+		// The new status resulted in a change in the config of the Agent or the Agent
+		// does not have this config (hash is different). Send the new config the Agent.
 		response.RemoteConfig = agent.remoteConfig
 	}
 
 	agent.updateEffectiveConfig(newStatus, response)
 }
 
-// SetCustomConfig sets a custom config for this agent.
+// SetCustomConfig sets a custom config for this Agent.
 // notifyWhenConfigIsApplied channel is notified after the remote config is applied
-// to the agent and after the agent reports back the effective config.
-// If the provided config is equal to the current remoteConfig of the agent
-// then we will not send any config to the agent and notifyWhenConfigIsApplied channel
+// to the Agent and after the Agent reports back the effective config.
+// If the provided config is equal to the current remoteConfig of the Agent
+// then we will not send any config to the Agent and notifyWhenConfigIsApplied channel
 // will be notified immediately. This requires that notifyWhenConfigIsApplied channel
 // has a buffer size of at least 1.
 func (agent *Agent) SetCustomConfig(
@@ -217,9 +217,9 @@ func (agent *Agent) SetCustomConfig(
 	configChanged := agent.calcRemoteConfig()
 	if configChanged {
 		if notifyWhenConfigIsApplied != nil {
-			// The caller wants to be notified when the agent reports a status
+			// The caller wants to be notified when the Agent reports a status
 			// update next time. This is typically used in the UI to wait until
-			// the configuration changes are propagated successfully to the agent.
+			// the configuration changes are propagated successfully to the Agent.
 			agent.statusUpdateWatchers = append(
 				agent.statusUpdateWatchers,
 				notifyWhenConfigIsApplied,
@@ -235,17 +235,17 @@ func (agent *Agent) SetCustomConfig(
 		agent.mux.Unlock()
 
 		if notifyWhenConfigIsApplied != nil {
-			// No config change. We are not going to send config to the agent and
-			// as a result we do not expect status update from the agent, so we will
+			// No config change. We are not going to send config to the Agent and
+			// as a result we do not expect status update from the Agent, so we will
 			// just notify the waiter that the config change is done.
 			notifyWhenConfigIsApplied <- struct{}{}
 		}
 	}
 }
 
-// calcRemoteConfig calculates the remote config for this agent. It returns true if
+// calcRemoteConfig calculates the remote config for this Agent. It returns true if
 // the calculated new config is different from the existing config stored in
-// agent.remoteConfig.
+// Agent.remoteConfig.
 func (agent *Agent) calcRemoteConfig() bool {
 	hash := sha256.New()
 
@@ -255,7 +255,7 @@ func (agent *Agent) calcRemoteConfig() bool {
 		},
 	}
 
-	// Add the custom config for this particular agent instance. Use empty
+	// Add the custom config for this particular Agent instance. Use empty
 	// string as the config file name.
 	cfg.Config.ConfigMap[""] = &protobufs.AgentConfigFile{
 		Body: []byte(agent.CustomInstanceConfig),
@@ -320,10 +320,10 @@ func isEqualConfigFile(f1, f2 *protobufs.AgentConfigFile) bool {
 }
 
 func (agent *Agent) calcConnectionSettings(response *protobufs.ServerToAgent) {
-	// Here we can use agent's description to send the appropriate connection
-	// settings to the agent.
+	// Here we can use Agent's description to send the appropriate connection
+	// settings to the Agent.
 	// In this simple example the connection settings do not depend on the
-	// agent description, so we jst set them directly.
+	// Agent description, so we jst set them directly.
 
 	response.ConnectionSettings = &protobufs.ConnectionSettingsOffers{
 		Hash:  nil, // TODO: calc has from settings.

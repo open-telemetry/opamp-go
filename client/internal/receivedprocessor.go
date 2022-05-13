@@ -125,7 +125,7 @@ func (r *receivedProcessor) rcvRemoteConfig(
 		return false
 	}
 
-	// Ask the agent to apply the remote config.
+	// Ask the Agent to apply the remote config.
 	effective, changed, applyErr := r.callbacks.OnRemoteConfig(ctx, remoteCfg)
 
 	// Begin creating the new status.
@@ -140,7 +140,7 @@ func (r *receivedProcessor) rcvRemoteConfig(
 		cfgStatus.Status = protobufs.RemoteConfigStatus_APPLIED
 	}
 
-	// Respond back with the hash of the config received from the server.
+	// Respond back with the hash of the config received from the Server.
 	cfgStatus.LastRemoteConfigHash = remoteCfg.ConfigHash
 	calcHashRemoteConfigStatus(cfgStatus)
 
@@ -156,10 +156,10 @@ func (r *receivedProcessor) rcvRemoteConfig(
 
 	// Check if the status has changed by comparing the hashes.
 	if !bytes.Equal(cfgStatusHash, cfgStatus.Hash) {
-		// Let the agent know about the status.
+		// Let the Agent know about the status.
 		r.callbacks.SaveRemoteConfigStatus(ctx, cfgStatus)
 
-		// Include the config status in the next message to the server.
+		// Include the config status in the next message to the Server.
 		r.sender.NextMessage().UpdateStatus(
 			func(statusReport *protobufs.StatusReport) {
 				statusReport.RemoteConfigStatus = cfgStatus

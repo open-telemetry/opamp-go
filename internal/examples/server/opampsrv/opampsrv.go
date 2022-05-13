@@ -68,6 +68,6 @@ func (srv *Server) onMessage(conn types.Connection, msg *protobufs.AgentToServer
 		agent.UpdateStatus(status, response)
 	}
 
-	// Send the response back to the agent.
+	// Send the response back to the Agent.
 	return response
 }

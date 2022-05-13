@@ -63,12 +63,12 @@ func TestServerStartRejectConnection(t *testing.T) {
 		},
 	}
 
-	// Start a server.
+	// Start a Server.
 	settings := &StartSettings{Settings: Settings{Callbacks: callbacks}}
 	srv := startServer(t, settings)
 	defer srv.Stop(context.Background())
 
-	// Try to connect to the server.
+	// Try to connect to the Server.
 	conn, resp, err := dialClient(settings)
 
 	// Verify that the connection is rejected and rejection data is available to the client.
@@ -100,12 +100,12 @@ func TestServerStartAcceptConnection(t *testing.T) {
 		},
 	}
 
-	// Start a server.
+	// Start a Server.
 	settings := &StartSettings{Settings: Settings{Callbacks: callbacks}}
 	srv := startServer(t, settings)
 	defer srv.Stop(context.Background())
 
-	// Connect to the server.
+	// Connect to the Server.
 	conn, resp, err := dialClient(settings)
 
 	// Verify that the connection is successful.
@@ -122,7 +122,7 @@ func TestServerStartAcceptConnection(t *testing.T) {
 	// Close the connection from client side.
 	conn.Close()
 
-	// Verify that the server receives the closing notification.
+	// Verify that the Server receives the closing notification.
 	eventually(t, func() bool { return atomic.LoadInt32(&connectionCloseCalled) == 1 })
 }
 
@@ -145,7 +145,7 @@ func TestServerReceiveSendMessage(t *testing.T) {
 		},
 	}
 
-	// Start a server.
+	// Start a Server.
 	settings := &StartSettings{Settings: Settings{Callbacks: callbacks}}
 	srv := startServer(t, settings)
 	defer srv.Stop(context.Background())
@@ -155,7 +155,7 @@ func TestServerReceiveSendMessage(t *testing.T) {
 	require.NotNil(t, conn)
 	defer conn.Close()
 
-	// Send a message to the server.
+	// Send a message to the Server.
 	sendMsg := protobufs.AgentToServer{
 		InstanceUid: "12345678",
 	}
@@ -164,11 +164,11 @@ func TestServerReceiveSendMessage(t *testing.T) {
 	err = conn.WriteMessage(websocket.BinaryMessage, bytes)
 	require.NoError(t, err)
 
-	// Wait until server receives the message.
+	// Wait until Server receives the message.
 	eventually(t, func() bool { return rcvMsg.Load() != nil })
 	assert.True(t, proto.Equal(rcvMsg.Load().(proto.Message), &sendMsg))
 
-	// Read server's response.
+	// Read Server's response.
 	mt, bytes, err := conn.ReadMessage()
 	require.NoError(t, err)
 	require.EqualValues(t, websocket.BinaryMessage, mt)
@@ -209,12 +209,12 @@ func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
 		},
 	}
 
-	// Start a server.
+	// Start a Server.
 	settings := &StartSettings{Settings: Settings{Callbacks: callbacks}}
 	srv := startServer(t, settings)
 	defer srv.Stop(context.Background())
 
-	// Send a message to the server.
+	// Send a message to the Server.
 	sendMsg := protobufs.AgentToServer{
 		InstanceUid: "12345678",
 	}
@@ -223,14 +223,14 @@ func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
 	resp, err := http.Post("http://"+settings.ListenEndpoint+settings.ListenPath, contentTypeProtobuf, bytes.NewReader(b))
 	require.NoError(t, err)
 
-	// Wait until server receives the message.
+	// Wait until Server receives the message.
 	eventually(t, func() bool { return rcvMsg.Load() != nil })
 	assert.True(t, atomic.LoadInt32(&onConnectedCalled) == 1)
 
 	// Verify the received message is what was sent.
 	assert.True(t, proto.Equal(rcvMsg.Load().(proto.Message), &sendMsg))
 
-	// Read server's response.
+	// Read Server's response.
 	b, err = io.ReadAll(resp.Body)
 	require.NoError(t, err)
 
@@ -267,14 +267,14 @@ func TestServerAttachAcceptConnection(t *testing.T) {
 		},
 	}
 
-	// Prepare to attach OpAMP server to an HTTP Server created separately.
+	// Prepare to attach OpAMP Server to an HTTP Server created separately.
 	settings := Settings{Callbacks: callbacks}
 	srv := New(&sharedinternal.NopLogger{})
 	require.NotNil(t, srv)
 	handlerFunc, err := srv.Attach(settings)
 	require.NoError(t, err)
 
-	// Create an HTTP server and make it handle OpAMP connections.
+	// Create an HTTP Server and make it handle OpAMP connections.
 	mux := http.NewServeMux()
 	path := "/opamppath"
 	mux.HandleFunc(path, handlerFunc)

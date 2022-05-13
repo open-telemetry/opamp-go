@@ -102,7 +102,7 @@ func (c *wsClient) UpdateEffectiveConfig(ctx context.Context) error {
 
 // Try to connect once. Returns an error if connection fails and optional retryAfter
 // duration to indicate to the caller to retry after the specified time as instructed
-// by the server.
+// by the Server.
 func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sharedinternal.OptionalDuration) {
 	var resp *http.Response
 	conn, resp, err := c.dialer.DialContext(ctx, c.url.String(), c.requestHeader)
@@ -156,8 +156,8 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 					// Retry again a bit later.
 
 					if retryAfter.Defined && retryAfter.Duration > interval {
-						// If the server suggested connecting later than our interval
-						// then honour server's request, otherwise wait at least
+						// If the Server suggested connecting later than our interval
+						// then honour Server's request, otherwise wait at least
 						// as much as we calculated.
 						interval = retryAfter.Duration
 					}

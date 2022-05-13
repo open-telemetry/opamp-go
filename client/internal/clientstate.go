@@ -14,7 +14,7 @@ import (
 // AgentDescription, RemoteConfigStatus and PackageStatuses.
 //
 // See OpAMP spec for more details on how state synchronization works:
-// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#agent-to-server-state-synchronization
+// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#Agent-to-Server-state-synchronization
 //
 // Note that the EffectiveConfig is subject to the same synchronization logic, however
 // it is not stored in this struct since it can be large, and we do not want to always

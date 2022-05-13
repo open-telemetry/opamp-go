@@ -35,9 +35,9 @@ type Callbacks interface {
 
 	// OnMessage is called when a message is received from the connection. Can happen
 	// only after OnConnected(). Must return a ServerToAgent message that will be sent
-	// as a response to the agent.
+	// as a response to the Agent.
 	// For plain HTTP requests once OnMessage returns and the response is sent
-	// to the agent the OnConnectionClose message will be called immediately.
+	// to the Agent the OnConnectionClose message will be called immediately.
 	OnMessage(conn Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent
 
 	// OnConnectionClose is called when the OpAMP connection is closed.

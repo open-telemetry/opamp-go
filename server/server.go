@@ -9,7 +9,7 @@ import (
 )
 
 type Settings struct {
-	// Callbacks that the server will call after successful Attach/Start.
+	// Callbacks that the Server will call after successful Attach/Start.
 	Callbacks types.Callbacks
 }
 
@@ -35,7 +35,7 @@ type OpAMPServer interface {
 	// desired http.Server by the caller and the http.Server should be started by
 	// the caller after that.
 	// For example:
-	//   handler, _ := server.Attach()
+	//   handler, _ := Server.Attach()
 	//   mux := http.NewServeMux()
 	//   mux.HandleFunc("/opamp", handler)
 	//   httpSrv := &http.Server{Handler:mux,Addr:"127.0.0.1:4320"}

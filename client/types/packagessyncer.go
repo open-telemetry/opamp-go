@@ -5,12 +5,12 @@ import (
 	"io"
 )
 
-// PackagesSyncer can be used by the agent to initiate syncing a package from the server.
+// PackagesSyncer can be used by the Agent to initiate syncing a package from the Server.
 // The PackagesSyncer instance knows the right context: the particular OpAMPClient and
 // the particular PackageAvailable message the OnPackageAvailable callback was called for.
 type PackagesSyncer interface {
-	// Sync the available package from the server to the agent.
-	// The agent must supply an PackagesStateProvider to let the Sync function
+	// Sync the available package from the Server to the Agent.
+	// The Agent must supply an PackagesStateProvider to let the Sync function
 	// know what is available locally, what data needs to be sync and how the
 	// data can be stored locally.
 	Sync(ctx context.Context, localState PackagesStateProvider) error
@@ -19,7 +19,7 @@ type PackagesSyncer interface {
 type PackagesStateProvider interface {
 	AllPackagesHash() ([]byte, error)
 
-	// Packages returns the names of all packages that exist in the agent's local storage.
+	// Packages returns the names of all packages that exist in the Agent's local storage.
 	Packages() ([]string, error)
 
 	// PackageHash returns the hash of a local package. packageName is one of the names
@@ -46,7 +46,7 @@ type PackagesStateProvider interface {
 	// call completes successfully.
 	SetPackageHash(packageName string, hash []byte) error
 
-	// DeletePackage deletes the package from the agent's local storage.
+	// DeletePackage deletes the package from the Agent's local storage.
 	DeletePackage(packageName string) error
 
 	// SetAllPackagesHash must remember the AllPackagesHash. Must be returned

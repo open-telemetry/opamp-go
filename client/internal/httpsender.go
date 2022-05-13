@@ -160,8 +160,8 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 func recalculateInterval(interval time.Duration, resp *http.Response) time.Duration {
 	retryAfter := internal.ExtractRetryAfterHeader(resp)
 	if retryAfter.Defined && retryAfter.Duration > interval {
-		// If the server suggested connecting later than our interval
-		// then honour server's request, otherwise wait at least
+		// If the Server suggested connecting later than our interval
+		// then honour Server's request, otherwise wait at least
 		// as much as we calculated.
 		interval = retryAfter.Duration
 	}
