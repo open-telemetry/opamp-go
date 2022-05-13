@@ -71,8 +71,11 @@ func TestServerToAgentCommand(t *testing.T) {
 					return nil
 				},
 			}
-			clientSyncedState := ClientSyncedState{}
-			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState)
+			clientSyncedState := ClientSyncedState{
+				remoteConfigStatus: &protobufs.RemoteConfigStatus{},
+			}
+			sender := WSSender{}
+			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, &sender, &clientSyncedState)
 			receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 				Command: test.command,
 			})
@@ -109,7 +112,7 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 
 func TestOnRemoteConfigReportsError(t *testing.T) {
 	expectMsg := "error occurred while handling configuration"
-	expectStatus := protobufs.RemoteConfigStatus_Status(protobufs.RemoteConfigStatus_Failed)
+	expectStatus := protobufs.RemoteConfigStatus_FAILED
 
 	callbacks := types.CallbacksStruct{
 		OnRemoteConfigFunc: func(ctx context.Context, remoteConfig *protobufs.AgentRemoteConfig) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {

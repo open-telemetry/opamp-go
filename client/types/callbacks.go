@@ -29,9 +29,7 @@ type Callbacks interface {
 	OnError(err *protobufs.ServerErrorResponse)
 
 	// OnRemoteConfig is called when the agent receives a remote config from the server.
-	// Note that the config parameter may be nil, which indicates that the remote
-	// is the same as what the Agent reported it has via the last_remote_config_hash
-	// field of the RemoteConfigStatus message last time.
+	// The config parameter will not be nil.
 	//
 	// The Agent should process the config and return the effective config if processing
 	// succeeded or an error if processing failed.
@@ -51,6 +49,13 @@ type Callbacks interface {
 		ctx context.Context,
 		remoteConfig *protobufs.AgentRemoteConfig,
 	) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error)
+
+	// SaveRemoteConfigStatus is called after OnRemoteConfig returns. The status
+	// will be set either as APPLIED or FAILED depending on whether OnRemoteConfig
+	// returned a success or error.
+	// The Agent must remember this RemoteConfigStatus and supply in the future
+	// calls to Start() in StartSettings.RemoteConfigStatus.
+	SaveRemoteConfigStatus(ctx context.Context, status *protobufs.RemoteConfigStatus)
 
 	// GetEffectiveConfig returns the current effective config. Only one
 	// GetEffectiveConfig call can be active at any time. Until GetEffectiveConfig
@@ -152,6 +157,8 @@ type CallbacksStruct struct {
 		remoteConfig *protobufs.AgentRemoteConfig,
 	) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error)
 
+	SaveRemoteConfigStatusFunc func(ctx context.Context, status *protobufs.RemoteConfigStatus)
+
 	GetEffectiveConfigFunc func(ctx context.Context) (*protobufs.EffectiveConfig, error)
 
 	OnOpampConnectionSettingsFunc func(
@@ -208,6 +215,12 @@ func (c CallbacksStruct) OnRemoteConfig(
 		return c.OnRemoteConfigFunc(ctx, remoteConfig)
 	}
 	return nil, false, nil
+}
+
+func (c CallbacksStruct) SaveRemoteConfigStatus(ctx context.Context, status *protobufs.RemoteConfigStatus) {
+	if c.SaveRemoteConfigStatusFunc != nil {
+		c.SaveRemoteConfigStatusFunc(ctx, status)
+	}
 }
 
 func (c CallbacksStruct) GetEffectiveConfig(ctx context.Context) (*protobufs.EffectiveConfig, error) {

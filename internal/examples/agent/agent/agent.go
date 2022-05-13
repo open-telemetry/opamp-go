@@ -54,7 +54,7 @@ type Agent struct {
 
 	opampClient client.OpAMPClient
 
-	remoteConfigHash []byte
+	remoteConfigStatus *protobufs.RemoteConfigStatus
 
 	metricReporter *MetricReporter
 }
@@ -97,14 +97,17 @@ func (agent *Agent) start() error {
 			OnErrorFunc: func(err *protobufs.ServerErrorResponse) {
 				agent.logger.Errorf("Server returned an error response: %v", err.ErrorMessage)
 			},
-			OnRemoteConfigFunc:                   agent.onRemoteConfig,
+			OnRemoteConfigFunc: agent.onRemoteConfig,
+			SaveRemoteConfigStatusFunc: func(_ context.Context, status *protobufs.RemoteConfigStatus) {
+				agent.remoteConfigStatus = status
+			},
 			OnOwnTelemetryConnectionSettingsFunc: agent.onOwnTelemetryConnectionSettings,
 			OnAgentIdentificationFunc:            agent.onAgentIdentificationFunc,
 			GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 				return agent.composeEffectiveConfig(), nil
 			},
 		},
-		LastRemoteConfigHash: agent.remoteConfigHash,
+		RemoteConfigStatus: agent.remoteConfigStatus,
 	}
 
 	agent.logger.Debugf("Starting OpAMP client...")
@@ -344,8 +347,6 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 		agent.effectiveConfigHash = hash[:]
 		configChanged = true
 	}
-
-	agent.remoteConfigHash = config.ConfigHash
 
 	return configChanged, nil
 }

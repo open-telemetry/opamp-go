@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"crypto/sha256"
 	"errors"
 	"sync"
 
@@ -64,6 +65,33 @@ func (s *ClientSyncedState) SetAgentDescription(descr *protobufs.AgentDescriptio
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	s.agentDescription = clone
+
+	return nil
+}
+
+func calcHashRemoteConfigStatus(status *protobufs.RemoteConfigStatus) {
+	// Calculate and set the Hash field from the rest of the fields in the message.
+	h := sha256.New()
+	h.Write(status.LastRemoteConfigHash)
+	h.Write([]byte(status.Status.String()))
+	h.Write([]byte(status.ErrorMessage))
+	status.Hash = h.Sum(nil)
+}
+
+func (s *ClientSyncedState) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) error {
+	if status == nil {
+		return errRemoteConfigStatusMissing
+	}
+
+	if len(status.Hash) == 0 {
+		return errors.New("hash field must be set, use CalcHashRemoteConfigStatus")
+	}
+
+	clone := proto.Clone(status).(*protobufs.RemoteConfigStatus)
+
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	s.remoteConfigStatus = clone
 
 	return nil
 }

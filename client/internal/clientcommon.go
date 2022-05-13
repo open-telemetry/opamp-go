@@ -11,9 +11,10 @@ import (
 )
 
 var (
-	errAgentDescriptionMissing = errors.New("AgentDescription is not set")
-	errAlreadyStarted          = errors.New("already started")
-	errCannotStopNotStarted    = errors.New("cannot stop because not started")
+	errAgentDescriptionMissing   = errors.New("AgentDescription is not set")
+	errRemoteConfigStatusMissing = errors.New("RemoteConfigStatus is not set")
+	errAlreadyStarted            = errors.New("already started")
+	errCannotStopNotStarted      = errors.New("cannot stop because not started")
 )
 
 // ClientCommon contains the OpAMP logic that is common between WebSocket and
@@ -52,6 +53,18 @@ func (c *ClientCommon) PrepareStart(_ context.Context, settings types.StartSetti
 	}
 
 	if err := c.ClientSyncedState.SetAgentDescription(settings.AgentDescription); err != nil {
+		return err
+	}
+
+	if settings.RemoteConfigStatus == nil {
+		// RemoteConfigStatus is not provided. Start with empty.
+		settings.RemoteConfigStatus = &protobufs.RemoteConfigStatus{
+			Status: protobufs.RemoteConfigStatus_UNSET,
+		}
+		calcHashRemoteConfigStatus(settings.RemoteConfigStatus)
+	}
+
+	if err := c.ClientSyncedState.SetRemoteConfigStatus(settings.RemoteConfigStatus); err != nil {
 		return err
 	}
 
@@ -141,6 +154,8 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.StatusReport.AgentDescription = c.ClientSyncedState.AgentDescription()
 
 			msg.StatusReport.EffectiveConfig = cfg
+
+			msg.StatusReport.RemoteConfigStatus = c.ClientSyncedState.RemoteConfigStatus()
 
 			if msg.PackageStatuses == nil {
 				msg.PackageStatuses = &protobufs.PackageStatuses{}
