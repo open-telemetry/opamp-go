@@ -43,13 +43,15 @@ type OpAMPClient interface {
 	Stop(ctx context.Context) error
 
 	// SetAgentDescription sets attributes of the Agent. The attributes will be included
-	// in the next status report sent to the Server.
-	// May be called after Start(), in which case the attributes will be included
+	// in the next status report sent to the Server. MUST be called before Start().
+	// May be also called after Start(), in which case the attributes will be included
 	// in the next outgoing status report. This is typically used by Agents which allow
 	// their AgentDescription to change dynamically while the OpAMPClient is started.
-	// To define the initial Agent description that is included in the first status report
-	// set StartSettings.AgentDescription field.
+	// nil values are not allowed and will return an error.
 	SetAgentDescription(descr *protobufs.AgentDescription) error
+
+	// AgentDescription returns the last value successfully set by SetAgentDescription().
+	AgentDescription() *protobufs.AgentDescription
 
 	// UpdateEffectiveConfig fetches the current local effective config using
 	// GetEffectiveConfig callback and sends it to the Server.

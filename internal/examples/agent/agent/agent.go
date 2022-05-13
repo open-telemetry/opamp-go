@@ -84,9 +84,8 @@ func (agent *Agent) start() error {
 	agent.opampClient = client.NewWebSocket(agent.logger)
 
 	settings := types.StartSettings{
-		OpAMPServerURL:   "ws://127.0.0.1:4320/v1/opamp",
-		InstanceUid:      agent.instanceId.String(),
-		AgentDescription: agent.agentDescription,
+		OpAMPServerURL: "ws://127.0.0.1:4320/v1/opamp",
+		InstanceUid:    agent.instanceId.String(),
 		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func() {
 				agent.logger.Debugf("Connected to the server.")
@@ -109,10 +108,14 @@ func (agent *Agent) start() error {
 		},
 		RemoteConfigStatus: agent.remoteConfigStatus,
 	}
+	err := agent.opampClient.SetAgentDescription(agent.agentDescription)
+	if err != nil {
+		return err
+	}
 
 	agent.logger.Debugf("Starting OpAMP client...")
 
-	err := agent.opampClient.Start(context.Background(), settings)
+	err = agent.opampClient.Start(context.Background(), settings)
 	if err != nil {
 		return err
 	}
