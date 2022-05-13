@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"errors"
-	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -32,10 +31,6 @@ func createAgentDescr() *protobufs.AgentDescription {
 				Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "somehost"}},
 			},
 		},
-	}
-	err := CalcHashAgentDescription(agentDescr)
-	if err != nil {
-		log.Fatalln(err)
 	}
 	return agentDescr
 }
@@ -414,7 +409,6 @@ func createEffectiveConfig() *protobufs.EffectiveConfig {
 			},
 		},
 	}
-	CalcHashEffectiveConfig(cfg)
 	return cfg
 }
 
@@ -523,7 +517,6 @@ func TestSetAgentDescription(t *testing.T) {
 				Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "linux"}},
 			},
 		}
-		assert.NoError(t, CalcHashAgentDescription(clientAgentDescr))
 		assert.NoError(t, client.SetAgentDescription(clientAgentDescr))
 
 		// Verify change is delivered.

@@ -167,9 +167,6 @@ func (agent *Agent) createAgentIdentity() {
 			},
 		},
 	}
-	if err := client.CalcHashAgentDescription(agent.agentDescription); err != nil {
-		agent.logger.Errorf("Cannot calculate the hash: %v", err)
-	}
 }
 
 func (agent *Agent) updateAgentIdentity(instanceId ulid.ULID) {

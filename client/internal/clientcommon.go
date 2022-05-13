@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"sync"
@@ -62,7 +63,6 @@ func (c *ClientCommon) PrepareStart(_ context.Context, settings types.StartSetti
 		settings.RemoteConfigStatus = &protobufs.RemoteConfigStatus{
 			Status: protobufs.RemoteConfigStatus_UNSET,
 		}
-		calcHashRemoteConfigStatus(settings.RemoteConfigStatus)
 	}
 
 	if err := c.ClientSyncedState.SetRemoteConfigStatus(settings.RemoteConfigStatus); err != nil {
@@ -143,8 +143,8 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if cfg != nil && len(cfg.Hash) == 0 {
-		return errors.New("EffectiveConfig hash is empty")
+	if cfg != nil {
+		calcHashEffectiveConfig(cfg)
 	}
 
 	c.sender.NextMessage().Update(
@@ -188,6 +188,20 @@ func (c *ClientCommon) SetAgentDescription(descr *protobufs.AgentDescription) er
 	return nil
 }
 
+// calcHashEffectiveConfig calculates and sets the Hash field from the rest of the
+// fields in the message.
+func calcHashEffectiveConfig(msg *protobufs.EffectiveConfig) {
+	h := sha256.New()
+	if msg.ConfigMap != nil {
+		for k, v := range msg.ConfigMap.ConfigMap {
+			h.Write([]byte(k))
+			h.Write(v.Body)
+			h.Write([]byte(v.ContentType))
+		}
+	}
+	msg.Hash = h.Sum(nil)
+}
+
 // UpdateEffectiveConfig fetches the current local effective config using
 // GetEffectiveConfig callback and sends it to the Server using provided Sender.
 func (c *ClientCommon) UpdateEffectiveConfig(ctx context.Context) error {
@@ -196,8 +210,8 @@ func (c *ClientCommon) UpdateEffectiveConfig(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("GetEffectiveConfig failed: %w", err)
 	}
-	if cfg != nil && len(cfg.Hash) == 0 {
-		return errors.New("hash field must be set, use CalcHashEffectiveConfig")
+	if cfg != nil {
+		calcHashEffectiveConfig(cfg)
 	}
 	// Send it to the Server.
 	c.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
