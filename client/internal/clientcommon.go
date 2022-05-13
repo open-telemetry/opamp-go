@@ -11,10 +11,11 @@ import (
 )
 
 var (
-	errAgentDescriptionMissing   = errors.New("AgentDescription is not set")
-	errRemoteConfigStatusMissing = errors.New("RemoteConfigStatus is not set")
-	errAlreadyStarted            = errors.New("already started")
-	errCannotStopNotStarted      = errors.New("cannot stop because not started")
+	ErrAgentDescriptionMissing      = errors.New("AgentDescription is nil")
+	ErrAgentDescriptionNoAttributes = errors.New("AgentDescription has no attributes defined")
+	errRemoteConfigStatusMissing    = errors.New("RemoteConfigStatus is not set")
+	errAlreadyStarted               = errors.New("already started")
+	errCannotStopNotStarted         = errors.New("cannot stop because not started")
 )
 
 // ClientCommon contains the OpAMP logic that is common between WebSocket and
@@ -52,8 +53,8 @@ func (c *ClientCommon) PrepareStart(_ context.Context, settings types.StartSetti
 		return errAlreadyStarted
 	}
 
-	if err := c.ClientSyncedState.SetAgentDescription(settings.AgentDescription); err != nil {
-		return err
+	if c.ClientSyncedState.AgentDescription() == nil {
+		return ErrAgentDescriptionMissing
 	}
 
 	if settings.RemoteConfigStatus == nil {
@@ -166,6 +167,10 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 		},
 	)
 	return nil
+}
+
+func (c *ClientCommon) AgentDescription() *protobufs.AgentDescription {
+	return c.ClientSyncedState.AgentDescription()
 }
 
 // SetAgentDescription sends a status update to the Server with the new AgentDescription

@@ -110,13 +110,18 @@ func (agent *Agent) updateStatusField(newStatus *protobufs.StatusReport) (agentD
 			// (or this is the first report).
 			// Make full comparison of previous and new descriptions to see if it
 			// really is different.
-			if prevStatus != nil && isEqualAgentDescr(prevStatus.AgentDescription, newStatus.AgentDescription) {
+			if prevStatus != nil && bytes.Equal(prevStatus.AgentDescription.Hash, newStatus.AgentDescription.Hash) {
 				// Agent description didn't change.
 				agentDescrChanged = false
 			} else {
 				// Yes, the description is different, update it.
-				agent.Status.AgentDescription = newStatus.AgentDescription
-				agentDescrChanged = true
+				if newStatus.AgentDescription.IdentifyingAttributes == nil &&
+					newStatus.AgentDescription.NonIdentifyingAttributes == nil {
+					// TODO: request full AgentDescription
+				} else {
+					agent.Status.AgentDescription = newStatus.AgentDescription
+					agentDescrChanged = true
+				}
 			}
 		} else {
 			// AgentDescription field is not set, which means description didn't change.

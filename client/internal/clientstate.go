@@ -53,7 +53,11 @@ func (s *ClientSyncedState) PackageStatuses() *protobufs.PackageStatuses {
 // SetAgentDescription sets the AgentDescription in the state.
 func (s *ClientSyncedState) SetAgentDescription(descr *protobufs.AgentDescription) error {
 	if descr == nil {
-		return errAgentDescriptionMissing
+		return ErrAgentDescriptionMissing
+	}
+
+	if descr.IdentifyingAttributes == nil && descr.NonIdentifyingAttributes == nil {
+		return ErrAgentDescriptionNoAttributes
 	}
 
 	clone := proto.Clone(descr).(*protobufs.AgentDescription)

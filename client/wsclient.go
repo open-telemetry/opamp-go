@@ -92,6 +92,10 @@ func (c *wsClient) Stop(ctx context.Context) error {
 	return c.common.Stop(ctx)
 }
 
+func (c *wsClient) AgentDescription() *protobufs.AgentDescription {
+	return c.common.AgentDescription()
+}
+
 func (c *wsClient) SetAgentDescription(descr *protobufs.AgentDescription) error {
 	return c.common.SetAgentDescription(descr)
 }

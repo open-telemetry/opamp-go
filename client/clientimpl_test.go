@@ -78,7 +78,7 @@ func eventually(t *testing.T, f func() bool) {
 	assert.Eventually(t, f, 5*time.Second, 10*time.Millisecond)
 }
 
-func prepareClient(t *testing.T, settings *types.StartSettings, c OpAMPClient) {
+func prepareSettings(t *testing.T, settings *types.StartSettings, c OpAMPClient) {
 	// Autogenerate instance id.
 	entropy := ulid.Monotonic(rand.New(rand.NewSource(99)), 0)
 	settings.InstanceUid = ulid.MustNew(ulid.Timestamp(time.Now()), entropy).String()
@@ -93,8 +93,12 @@ func prepareClient(t *testing.T, settings *types.StartSettings, c OpAMPClient) {
 		u.Scheme = "ws"
 	}
 	settings.OpAMPServerURL = u.String()
+}
 
-	settings.AgentDescription = createAgentDescr()
+func prepareClient(t *testing.T, settings *types.StartSettings, c OpAMPClient) {
+	prepareSettings(t, settings, c)
+	err := c.SetAgentDescription(createAgentDescr())
+	assert.NoError(t, err)
 }
 
 func startClient(t *testing.T, settings types.StartSettings, client OpAMPClient) {
@@ -168,6 +172,26 @@ func TestStopCancellation(t *testing.T) {
 		if err != nil {
 			assert.ErrorIs(t, err, context.Canceled)
 		}
+	})
+}
+
+func TestStartNoDescription(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		settings := createNoServerSettings()
+		prepareSettings(t, &settings, client)
+		err := client.Start(context.Background(), settings)
+		assert.EqualValues(t, err, internal.ErrAgentDescriptionMissing)
+	})
+}
+
+func TestSetInvalidAgentDescription(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		settings := createNoServerSettings()
+		prepareSettings(t, &settings, client)
+		err := client.SetAgentDescription(nil)
+		assert.EqualValues(t, err, internal.ErrAgentDescriptionMissing)
+		err = client.SetAgentDescription(&protobufs.AgentDescription{})
+		assert.EqualValues(t, err, internal.ErrAgentDescriptionNoAttributes)
 	})
 }
 
@@ -362,7 +386,6 @@ func TestIncludesDetailsOnReconnect(t *testing.T) {
 				return &protobufs.EffectiveConfig{}, false, nil
 			},
 		},
-		AgentDescription: &protobufs.AgentDescription{},
 	}
 
 	settings.OpAMPServerURL = "ws://" + srv.Endpoint
@@ -545,7 +568,6 @@ func TestAgentIdentification(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{}
 		settings.OpAMPServerURL = "ws://" + srv.Endpoint
-		settings.AgentDescription = createAgentDescr()
 		settings.Callbacks = types.CallbacksStruct{
 			OnAgentIdentificationFunc: func(
 				ctx context.Context,
@@ -708,7 +730,7 @@ func TestReportAgentDescription(t *testing.T) {
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The first status report after Start must have full AgentDescription.
-			assert.True(t, proto.Equal(settings.AgentDescription, msg.StatusReport.AgentDescription))
+			assert.True(t, proto.Equal(client.AgentDescription(), msg.StatusReport.AgentDescription))
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 
@@ -725,7 +747,7 @@ func TestReportAgentDescription(t *testing.T) {
 
 			// The Hash field must be present and unchanged.
 			assert.NotNil(t, descr.Hash)
-			assert.EqualValues(t, settings.AgentDescription.Hash, descr.Hash)
+			assert.EqualValues(t, client.AgentDescription().Hash, descr.Hash)
 
 			// Ask client for full AgentDescription.
 			return &protobufs.ServerToAgent{
@@ -740,7 +762,7 @@ func TestReportAgentDescription(t *testing.T) {
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The status report must again have full AgentDescription
 			// because the Server asked for it.
-			assert.True(t, proto.Equal(settings.AgentDescription, msg.StatusReport.AgentDescription))
+			assert.True(t, proto.Equal(client.AgentDescription(), msg.StatusReport.AgentDescription))
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 
@@ -785,7 +807,7 @@ func TestReportEffectiveConfig(t *testing.T) {
 
 		// Client --->
 		// Trigger another status report for example by setting AgentDescription.
-		_ = client.SetAgentDescription(settings.AgentDescription)
+		_ = client.SetAgentDescription(client.AgentDescription())
 
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
@@ -883,7 +905,7 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 
 		// Client --->
 		// Trigger another status report by setting AgentDescription.
-		_ = client.SetAgentDescription(settings.AgentDescription)
+		_ = client.SetAgentDescription(client.AgentDescription())
 
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {

@@ -21,10 +21,6 @@ type StartSettings struct {
 	// Agent information.
 	InstanceUid string
 
-	// AgentDescription MUST be set and MUST describe the Agent. See OpAMP spec
-	// for details.
-	AgentDescription *protobufs.AgentDescription
-
 	// Callbacks that the client will call after Start() returns nil.
 	Callbacks Callbacks
 
