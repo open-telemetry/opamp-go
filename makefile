@@ -5,6 +5,8 @@ $(1)
 
 endef
 
+TOOLS_MOD_DIR := ./internal/tools
+
 # Find all .proto files.
 BASELINE_PROTO_FILES := $(wildcard internal/proto/*.proto)
 
@@ -14,6 +16,14 @@ all: test build-examples
 test:
 	go test -race ./...
 	cd internal/examples && go test -race ./...
+
+.PHONY: test-with-cover
+test-with-cover:
+	go-acc --output=coverage.out --ignore=protobufs ./...
+
+show-coverage: test-with-cover
+	# Show coverage as HTML in the default browser.
+	go tool cover -html=coverage.out
 
 .PHONY: build-examples
 build-examples: build-example-agent build-example-server
@@ -42,3 +52,7 @@ gen-proto:
 .PHONY: gomoddownload
 gomoddownload:
 	go mod download
+
+.PHONY: install-tools
+install-tools:
+	cd $(TOOLS_MOD_DIR) && go install github.com/ory/go-acc
