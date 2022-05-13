@@ -136,7 +136,7 @@ func (c *ClientCommon) StartConnectAndRun(runner func(ctx context.Context)) {
 }
 
 // PrepareFirstMessage prepares the initial state of NextMessage struct that client
-// sends when it first establishes a connection with the server.
+// sends when it first establishes a connection with the Server.
 func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 	cfg, err := c.Callbacks.GetEffectiveConfig(ctx)
 	if err != nil {
@@ -172,7 +172,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 // and remembers the AgentDescription in the client state so that it can be sent
 // to the Server when the Server asks for it.
 func (c *ClientCommon) SetAgentDescription(descr *protobufs.AgentDescription) error {
-	// store the agent description to send on reconnect
+	// store the Agent description to send on reconnect
 	if err := c.ClientSyncedState.SetAgentDescription(descr); err != nil {
 		return err
 	}
@@ -194,7 +194,7 @@ func (c *ClientCommon) UpdateEffectiveConfig(ctx context.Context) error {
 	if cfg != nil && len(cfg.Hash) == 0 {
 		return errors.New("hash field must be set, use CalcHashEffectiveConfig")
 	}
-	// Send it to the server.
+	// Send it to the Server.
 	c.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
 		statusReport.EffectiveConfig = cfg
 	})

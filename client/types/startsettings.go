@@ -28,17 +28,17 @@ type StartSettings struct {
 	// Callbacks that the client will call after Start() returns nil.
 	Callbacks Callbacks
 
-	// Previously saved state. These will be reported to the server immediately
+	// Previously saved state. These will be reported to the Server immediately
 	// after the connection is established.
 
 	// The remote config status. If nil is passed it will force
-	// the server to send a remote config back. It is not required to set the Hash
+	// the Server to send a remote config back. It is not required to set the Hash
 	// field, it will be calculated by Start() function.
 	RemoteConfigStatus *protobufs.RemoteConfigStatus
 
 	LastConnectionSettingsHash []byte
 
-	// The hash of the last locally-saved server-provided packages. If nil is passed
-	// it will force the server to send packages list back.
+	// The hash of the last locally-saved Server-provided packages. If nil is passed
+	// it will force the Server to send packages list back.
 	LastServerProvidedAllPackagesHash []byte
 }

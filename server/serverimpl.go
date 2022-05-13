@@ -81,7 +81,7 @@ func (s *server) Start(settings StartSettings) error {
 
 	listenAddr := s.httpServer.Addr
 
-	// Start the HTTP server in background.
+	// Start the HTTP Server in background.
 	if hs.TLSConfig != nil {
 		if listenAddr == "" {
 			listenAddr = ":https"

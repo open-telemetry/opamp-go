@@ -14,7 +14,7 @@ type Agents struct {
 	connections map[types.Connection]map[InstanceId]bool
 }
 
-// RemoveConnection removes the connection all agent instances associated with the
+// RemoveConnection removes the connection all Agent instances associated with the
 // connection.
 func (agents *Agents) RemoveConnection(conn types.Connection) {
 	agents.mux.Lock()
@@ -71,13 +71,13 @@ func (agents *Agents) FindOrCreateAgent(agentId InstanceId, conn types.Connectio
 	agents.mux.Lock()
 	defer agents.mux.Unlock()
 
-	// Ensure the agent is in the agentsById map.
+	// Ensure the Agent is in the agentsById map.
 	agent := agents.agentsById[agentId]
 	if agent == nil {
 		agent = NewAgent(agentId, conn)
 		agents.agentsById[agentId] = agent
 
-		// Ensure the agent's instance id is associated with the connection.
+		// Ensure the Agent's instance id is associated with the connection.
 		if agents.connections[conn] == nil {
 			agents.connections[conn] = map[InstanceId]bool{}
 		}

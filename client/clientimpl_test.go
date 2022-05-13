@@ -103,7 +103,7 @@ func startClient(t *testing.T, settings types.StartSettings, client OpAMPClient)
 	assert.NoError(t, err)
 }
 
-// Create start settings that point to a non-existing server.
+// Create start settings that point to a non-existing Server.
 func createNoServerSettings() types.StartSettings {
 	return types.StartSettings{
 		OpAMPServerURL: "ws://" + testhelpers.GetAvailableLocalAddress(),
@@ -173,7 +173,7 @@ func TestStopCancellation(t *testing.T) {
 
 func TestConnectWithServer(t *testing.T) {
 	testClients(t, func(client OpAMPClient) {
-		// Start a server.
+		// Start a Server.
 		srv := internal.StartMockServer(t)
 
 		// Start a client.
@@ -191,7 +191,7 @@ func TestConnectWithServer(t *testing.T) {
 		// Wait for connection to be established.
 		eventually(t, func() bool { return atomic.LoadInt64(&connected) != 0 })
 
-		// Shutdown the server.
+		// Shutdown the Server.
 		srv.Close()
 
 		// Shutdown the client.
@@ -202,7 +202,7 @@ func TestConnectWithServer(t *testing.T) {
 
 func TestConnectWithServer503(t *testing.T) {
 	testClients(t, func(client OpAMPClient) {
-		// Start a server.
+		// Start a Server.
 		var connectionAttempts int64
 		srv := internal.StartMockServer(t)
 		srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
@@ -236,7 +236,7 @@ func TestConnectWithServer503(t *testing.T) {
 		assert.EqualValues(t, 1, atomic.LoadInt64(&connectionAttempts))
 		assert.EqualValues(t, 0, atomic.LoadInt64(&clientConnected))
 
-		// Shutdown the server.
+		// Shutdown the Server.
 		srv.Close()
 		_ = client.Stop(context.Background())
 	})
@@ -244,7 +244,7 @@ func TestConnectWithServer503(t *testing.T) {
 
 func TestConnectWithHeader(t *testing.T) {
 	testClients(t, func(client OpAMPClient) {
-		// Start a server.
+		// Start a Server.
 		srv := internal.StartMockServer(t)
 		var conn atomic.Value
 		srv.OnConnect = func(r *http.Request) {
@@ -263,7 +263,7 @@ func TestConnectWithHeader(t *testing.T) {
 		// Wait for connection to be established.
 		eventually(t, func() bool { return conn.Load() != nil })
 
-		// Shutdown the server and the client.
+		// Shutdown the Server and the client.
 		srv.Close()
 		_ = client.Stop(context.Background())
 	})
@@ -283,7 +283,7 @@ func TestFirstStatusReport(t *testing.T) {
 
 		remoteConfig := createRemoteConfig()
 
-		// Start a server.
+		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			return &protobufs.ServerToAgent{
@@ -307,7 +307,7 @@ func TestFirstStatusReport(t *testing.T) {
 					err error,
 				) {
 					// Verify that the client received exactly the remote config that
-					// the server sent.
+					// the Server sent.
 					assert.True(t, proto.Equal(remoteConfig, config))
 					atomic.AddInt64(&remoteConfigReceived, 1)
 					return &protobufs.EffectiveConfig{
@@ -325,7 +325,7 @@ func TestFirstStatusReport(t *testing.T) {
 		// Wait to receive remote config.
 		eventually(t, func() bool { return atomic.LoadInt64(&remoteConfigReceived) != 0 })
 
-		// Shutdown the server.
+		// Shutdown the Server.
 		srv.Close()
 
 		// Shutdown the client.
@@ -372,7 +372,7 @@ func TestIncludesDetailsOnReconnect(t *testing.T) {
 	eventually(t, func() bool { return atomic.LoadInt64(&connected) == 1 })
 	eventually(t, func() bool { return atomic.LoadInt64(&receivedDetails) == 1 })
 
-	// close the agent connection. expect it to reconnect and send details again.
+	// close the Agent connection. expect it to reconnect and send details again.
 	err := client.conn.Close()
 	assert.NoError(t, err)
 
@@ -397,7 +397,7 @@ func createEffectiveConfig() *protobufs.EffectiveConfig {
 
 func TestSetEffectiveConfig(t *testing.T) {
 	testClients(t, func(client OpAMPClient) {
-		// Start a server.
+		// Start a Server.
 		srv := internal.StartMockServer(t)
 		var rcvConfig atomic.Value
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
@@ -445,7 +445,7 @@ func TestSetEffectiveConfig(t *testing.T) {
 			},
 		)
 
-		// Shutdown the server.
+		// Shutdown the Server.
 		srv.Close()
 
 		// Shutdown the client.
@@ -458,7 +458,7 @@ func TestSetEffectiveConfig(t *testing.T) {
 func TestSetAgentDescription(t *testing.T) {
 	testClients(t, func(client OpAMPClient) {
 
-		// Start a server.
+		// Start a Server.
 		srv := internal.StartMockServer(t)
 		var rcvAgentDescr atomic.Value
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
@@ -515,7 +515,7 @@ func TestSetAgentDescription(t *testing.T) {
 			},
 		)
 
-		// Shutdown the server.
+		// Shutdown the Server.
 		srv.Close()
 
 		// Shutdown the client.
@@ -526,7 +526,7 @@ func TestSetAgentDescription(t *testing.T) {
 
 func TestAgentIdentification(t *testing.T) {
 	testClients(t, func(client OpAMPClient) {
-		// Start a server.
+		// Start a Server.
 		srv := internal.StartMockServer(t)
 		newInstanceUid := ulid.MustNew(
 			ulid.Timestamp(time.Now()), ulid.Monotonic(rand.New(rand.NewSource(0)), 0),
@@ -559,7 +559,7 @@ func TestAgentIdentification(t *testing.T) {
 		oldInstanceUid := settings.InstanceUid
 		assert.NoError(t, client.Start(context.Background(), settings))
 
-		// First, server gets the original instanceId
+		// First, Server gets the original instanceId
 		eventually(
 			t,
 			func() bool {
@@ -575,7 +575,7 @@ func TestAgentIdentification(t *testing.T) {
 		_ = client.SetAgentDescription(createAgentDescr())
 
 		// When it was sent, the new instance uid should have been used, which should
-		// have been observed by the server
+		// have been observed by the Server
 		eventually(
 			t,
 			func() bool {
@@ -587,7 +587,7 @@ func TestAgentIdentification(t *testing.T) {
 			},
 		)
 
-		// Shutdown the server.
+		// Shutdown the Server.
 		srv.Close()
 
 		// Shutdown the client.
@@ -606,7 +606,7 @@ func TestConnectionSettings(t *testing.T) {
 		otherSettings := &protobufs.ConnectionSettings{DestinationEndpoint: "http://other.com"}
 
 		var rcvStatus int64
-		// Start a server.
+		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			if statusReport := msg.GetStatusReport(); statusReport != nil {
@@ -680,7 +680,7 @@ func TestConnectionSettings(t *testing.T) {
 		eventually(t, func() bool { return atomic.LoadInt64(&gotOtherSettings) == 1 })
 		eventually(t, func() bool { return atomic.LoadInt64(&rcvStatus) == 1 })
 
-		// Shutdown the server.
+		// Shutdown the Server.
 		srv.Close()
 
 		// Shutdown the client.
@@ -692,7 +692,7 @@ func TestConnectionSettings(t *testing.T) {
 func TestReportAgentDescription(t *testing.T) {
 	testClients(t, func(client OpAMPClient) {
 
-		// Start a server.
+		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
 
@@ -702,21 +702,21 @@ func TestReportAgentDescription(t *testing.T) {
 		}
 		prepareClient(t, &settings, client)
 
-		// client --->
+		// Client --->
 		assert.NoError(t, client.Start(context.Background(), settings))
 
-		// ---> server
+		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The first status report after Start must have full AgentDescription.
 			assert.True(t, proto.Equal(settings.AgentDescription, msg.StatusReport.AgentDescription))
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 
-		// client --->
+		// Client --->
 		// Trigger a status report.
 		_ = client.UpdateEffectiveConfig(context.Background())
 
-		// ---> server
+		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The status report must have compressed AgentDescription.
 			descr := msg.StatusReport.AgentDescription
@@ -736,15 +736,15 @@ func TestReportAgentDescription(t *testing.T) {
 
 		// Server has requested the client to report, so there will be another message
 		// coming to the Server.
-		// ---> server
+		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The status report must again have full AgentDescription
-			// because the server asked for it.
+			// because the Server asked for it.
 			assert.True(t, proto.Equal(settings.AgentDescription, msg.StatusReport.AgentDescription))
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 
-		// Shutdown the server.
+		// Shutdown the Server.
 		srv.Close()
 
 		// Shutdown the client.
@@ -756,7 +756,7 @@ func TestReportAgentDescription(t *testing.T) {
 func TestReportEffectiveConfig(t *testing.T) {
 	testClients(t, func(client OpAMPClient) {
 
-		// Start a server.
+		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
 
@@ -773,21 +773,21 @@ func TestReportEffectiveConfig(t *testing.T) {
 		}
 		prepareClient(t, &settings, client)
 
-		// client --->
+		// Client --->
 		assert.NoError(t, client.Start(context.Background(), settings))
 
-		// ---> server
+		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The first status report after Start must have full EffectiveConfig.
 			assert.True(t, proto.Equal(clientEffectiveConfig, msg.StatusReport.EffectiveConfig))
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 
-		// client --->
+		// Client --->
 		// Trigger another status report for example by setting AgentDescription.
 		_ = client.SetAgentDescription(settings.AgentDescription)
 
-		// ---> server
+		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The status report must have compressed EffectiveConfig.
 			cfg := msg.StatusReport.EffectiveConfig
@@ -805,15 +805,15 @@ func TestReportEffectiveConfig(t *testing.T) {
 		})
 
 		// Server has requested the client to report, so there will be another message.
-		// ---> server
+		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The status report must again have full EffectiveConfig
-			// because server asked for it.
+			// because Server asked for it.
 			assert.True(t, proto.Equal(clientEffectiveConfig, msg.StatusReport.EffectiveConfig))
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 
-		// Shutdown the server.
+		// Shutdown the Server.
 		srv.Close()
 
 		// Shutdown the client.
@@ -825,7 +825,7 @@ func TestReportEffectiveConfig(t *testing.T) {
 func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *protobufs.RemoteConfigStatus) {
 	testClients(t, func(client OpAMPClient) {
 
-		// Start a server.
+		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
 
@@ -849,25 +849,25 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 		}
 		prepareClient(t, &settings, client)
 
-		// client --->
+		// Client --->
 		assert.NoError(t, client.Start(context.Background(), settings))
 
 		remoteCfg := createRemoteConfig()
-		// ---> server
+		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			// Send the remote config to the agent.
+			// Send the remote config to the Agent.
 			return &protobufs.ServerToAgent{
 				InstanceUid:  msg.InstanceUid,
 				RemoteConfig: remoteCfg,
 			}
 		})
 
-		// The agent will try to apply the remote config and will send the status
-		// report about it back to the server.
+		// The Agent will try to apply the remote config and will send the status
+		// report about it back to the Server.
 
 		var firstConfigStatus *protobufs.RemoteConfigStatus
 
-		// ---> server
+		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// Verify that the remote config status is as expected.
 			status := msg.StatusReport.RemoteConfigStatus
@@ -881,11 +881,11 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 
-		// client --->
+		// Client --->
 		// Trigger another status report by setting AgentDescription.
 		_ = client.SetAgentDescription(settings.AgentDescription)
 
-		// ---> server
+		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// This time all fields except Hash must be unset. This is expected
 			// as compression in OpAMP.
@@ -902,7 +902,7 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 			}
 		})
 
-		// ---> server
+		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// Exact same full status must be present again.
 			status := msg.StatusReport.RemoteConfigStatus
@@ -911,7 +911,7 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 
-		// Shutdown the server.
+		// Shutdown the Server.
 		srv.Close()
 
 		// Shutdown the client.

@@ -13,7 +13,7 @@ import (
 )
 
 func TestHTTPPolling(t *testing.T) {
-	// Start a server.
+	// Start a Server.
 	srv := internal.StartMockServer(t)
 	var rcvCounter int64
 	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
@@ -40,7 +40,7 @@ func TestHTTPPolling(t *testing.T) {
 	// Verify that status report is delivered again. Polling should ensure this.
 	eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) == 2 })
 
-	// Shutdown the server.
+	// Shutdown the Server.
 	srv.Close()
 
 	// Shutdown the client.

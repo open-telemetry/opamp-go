@@ -26,7 +26,7 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
-// MetricReporter is a metric reporter that collects agent metrics and sends them to an
+// MetricReporter is a metric reporter that collects Agent metrics and sends them to an
 // OTLP/HTTP destination.
 type MetricReporter struct {
 	logger types.Logger
@@ -35,7 +35,7 @@ type MetricReporter struct {
 	meterShutdowner func()
 	done            chan struct{}
 
-	// The agent's process.
+	// The Agent's process.
 	process *process.Process
 
 	// Some example metrics to report.

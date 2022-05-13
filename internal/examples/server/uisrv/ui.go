@@ -93,7 +93,7 @@ func saveCustomConfigForInstance(w http.ResponseWriter, r *http.Request) {
 	data.AllAgents.SetCustomConfigForAgent(instanceId, config, notifyNextStatusUpdate)
 
 	// Wait for up to 5 seconds for a Status update, which is expected
-	// to be reported by the agent after we set the remote config.
+	// to be reported by the Agent after we set the remote config.
 	timer := time.NewTicker(time.Second * 5)
 
 	select {
