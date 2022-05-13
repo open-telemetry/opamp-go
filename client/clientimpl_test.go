@@ -40,7 +40,7 @@ func createAgentDescr() *protobufs.AgentDescription {
 	return agentDescr
 }
 
-func testClients(t *testing.T, f func(client OpAMPClient)) {
+func testClients(t *testing.T, f func(t *testing.T, client OpAMPClient)) {
 	// Run the test defined by f() for WebSocket and HTTP clients.
 	tests := []struct {
 		name   string
@@ -58,13 +58,13 @@ func testClients(t *testing.T, f func(client OpAMPClient)) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			f(test.client)
+			f(t, test.client)
 		})
 	}
 }
 
 func TestConnectInvalidURL(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
 		settings := types.StartSettings{
 			OpAMPServerURL: ":not a url",
 		}
@@ -111,7 +111,7 @@ func createNoServerSettings() types.StartSettings {
 }
 
 func TestConnectNoServer(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
 		startClient(t, createNoServerSettings(), client)
 		err := client.Stop(context.Background())
 		assert.NoError(t, err)
@@ -119,7 +119,7 @@ func TestConnectNoServer(t *testing.T) {
 }
 
 func TestOnConnectFail(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
 		var connectErr atomic.Value
 		settings := createNoServerSettings()
 		settings.Callbacks = types.CallbacksStruct{
@@ -138,7 +138,7 @@ func TestOnConnectFail(t *testing.T) {
 }
 
 func TestStartStarted(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
 		settings := createNoServerSettings()
 		startClient(t, settings, client)
 
@@ -152,14 +152,14 @@ func TestStartStarted(t *testing.T) {
 }
 
 func TestStopWithoutStart(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
 		err := client.Stop(context.Background())
 		assert.Error(t, err)
 	})
 }
 
 func TestStopCancellation(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
 		startClient(t, createNoServerSettings(), client)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -172,8 +172,8 @@ func TestStopCancellation(t *testing.T) {
 }
 
 func TestConnectWithServer(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
-		// Start a Server.
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a server.
 		srv := internal.StartMockServer(t)
 
 		// Start a client.
@@ -201,8 +201,8 @@ func TestConnectWithServer(t *testing.T) {
 }
 
 func TestConnectWithServer503(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
-		// Start a Server.
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a server.
 		var connectionAttempts int64
 		srv := internal.StartMockServer(t)
 		srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
@@ -243,8 +243,8 @@ func TestConnectWithServer503(t *testing.T) {
 }
 
 func TestConnectWithHeader(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
-		// Start a Server.
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a server.
 		srv := internal.StartMockServer(t)
 		var conn atomic.Value
 		srv.OnConnect = func(r *http.Request) {
@@ -279,7 +279,7 @@ func createRemoteConfig() *protobufs.AgentRemoteConfig {
 }
 
 func TestFirstStatusReport(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
 
 		remoteConfig := createRemoteConfig()
 
@@ -396,8 +396,8 @@ func createEffectiveConfig() *protobufs.EffectiveConfig {
 }
 
 func TestSetEffectiveConfig(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
-		// Start a Server.
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a server.
 		srv := internal.StartMockServer(t)
 		var rcvConfig atomic.Value
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
@@ -456,7 +456,7 @@ func TestSetEffectiveConfig(t *testing.T) {
 }
 
 func TestSetAgentDescription(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
 
 		// Start a Server.
 		srv := internal.StartMockServer(t)
@@ -525,8 +525,8 @@ func TestSetAgentDescription(t *testing.T) {
 }
 
 func TestAgentIdentification(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
-		// Start a Server.
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a server.
 		srv := internal.StartMockServer(t)
 		newInstanceUid := ulid.MustNew(
 			ulid.Timestamp(time.Now()), ulid.Monotonic(rand.New(rand.NewSource(0)), 0),
@@ -597,7 +597,7 @@ func TestAgentIdentification(t *testing.T) {
 }
 
 func TestConnectionSettings(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
 		hash := []byte{1, 2, 3}
 		opampSettings := &protobufs.ConnectionSettings{DestinationEndpoint: "http://opamp.com"}
 		metricsSettings := &protobufs.ConnectionSettings{DestinationEndpoint: "http://metrics.com"}
@@ -690,7 +690,7 @@ func TestConnectionSettings(t *testing.T) {
 }
 
 func TestReportAgentDescription(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
 
 		// Start a Server.
 		srv := internal.StartMockServer(t)
@@ -754,7 +754,7 @@ func TestReportAgentDescription(t *testing.T) {
 }
 
 func TestReportEffectiveConfig(t *testing.T) {
-	testClients(t, func(client OpAMPClient) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
 
 		// Start a Server.
 		srv := internal.StartMockServer(t)
@@ -823,7 +823,7 @@ func TestReportEffectiveConfig(t *testing.T) {
 }
 
 func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *protobufs.RemoteConfigStatus) {
-	testClients(t, func(client OpAMPClient) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
 
 		// Start a Server.
 		srv := internal.StartMockServer(t)
