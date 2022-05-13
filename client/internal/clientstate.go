@@ -79,6 +79,10 @@ func calcHashRemoteConfigStatus(status *protobufs.RemoteConfigStatus) {
 }
 
 func (s *ClientSyncedState) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) error {
+	if status == nil {
+		return errRemoteConfigStatusMissing
+	}
+
 	if len(status.Hash) == 0 {
 		return errors.New("hash field must be set, use CalcHashRemoteConfigStatus")
 	}

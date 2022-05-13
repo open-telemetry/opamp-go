@@ -11,9 +11,10 @@ import (
 )
 
 var (
-	errAgentDescriptionMissing = errors.New("AgentDescription is not set")
-	errAlreadyStarted          = errors.New("already started")
-	errCannotStopNotStarted    = errors.New("cannot stop because not started")
+	errAgentDescriptionMissing   = errors.New("AgentDescription is not set")
+	errRemoteConfigStatusMissing = errors.New("RemoteConfigStatus is not set")
+	errAlreadyStarted            = errors.New("already started")
+	errCannotStopNotStarted      = errors.New("cannot stop because not started")
 )
 
 // ClientCommon contains the OpAMP logic that is common between WebSocket and
