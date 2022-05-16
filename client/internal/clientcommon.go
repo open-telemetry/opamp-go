@@ -198,7 +198,7 @@ func calcHashEffectiveConfig(msg *protobufs.EffectiveConfig) {
 	h := sha256.New()
 
 	// If the config is empty don't attemp to add more to the hash
-	if cfgMap != nil || len(cfgMap) > 0 {
+	if len(cfgMap) > 0 {
 		// Sort keys of configMap to make deterministic hash
 		keys := make([]string, 0, len(cfgMap))
 		for k := range cfgMap {
