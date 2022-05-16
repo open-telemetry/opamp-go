@@ -194,28 +194,26 @@ func (c *ClientCommon) SetAgentDescription(descr *protobufs.AgentDescription) er
 func calcHashEffectiveConfig(msg *protobufs.EffectiveConfig) {
 	cfgMap := msg.GetConfigMap().GetConfigMap()
 
-	// If no cfgMap return empty hash
-	if cfgMap == nil || len(cfgMap) == 0 {
-		msg.Hash = []byte{}
-		return
-	}
-
-	// Sort keys of configMap to make deterministic hash
-	keys := make([]string, 0, len(cfgMap))
-	for k := range cfgMap {
-		keys = append(keys, k)
-	}
-
-	sort.Strings(keys)
-
 	// Construct hash
 	h := sha256.New()
-	if msg.ConfigMap != nil {
-		for _, k := range keys {
-			v := cfgMap[k]
-			h.Write([]byte(k))
-			h.Write(v.Body)
-			h.Write([]byte(v.ContentType))
+
+	// If the config is empty don't attemp to add more to the hash
+	if cfgMap != nil || len(cfgMap) > 0 {
+		// Sort keys of configMap to make deterministic hash
+		keys := make([]string, 0, len(cfgMap))
+		for k := range cfgMap {
+			keys = append(keys, k)
+		}
+
+		sort.Strings(keys)
+
+		if msg.ConfigMap != nil {
+			for _, k := range keys {
+				v := cfgMap[k]
+				h.Write([]byte(k))
+				h.Write(v.Body)
+				h.Write([]byte(v.ContentType))
+			}
 		}
 	}
 	msg.Hash = h.Sum(nil)
