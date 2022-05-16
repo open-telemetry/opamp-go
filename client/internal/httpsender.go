@@ -59,10 +59,16 @@ func NewHTTPSender(logger types.Logger) *HTTPSender {
 // Should not be called concurrently with itself. Can be called concurrently with
 // modifying NextMessage().
 // Run continues until ctx is cancelled.
-func (h *HTTPSender) Run(ctx context.Context, url string, callbacks types.Callbacks, clientSyncedState *ClientSyncedState) {
+func (h *HTTPSender) Run(
+	ctx context.Context,
+	url string,
+	callbacks types.Callbacks,
+	clientSyncedState *ClientSyncedState,
+	packagesStateProvider types.PackagesStateProvider,
+) {
 	h.url = url
 	h.callbacks = callbacks
-	h.receiveProcessor = newReceivedProcessor(h.logger, callbacks, h, clientSyncedState)
+	h.receiveProcessor = newReceivedProcessor(h.logger, callbacks, h, clientSyncedState, packagesStateProvider)
 
 	for {
 		pollingTimer := time.NewTimer(time.Millisecond * time.Duration(atomic.LoadInt64(&h.pollingIntervalMs)))
@@ -97,6 +103,10 @@ func (h *HTTPSender) makeOneRequestRoundtrip(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	if resp == nil {
+		// No request was sent and nothing to receive.
+		return
+	}
 	h.receiveResponse(ctx, resp)
 }
 
@@ -109,6 +119,10 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 			h.logger.Errorf("Failed prepare request (%v), will not try anymore.", err)
 		}
 		return nil, err
+	}
+	if req == nil {
+		// Nothing to send.
+		return nil, nil
 	}
 
 	// Repeatedly try requests with a backoff strategy.
@@ -170,7 +184,6 @@ func recalculateInterval(interval time.Duration, resp *http.Response) time.Durat
 
 func (h *HTTPSender) prepareRequest(ctx context.Context) (*http.Request, error) {
 	msgToSend := h.nextMessage.PopPending()
-
 	if msgToSend == nil || proto.Equal(msgToSend, &protobufs.AgentToServer{}) {
 		// There is no pending message or the message is empty.
 		// Nothing to send.

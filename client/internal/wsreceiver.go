@@ -26,13 +26,14 @@ func NewWSReceiver(
 	conn *websocket.Conn,
 	sender *WSSender,
 	clientSyncedState *ClientSyncedState,
+	packagesStateProvider types.PackagesStateProvider,
 ) *wsReceiver {
 	w := &wsReceiver{
 		conn:      conn,
 		logger:    logger,
 		sender:    sender,
 		callbacks: callbacks,
-		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState),
+		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider),
 	}
 
 	return w

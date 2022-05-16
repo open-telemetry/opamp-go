@@ -2,12 +2,19 @@ package internal
 
 import (
 	"crypto/sha256"
+	"errors"
 	"hash"
+	"sort"
 	"sync"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+)
+
+var (
+	errRemoteConfigStatusMissing = errors.New("RemoteConfigStatus is not set")
+	errPackageStatusesMissing    = errors.New("PackageStatuses is not set")
 )
 
 // ClientSyncedState stores the state of the Agent messages that the OpAMP Client needs to
@@ -132,6 +139,52 @@ func (s *ClientSyncedState) SetRemoteConfigStatus(status *protobufs.RemoteConfig
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	s.remoteConfigStatus = clone
+
+	return nil
+}
+
+func calcHashPackageStatuses(status *protobufs.PackageStatuses) {
+	h := sha256.New()
+
+	// Convert package names to slice to sort it and make sure hash calculation is
+	// deterministic.
+
+	var names []string
+	for name := range status.Packages {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		pkg := status.Packages[name]
+		h.Write([]byte(name))
+		h.Write([]byte(pkg.AgentHasVersion))
+		h.Write(pkg.AgentHasHash)
+		h.Write([]byte(pkg.ServerOfferedVersion))
+		h.Write(pkg.ServerOfferedHash)
+		h.Write([]byte(pkg.Status.String()))
+		h.Write([]byte(pkg.ErrorMessage))
+	}
+
+	h.Write(status.ServerProvidedAllPackagesHash)
+
+	status.Hash = h.Sum(nil)
+}
+
+// SetPackageStatuses sets the PackageStatuses in the state.
+// Will calculate the Hash from the content of the other fields.
+func (s *ClientSyncedState) SetPackageStatuses(status *protobufs.PackageStatuses) error {
+	if status == nil {
+		return errPackageStatusesMissing
+	}
+
+	calcHashPackageStatuses(status)
+
+	clone := proto.Clone(status).(*protobufs.PackageStatuses)
+
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	s.packageStatuses = clone
 
 	return nil
 }

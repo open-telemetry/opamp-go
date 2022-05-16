@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math/rand"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"sync/atomic"
 	"testing"
@@ -391,6 +392,7 @@ func TestIncludesDetailsOnReconnect(t *testing.T) {
 	eventually(t, func() bool { return atomic.LoadInt64(&receivedDetails) == 1 })
 
 	// close the Agent connection. expect it to reconnect and send details again.
+	require.NotNil(t, client.conn)
 	err := client.conn.Close()
 	assert.NoError(t, err)
 
@@ -438,7 +440,7 @@ func TestSetEffectiveConfig(t *testing.T) {
 		settings.OpAMPServerURL = "ws://" + srv.Endpoint
 		prepareClient(t, &settings, client)
 
-		assert.NoError(t, client.Start(context.Background(), settings))
+		require.NoError(t, client.Start(context.Background(), settings))
 
 		// Verify config is delivered.
 		eventually(
@@ -963,6 +965,256 @@ func TestRemoteConfigUpdate(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			verifyRemoteConfigUpdate(t, test.success, test.expectedStatus)
+		})
+	}
+}
+
+type packageTestCase struct {
+	name                string
+	errorOnCallback     bool
+	available           *protobufs.PackagesAvailable
+	expectedStatus      *protobufs.PackageStatuses
+	expectedFileContent map[string][]byte
+}
+
+const packageUpdateErrorMsg = "cannot update packages"
+
+func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+
+		// Start a Server.
+		srv := internal.StartMockServer(t)
+		srv.EnableExpectMode()
+
+		localPackageState := internal.NewInMemPackagesStore()
+
+		var syncerDoneCh <-chan struct{}
+
+		// Prepare a callback that returns either success or failure.
+		onPackagesAvailable := func(ctx context.Context, packages *protobufs.PackagesAvailable, syncer types.PackagesSyncer) error {
+			if testCase.errorOnCallback {
+				return errors.New(packageUpdateErrorMsg)
+			} else {
+				syncerDoneCh = syncer.Done()
+				err := syncer.Sync(ctx)
+				require.NoError(t, err)
+				return nil
+			}
+		}
+
+		// Start a client.
+		settings := types.StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			Callbacks: types.CallbacksStruct{
+				OnPackagesAvailableFunc: onPackagesAvailable,
+			},
+			PackagesStateProvider: localPackageState,
+		}
+		prepareClient(t, &settings, client)
+
+		// Client --->
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		// ---> Server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// Send the packages to the Agent.
+			return &protobufs.ServerToAgent{
+				InstanceUid:       msg.InstanceUid,
+				PackagesAvailable: testCase.available,
+			}
+		})
+
+		// The Agent will try to install the packages and will send the status
+		// report about it back to the Server.
+
+		var lastStatusHash []byte
+
+		// ---> Server
+		// Wait for the expected package statuses to be received.
+		srv.EventuallyExpect("full PackageStatuses",
+			func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent, bool) {
+				expectedStatusReceived := false
+
+				status := msg.PackageStatuses
+				require.NotNil(t, status)
+				assert.EqualValues(t, testCase.expectedStatus.ServerProvidedAllPackagesHash, status.ServerProvidedAllPackagesHash)
+				lastStatusHash = status.Hash
+
+				// Verify individual package statuses.
+				for name, pkgExpected := range testCase.expectedStatus.Packages {
+					pkgStatus := status.Packages[name]
+					if pkgStatus == nil {
+						// Package status not yet included in the report.
+						continue
+					}
+					switch pkgStatus.Status {
+					case protobufs.PackageStatus_InstallFailed:
+						assert.Contains(t, pkgStatus.ErrorMessage, pkgExpected.ErrorMessage)
+
+					case protobufs.PackageStatus_Installed:
+						assert.EqualValues(t, pkgExpected.AgentHasHash, pkgStatus.AgentHasHash)
+						assert.EqualValues(t, pkgExpected.AgentHasVersion, pkgStatus.AgentHasVersion)
+						assert.Empty(t, pkgStatus.ErrorMessage)
+					default:
+						assert.Empty(t, pkgStatus.ErrorMessage)
+					}
+					assert.EqualValues(t, pkgExpected.ServerOfferedHash, pkgStatus.ServerOfferedHash)
+					assert.EqualValues(t, pkgExpected.ServerOfferedVersion, pkgStatus.ServerOfferedVersion)
+
+					if pkgStatus.Status == pkgExpected.Status {
+						expectedStatusReceived = true
+						assert.Len(t, status.Packages, len(testCase.available.Packages))
+					}
+				}
+				assert.NotNil(t, status.Hash)
+
+				return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}, expectedStatusReceived
+			})
+
+		if syncerDoneCh != nil {
+			// Wait until all syncing is done.
+			<-syncerDoneCh
+
+			for pkgName, receivedContent := range localPackageState.GetContent() {
+				expectedContent := testCase.expectedFileContent[pkgName]
+				assert.EqualValues(t, expectedContent, receivedContent)
+			}
+		}
+
+		// Client --->
+		// Trigger another status report by setting AgentDescription.
+		_ = client.SetAgentDescription(client.AgentDescription())
+
+		// ---> Server
+		srv.EventuallyExpect("compressed PackageStatuses",
+			func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent, bool) {
+				// Ensure that compressed status is received.
+				status := msg.PackageStatuses
+				require.NotNil(t, status)
+				compressedReceived := status.ServerProvidedAllPackagesHash == nil
+				if compressedReceived {
+					assert.Nil(t, status.ServerProvidedAllPackagesHash)
+					assert.Nil(t, status.Packages)
+				}
+				assert.NotNil(t, status.Hash)
+				assert.Equal(t, lastStatusHash, status.Hash)
+
+				response := &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+
+				if compressedReceived {
+					// Ask for full report again.
+					response.Flags = protobufs.ServerToAgent_ReportPackageStatuses
+				} else {
+					// Keep triggering status report by setting AgentDescription
+					// until the compressed PackageStatuses arrives.
+					_ = client.SetAgentDescription(client.AgentDescription())
+				}
+
+				return response, compressedReceived
+			})
+
+		// Shutdown the Server.
+		srv.Close()
+
+		// Shutdown the client.
+		err := client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
+// Downloadable package file constants.
+const packageFileURL = "/validfile.pkg"
+
+var packageFileContent = []byte("Package File Content")
+
+func createDownloadSrv(t *testing.T) *httptest.Server {
+	m := http.NewServeMux()
+	m.HandleFunc(packageFileURL,
+		func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, err := w.Write(packageFileContent)
+			assert.NoError(t, err)
+		},
+	)
+
+	srv := httptest.NewServer(m)
+
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := u.Host
+	testhelpers.WaitForEndpoint(endpoint)
+
+	return srv
+}
+
+func createPackageTestCase(name string, downloadSrv *httptest.Server) packageTestCase {
+	return packageTestCase{
+		name:            name,
+		errorOnCallback: false,
+		available: &protobufs.PackagesAvailable{
+			Packages: map[string]*protobufs.PackageAvailable{
+				"package1": {
+					Type:    protobufs.PackageAvailable_TopLevelPackage,
+					Version: "1.0.0",
+					File: &protobufs.DownloadableFile{
+						DownloadUrl: downloadSrv.URL + packageFileURL,
+						ContentHash: []byte{4, 5},
+					},
+					Hash: []byte{1, 2, 3},
+				},
+			},
+			AllPackagesHash: []byte{1, 2, 3, 4, 5},
+		},
+
+		expectedStatus: &protobufs.PackageStatuses{
+			Packages: map[string]*protobufs.PackageStatus{
+				"package1": {
+					Name:                 "package1",
+					AgentHasVersion:      "1.0.0",
+					AgentHasHash:         []byte{1, 2, 3},
+					ServerOfferedVersion: "1.0.0",
+					ServerOfferedHash:    []byte{1, 2, 3},
+					Status:               protobufs.PackageStatus_Installed,
+					ErrorMessage:         "",
+				},
+			},
+			ServerProvidedAllPackagesHash: []byte{1, 2, 3, 4, 5},
+		},
+
+		expectedFileContent: map[string][]byte{
+			"package1": packageFileContent,
+		},
+	}
+}
+
+func TestUpdatePackages(t *testing.T) {
+
+	downloadSrv := createDownloadSrv(t)
+	defer downloadSrv.Close()
+
+	// A success case.
+	var tests []packageTestCase
+	tests = append(tests, createPackageTestCase("success", downloadSrv))
+
+	// A case when downloading the file fails because the URL is incorrect.
+	notFound := createPackageTestCase("downloadable file not found", downloadSrv)
+	notFound.available.Packages["package1"].File.DownloadUrl = downloadSrv.URL + "/notfound"
+	notFound.expectedStatus.Packages["package1"].Status = protobufs.PackageStatus_InstallFailed
+	notFound.expectedStatus.Packages["package1"].ErrorMessage = "cannot download"
+	tests = append(tests, notFound)
+
+	// A case when OnPackagesAvailable callback returns an error.
+	errorOnCallback := createPackageTestCase("error on callback", downloadSrv)
+	errorOnCallback.expectedStatus.Packages["package1"].Status = protobufs.PackageStatus_InstallFailed
+	errorOnCallback.expectedStatus.Packages["package1"].ErrorMessage = packageUpdateErrorMsg
+	errorOnCallback.errorOnCallback = true
+	tests = append(tests, errorOnCallback)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			verifyUpdatePackages(t, test)
 		})
 	}
 }
