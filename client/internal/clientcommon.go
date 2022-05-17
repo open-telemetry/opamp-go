@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/open-telemetry/opamp-go/client/types"
@@ -191,12 +192,28 @@ func (c *ClientCommon) SetAgentDescription(descr *protobufs.AgentDescription) er
 // calcHashEffectiveConfig calculates and sets the Hash field from the rest of the
 // fields in the message.
 func calcHashEffectiveConfig(msg *protobufs.EffectiveConfig) {
+	cfgMap := msg.GetConfigMap().GetConfigMap()
+
+	// Construct hash
 	h := sha256.New()
-	if msg.ConfigMap != nil {
-		for k, v := range msg.ConfigMap.ConfigMap {
-			h.Write([]byte(k))
-			h.Write(v.Body)
-			h.Write([]byte(v.ContentType))
+
+	// If the config is empty don't attemp to add more to the hash
+	if len(cfgMap) > 0 {
+		// Sort keys of configMap to make deterministic hash
+		keys := make([]string, 0, len(cfgMap))
+		for k := range cfgMap {
+			keys = append(keys, k)
+		}
+
+		sort.Strings(keys)
+
+		if msg.ConfigMap != nil {
+			for _, k := range keys {
+				v := cfgMap[k]
+				h.Write([]byte(k))
+				h.Write(v.Body)
+				h.Write([]byte(v.ContentType))
+			}
 		}
 	}
 	msg.Hash = h.Sum(nil)
