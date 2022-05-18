@@ -26,10 +26,13 @@ show-coverage: test-with-cover
 	go tool cover -html=coverage.out
 
 .PHONY: build-examples
-build-examples: build-example-agent build-example-server
+build-examples: build-example-agent build-example-supervisor build-example-server
 
 build-example-agent:
 	cd internal/examples && go build -o agent/bin/agent agent/main.go
+
+build-example-supervisor:
+	cd internal/examples && go build -o supervisor/bin/supervisor supervisor/main.go
 
 build-example-server:
 	cd internal/examples && go build -o server/bin/server server/main.go
