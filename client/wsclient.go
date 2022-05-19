@@ -69,9 +69,12 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 	}
 	c.dialer.TLSClientConfig = settings.TLSConfig
 
+	c.requestHeader = http.Header{}
 	if settings.AuthorizationHeader != "" {
-		c.requestHeader = http.Header{}
 		c.requestHeader["Authorization"] = []string{settings.AuthorizationHeader}
+	}
+	if settings.UserAgent != "" {
+		c.requestHeader["User-Agent"] = []string{settings.UserAgent}
 	}
 
 	c.common.StartConnectAndRun(c.runUntilStopped)

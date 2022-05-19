@@ -269,6 +269,8 @@ func TestConnectWithHeader(t *testing.T) {
 		srv.OnConnect = func(r *http.Request) {
 			authHdr := r.Header.Get("Authorization")
 			assert.EqualValues(t, "Bearer 12345678", authHdr)
+			userAgentHdr := r.Header.Get("User-Agent")
+			assert.EqualValues(t, "custom-agent/1.0", userAgentHdr)
 			conn.Store(true)
 		}
 
@@ -276,6 +278,7 @@ func TestConnectWithHeader(t *testing.T) {
 		settings := types.StartSettings{
 			OpAMPServerURL:      "ws://" + srv.Endpoint,
 			AuthorizationHeader: "Bearer 12345678",
+			UserAgent:           "custom-agent/1.0",
 		}
 		startClient(t, settings, client)
 

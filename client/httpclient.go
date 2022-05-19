@@ -44,6 +44,9 @@ func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) er
 	if settings.AuthorizationHeader != "" {
 		c.sender.SetRequestHeader("Authorization", settings.AuthorizationHeader)
 	}
+	if settings.UserAgent != "" {
+		c.sender.SetRequestHeader("User-Agent", settings.UserAgent)
+	}
 
 	// Prepare the first message to send.
 	err := c.common.PrepareFirstMessage(ctx)

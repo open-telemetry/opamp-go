@@ -15,6 +15,9 @@ type StartSettings struct {
 	// Optional value of "Authorization" HTTP header in the HTTP request.
 	AuthorizationHeader string
 
+	// UserAgent provides an optional override for the default "User-Agent" HTTP header.
+	UserAgent string
+
 	// Optional TLS config for HTTP connection.
 	TLSConfig *tls.Config
 
