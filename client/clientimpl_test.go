@@ -618,11 +618,11 @@ func TestAgentIdentification(t *testing.T) {
 func TestConnectionSettings(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		hash := []byte{1, 2, 3}
-		opampSettings := &protobufs.ConnectionSettings{DestinationEndpoint: "http://opamp.com"}
-		metricsSettings := &protobufs.ConnectionSettings{DestinationEndpoint: "http://metrics.com"}
-		tracesSettings := &protobufs.ConnectionSettings{DestinationEndpoint: "http://traces.com"}
-		logsSettings := &protobufs.ConnectionSettings{DestinationEndpoint: "http://logs.com"}
-		otherSettings := &protobufs.ConnectionSettings{DestinationEndpoint: "http://other.com"}
+		opampSettings := &protobufs.OpAMPConnectionSettings{DestinationEndpoint: "http://opamp.com"}
+		metricsSettings := &protobufs.TelemetryConnectionSettings{DestinationEndpoint: "http://metrics.com"}
+		tracesSettings := &protobufs.TelemetryConnectionSettings{DestinationEndpoint: "http://traces.com"}
+		logsSettings := &protobufs.TelemetryConnectionSettings{DestinationEndpoint: "http://logs.com"}
+		otherSettings := &protobufs.OtherConnectionSettings{DestinationEndpoint: "http://other.com"}
 
 		var rcvStatus int64
 		// Start a Server.
@@ -638,7 +638,7 @@ func TestConnectionSettings(t *testing.T) {
 						OwnMetrics: metricsSettings,
 						OwnTraces:  tracesSettings,
 						OwnLogs:    logsSettings,
-						OtherConnections: map[string]*protobufs.ConnectionSettings{
+						OtherConnections: map[string]*protobufs.OtherConnectionSettings{
 							"other": otherSettings,
 						},
 					},
@@ -655,7 +655,7 @@ func TestConnectionSettings(t *testing.T) {
 		settings := types.StartSettings{
 			Callbacks: types.CallbacksStruct{
 				OnOpampConnectionSettingsFunc: func(
-					ctx context.Context, settings *protobufs.ConnectionSettings,
+					ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
 				) error {
 					assert.True(t, proto.Equal(opampSettings, settings))
 					atomic.AddInt64(&gotOpampSettings, 1)
@@ -664,7 +664,7 @@ func TestConnectionSettings(t *testing.T) {
 
 				OnOwnTelemetryConnectionSettingsFunc: func(
 					ctx context.Context, telemetryType types.OwnTelemetryType,
-					settings *protobufs.ConnectionSettings,
+					settings *protobufs.TelemetryConnectionSettings,
 				) error {
 					switch telemetryType {
 					case types.OwnMetrics:
@@ -680,7 +680,7 @@ func TestConnectionSettings(t *testing.T) {
 
 				OnOtherConnectionSettingsFunc: func(
 					ctx context.Context, name string,
-					settings *protobufs.ConnectionSettings,
+					settings *protobufs.OtherConnectionSettings,
 				) error {
 					assert.EqualValues(t, "other", name)
 					assert.True(t, proto.Equal(otherSettings, settings))

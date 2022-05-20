@@ -174,7 +174,56 @@ enum ServerCapabilities {
     // Add new capabilities here, continuing with the least significant unused bit.
 }
 
-// The ConnectionSettings message is a collection of fields which comprise an
+// The OpAMPConnectionSettings message is a collection of fields which comprise an
+// offer from the Server to the Agent to use the specified settings for OpAMP
+// connection.
+message OpAMPConnectionSettings {
+    // OpAMP Server URL This MUST be a WebSocket or HTTP URL and MUST be non-empty, for
+    // example: "wss://example.com:4318/v1/opamp"
+    string destination_endpoint = 1;
+
+    // Optional headers to use when connecting. Typically used to set access tokens or
+    // other authorization headers. For HTTP-based protocols the Agent should
+    // set these in the request headers.
+    // For example:
+    // key="Authorization", Value="Basic YWxhZGRpbjpvcGVuc2VzYW1l".
+    Headers headers = 2;
+
+    // The Agent should use the offered certificate to connect to the destination
+    // from now on. If the Agent is able to validate and connect using the offered
+    // certificate the Agent SHOULD forget any previous client certificates
+    // for this connection.
+    // This field is optional: if omitted the client SHOULD NOT use a client-side certificate.
+    // This field can be used to perform a client certificate revocation/rotation.
+    TLSCertificate certificate = 3;
+}
+
+// The TelemetryConnectionSettings message is a collection of fields which comprise an
+// offer from the Server to the Agent to use the specified settings for a network
+// connection to report own telemetry.
+message TelemetryConnectionSettings {
+    // The value MUST be a full URL an OTLP/HTTP/Protobuf receiver with path. Schema
+    // SHOULD begin with "https://", for example "https://example.com:4318/v1/metrics"
+    // The Agent MAY refuse to send the telemetry if the URL begins with "http://".
+    string destination_endpoint = 1;
+
+    // Optional headers to use when connecting. Typically used to set access tokens or
+    // other authorization headers. For HTTP-based protocols the Agent should
+    // set these in the request headers.
+    // For example:
+    // key="Authorization", Value="Basic YWxhZGRpbjpvcGVuc2VzYW1l".
+    Headers headers = 2;
+
+    // The Agent should use the offered certificate to connect to the destination
+    // from now on. If the Agent is able to validate and connect using the offered
+    // certificate the Agent SHOULD forget any previous client certificates
+    // for this connection.
+    // This field is optional: if omitted the client SHOULD NOT use a client-side certificate.
+    // This field can be used to perform a client certificate revocation/rotation.
+    TLSCertificate certificate = 3;
+}
+
+// The OtherConnectionSettings message is a collection of fields which comprise an
 // offer from the Server to the Agent to use the specified settings for a network
 // connection. It is not required that all fields in this message are specified.
 // The Server may specify only some of the fields, in which case it means that
@@ -194,66 +243,28 @@ enum ServerCapabilities {
 // field is not set (this is done to overcome the limitation of old protoc
 // compilers don't generate methods that allow to check for the presence of
 // the field.
-message ConnectionSettings {
+message OtherConnectionSettings {
     // A URL, host:port or some other destination specifier.
-    //
-    // For OpAMP destination this MUST be a WebSocket URL and MUST be non-empty, for
-    // example: "wss://example.com:4318/v1/opamp"
-    //
-    // For own telemetry destination this MUST be the full HTTP URL to an
-    // OTLP/HTTP/Protobuf receiver. The value MUST be a full URL with path and schema
-    // and SHOULD begin with "https://", for example "https://example.com:4318/v1/metrics"
-    // The Agent MAY refuse to send the telemetry if the URL begins with "http://".
-    // The field is considered unset if (flags & DestinationEndpointSet)==0.
     string destination_endpoint = 1;
 
-    // Headers to use when connecting. Typically used to set access tokens or
+    // Optional headers to use when connecting. Typically used to set access tokens or
     // other authorization headers. For HTTP-based protocols the Agent should
     // set these in the request headers.
     // For example:
     // key="Authorization", Value="Basic YWxhZGRpbjpvcGVuc2VzYW1l".
-    // if the field is unset then the Agent SHOULD continue using the headers
-    // that it currently has (if any).
     Headers headers = 2;
-
-    // A URL, host:port or some other specifier of an intermediary proxy.
-    // Empty if no proxy is used.
-    //
-    // Example use case: if OpAMP proxy is also an OTLP intermediary Collector then
-    // the OpAMP proxy can direct the Agents that connect to it to also send Agents's
-    // OTLP metrics through its OTLP metrics pipeline.
-    // Can be used for example by Otel Helm chart with 2 stage-collection when Agents
-    // on K8s nodes are proxied through a standalone Collector.
-    //
-    // For example: "https://proxy.example.com:5678"
-    // The field is considered unset if (flags & ProxyEndpointSet)==0.
-    string proxy_endpoint = 3;
-
-    // Headers to use when connecting to a proxy.  For HTTP-based protocols
-    // the Agent should set these in the request headers.
-    // If no proxy is used the Headers field must be present and must contain no headers.
-    // For example:
-    // key="Proxy-Authorization", value="Basic YWxhZGRpbjpvcGVuc2VzYW1l".
-    // if the field is unset then the Agent SHOULD continue using the proxy headers
-    // that it currently has (if any).
-    Headers proxy_headers = 4;
 
     // The Agent should use the offered certificate to connect to the destination
     // from now on. If the Agent is able to validate and connect using the offered
     // certificate the Agent SHOULD forget any previous client certificates
     // for this connection.
-    // This field is used to perform a client certificate revocation/rotation.
-    // if the field is unset then the Agent SHOULD continue using the certificate
-    // that it currently has (if any).
-    TLSCertificate certificate = 5;
+    // This field is optional: if omitted the client SHOULD NOT use a client-side certificate.
+    // This field can be used to perform a client certificate revocation/rotation.
+    TLSCertificate certificate = 3;
 
-enum Flags {
-    _ = 0;
-    DestinationEndpointSet = 0x01;
-    ProxyEndpointSet = 0x02;
-}
-    // Bitfield of Flags.
-    Flags flags = 6;
+    // Other connection settings. These are Agent-specific and are up to the Agent
+    // interpret.
+    map<string, string> other_settings = 4;
 }
 
 message Headers {
@@ -307,7 +318,7 @@ message ConnectionSettingsOffers {
     // The Agent MUST verify the offered connection settings by actually connecting
     // before accepting the setting to ensure it does not loose access to the OpAMP
     // Server due to invalid settings.
-    ConnectionSettings opamp = 2;
+    OpAMPConnectionSettings opamp = 2;
 
     // Settings to connect to an OTLP metrics backend to send Agent's own metrics to.
     // If this field is not set then the Agent should assume that the settings
@@ -326,20 +337,20 @@ message ConnectionSettingsOffers {
     //
     // Process metrics MUST follow the conventions for processes:
     // https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/semantic_conventions/process-metrics.md
-    ConnectionSettings own_metrics = 3;
+    TelemetryConnectionSettings own_metrics = 3;
 
     // Similar to own_metrics, but for traces.
-    ConnectionSettings own_traces = 4;
+    TelemetryConnectionSettings own_traces = 4;
 
     // Similar to own_metrics, but for logs.
-    ConnectionSettings own_logs = 5;
+    TelemetryConnectionSettings own_logs = 5;
 
     // Another set of connection settings, with a string name associated with each.
     // How the Agent uses these is Agent-specific. Typically the name represents
     // the name of the destination to connect to (as it is known to the Agent).
     // If this field is not set then the Agent should assume that the other_connections
     // settings are unchanged.
-    map<string,ConnectionSettings> other_connections = 6;
+    map<string,OtherConnectionSettings> other_connections = 6;
 }
 
 // List of packages that the Server offers to the Agent.

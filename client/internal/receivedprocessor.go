@@ -222,9 +222,9 @@ func (r *receivedProcessor) rcvConnectionSettings(ctx context.Context, settings 
 
 func (r *receivedProcessor) rcvOwnTelemetryConnectionSettings(
 	ctx context.Context,
-	settings *protobufs.ConnectionSettings,
+	settings *protobufs.TelemetryConnectionSettings,
 	telemetryType types.OwnTelemetryType,
-	callback func(ctx context.Context, telemetryType types.OwnTelemetryType, settings *protobufs.ConnectionSettings) error,
+	callback func(ctx context.Context, telemetryType types.OwnTelemetryType, settings *protobufs.TelemetryConnectionSettings) error,
 ) {
 	if settings != nil {
 		callback(ctx, telemetryType, settings)
@@ -233,9 +233,9 @@ func (r *receivedProcessor) rcvOwnTelemetryConnectionSettings(
 
 func (r *receivedProcessor) rcvOtherConnectionSettings(
 	ctx context.Context,
-	settings *protobufs.ConnectionSettings,
+	settings *protobufs.OtherConnectionSettings,
 	name string,
-	callback func(ctx context.Context, name string, settings *protobufs.ConnectionSettings) error,
+	callback func(ctx context.Context, name string, settings *protobufs.OtherConnectionSettings) error,
 ) {
 	if settings != nil {
 		callback(ctx, name, settings)
