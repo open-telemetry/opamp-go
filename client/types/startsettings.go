@@ -2,6 +2,7 @@ package types
 
 import (
 	"crypto/tls"
+	"net/http"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
@@ -12,8 +13,8 @@ type StartSettings struct {
 	// Server URL. MUST be set.
 	OpAMPServerURL string
 
-	// Optional value of "Authorization" HTTP header in the HTTP request.
-	AuthorizationHeader string
+	// Optional additional HTTP headers to send with all HTTP requests.
+	Header http.Header
 
 	// Optional TLS config for HTTP connection.
 	TLSConfig *tls.Config
