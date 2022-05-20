@@ -27,19 +27,6 @@ func (s *NextMessage) Update(modifier func(msg *protobufs.AgentToServer)) {
 	s.messageMutex.Unlock()
 }
 
-// UpdateStatus applies the specified modifier function to the status report that
-// will be sent next and marks the status report as pending to be sent.
-func (s *NextMessage) UpdateStatus(modifier func(statusReport *protobufs.StatusReport)) {
-	s.Update(
-		func(msg *protobufs.AgentToServer) {
-			if s.nextMessage.StatusReport == nil {
-				s.nextMessage.StatusReport = &protobufs.StatusReport{}
-			}
-			modifier(s.nextMessage.StatusReport)
-		},
-	)
-}
-
 // PopPending returns the next message to be sent, if it is pending or nil otherwise.
 // Clears the "pending" flag.
 func (s *NextMessage) PopPending() *protobufs.AgentToServer {
@@ -55,22 +42,20 @@ func (s *NextMessage) PopPending() *protobufs.AgentToServer {
 		// next report after this one. Keep the "hash" fields.
 		msg := protobufs.AgentToServer{
 			InstanceUid: s.nextMessage.InstanceUid,
-			StatusReport: &protobufs.StatusReport{
-				AgentDescription: &protobufs.AgentDescription{
-					Hash: s.nextMessage.StatusReport.AgentDescription.Hash,
-				},
+			AgentDescription: &protobufs.AgentDescription{
+				Hash: s.nextMessage.AgentDescription.Hash,
 			},
 		}
 
-		if s.nextMessage.StatusReport.EffectiveConfig != nil {
-			msg.StatusReport.EffectiveConfig = &protobufs.EffectiveConfig{
-				Hash: s.nextMessage.StatusReport.EffectiveConfig.Hash,
+		if s.nextMessage.EffectiveConfig != nil {
+			msg.EffectiveConfig = &protobufs.EffectiveConfig{
+				Hash: s.nextMessage.EffectiveConfig.Hash,
 			}
 		}
 
-		if s.nextMessage.StatusReport.RemoteConfigStatus != nil {
-			msg.StatusReport.RemoteConfigStatus = &protobufs.RemoteConfigStatus{
-				Hash: s.nextMessage.StatusReport.RemoteConfigStatus.Hash,
+		if s.nextMessage.RemoteConfigStatus != nil {
+			msg.RemoteConfigStatus = &protobufs.RemoteConfigStatus{
+				Hash: s.nextMessage.RemoteConfigStatus.Hash,
 			}
 		}
 

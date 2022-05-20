@@ -80,7 +80,7 @@ func (h *HTTPSender) Run(
 
 		case <-pollingTimer.C:
 			// Polling interval has passed. Force a status update.
-			h.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {})
+			h.NextMessage().Update(func(msg *protobufs.AgentToServer) {})
 			// This will make hasPendingMessage channel readable, so we will enter
 			// the case above on the next iteration of the loop.
 			h.ScheduleSend()

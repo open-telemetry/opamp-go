@@ -84,15 +84,15 @@ func (r *receivedProcessor) rcvFlags(
 	// send to the Server.
 
 	if flags&protobufs.ServerToAgent_ReportAgentDescription != 0 {
-		r.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
-			statusReport.AgentDescription = r.clientSyncedState.AgentDescription()
+		r.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+			msg.AgentDescription = r.clientSyncedState.AgentDescription()
 		})
 		scheduleSend = true
 	}
 
 	if flags&protobufs.ServerToAgent_ReportRemoteConfigStatus != 0 {
-		r.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
-			statusReport.RemoteConfigStatus = r.clientSyncedState.RemoteConfigStatus()
+		r.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+			msg.RemoteConfigStatus = r.clientSyncedState.RemoteConfigStatus()
 		})
 		scheduleSend = true
 	}
@@ -112,8 +112,8 @@ func (r *receivedProcessor) rcvFlags(
 		if err != nil {
 			return false, err
 		}
-		r.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
-			statusReport.EffectiveConfig = cfg
+		r.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+			msg.EffectiveConfig = cfg
 		})
 		scheduleSend = true
 	}
@@ -163,10 +163,9 @@ func (r *receivedProcessor) rcvRemoteConfig(
 		r.callbacks.SaveRemoteConfigStatus(ctx, cfgStatus)
 
 		// Include the config status in the next message to the Server.
-		r.sender.NextMessage().UpdateStatus(
-			func(statusReport *protobufs.StatusReport) {
-				statusReport.RemoteConfigStatus = cfgStatus
-			})
+		r.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+			msg.RemoteConfigStatus = cfgStatus
+		})
 
 		reportStatus = true
 	}
@@ -174,8 +173,8 @@ func (r *receivedProcessor) rcvRemoteConfig(
 	// Report the effective configuration if it changed and remote config was applied
 	// successfully.
 	if changed && applyErr == nil {
-		r.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
-			statusReport.EffectiveConfig = effective
+		r.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+			msg.EffectiveConfig = effective
 		})
 		reportStatus = true
 	}
