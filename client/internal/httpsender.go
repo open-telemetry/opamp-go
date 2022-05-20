@@ -46,10 +46,10 @@ func NewHTTPSender(logger types.Logger) *HTTPSender {
 		SenderCommon:      NewSenderCommon(),
 		logger:            logger,
 		client:            http.DefaultClient,
-		requestHeader:     http.Header{},
 		pollingIntervalMs: defaultPollingIntervalMs,
 	}
-	h.requestHeader.Set(headerContentType, contentTypeProtobuf)
+	// initialize the headers with no additional headers
+	h.SetRequestHeader(nil)
 	return h
 }
 
@@ -86,10 +86,14 @@ func (h *HTTPSender) Run(ctx context.Context, url string, callbacks types.Callba
 	}
 }
 
-// SetRequestHeader sets an additional HTTP header to send with all future requests.
+// SetRequestHeader sets additional HTTP headers to send with all future requests.
 // Should not be called concurrently with any other method.
-func (h *HTTPSender) SetRequestHeader(key, value string) {
-	h.requestHeader.Set(key, value)
+func (h *HTTPSender) SetRequestHeader(header http.Header) {
+	if header == nil {
+		header = http.Header{}
+	}
+	h.requestHeader = header
+	h.requestHeader.Set(headerContentType, contentTypeProtobuf)
 }
 
 func (h *HTTPSender) makeOneRequestRoundtrip(ctx context.Context) {

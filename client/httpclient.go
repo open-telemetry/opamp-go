@@ -41,9 +41,7 @@ func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) er
 	c.opAMPServerURL = settings.OpAMPServerURL
 
 	// Prepare Server connection settings.
-	if settings.AuthorizationHeader != "" {
-		c.sender.SetRequestHeader("Authorization", settings.AuthorizationHeader)
-	}
+	c.sender.SetRequestHeader(settings.Header)
 
 	// Prepare the first message to send.
 	err := c.common.PrepareFirstMessage(ctx)
