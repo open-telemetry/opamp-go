@@ -615,6 +615,12 @@ message PackageStatuses {
     // it has for this Agent and if the hashes are different the Server SHOULD send
     // an PackagesAvailable message to the Agent.
     bytes server_provided_all_packages_hash = 3;
+
+    // This field is set if the Agent encountered an error when processing the
+    // PackagesAvailable message and that error is not related to any particular single
+    // package.
+    // The field must be unset is there were no processing errors.
+    string error_message = 4;
 }
 
 // The status of a single package.
