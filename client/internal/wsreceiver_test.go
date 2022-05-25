@@ -128,8 +128,8 @@ func TestOnRemoteConfigReportsError(t *testing.T) {
 		RemoteConfig: &protobufs.AgentRemoteConfig{},
 	})
 
-	gotStatus := receiver.sender.NextMessage().nextMessage.StatusReport.RemoteConfigStatus.Status
-	gotMsg := receiver.sender.NextMessage().nextMessage.StatusReport.RemoteConfigStatus.ErrorMessage
+	gotStatus := receiver.sender.NextMessage().nextMessage.RemoteConfigStatus.Status
+	gotMsg := receiver.sender.NextMessage().nextMessage.RemoteConfigStatus.ErrorMessage
 
 	assert.Equal(t, expectStatus, gotStatus)
 	assert.Equal(t, expectMsg, gotMsg)

@@ -38,7 +38,7 @@ type Callbacks interface {
 	// the effective config has changed.
 	//
 	// The returned effective config or the error will be reported back to the Server
-	// via StatusReport message (using EffectiveConfig and RemoteConfigStatus fields).
+	// via AgentToServer message (using EffectiveConfig and RemoteConfigStatus fields).
 	//
 	// Only one OnRemoteConfig call can be active at any time. Until OnRemoteConfig
 	// returns it will not be called again. Any other remote configs received from
@@ -76,7 +76,7 @@ type Callbacks interface {
 	// The Agent should process the offer and return an error if the Agent does not
 	// want to accept the settings (e.g. if the TSL certificate in the settings
 	// cannot be verified). The returned error will be reported back to the Server
-	// via StatusReport message (using ConnectionStatuses field).
+	// via AgentToServer message (using ConnectionStatuses field).
 	//
 	// If OnOpampConnectionSettings returns nil and then the caller will
 	// attempt to reconnect to the OpAMP Server using the new settings.
@@ -108,7 +108,7 @@ type Callbacks interface {
 	// The Agent should process the settings and return an error if the Agent does not
 	// want to accept the settings (e.g. if the TSL certificate in the settings
 	// cannot be verified). The returned error will be reported back to the Server
-	// via StatusReport message (using ConnectionStatuses field).
+	// via AgentToServer message (using ConnectionStatuses field).
 	// If the Agent accepts the settings it should return nil and begin sending
 	// its own telemetry to the destination specified in the settings.
 	// We currently support 3 types of Agent's own telemetry: metrics, traces, logs.
@@ -127,7 +127,7 @@ type Callbacks interface {
 	// The Agent should process the settings and return an error if the Agent does not
 	// want to accept the settings (e.g. if the TSL certificate in the settings
 	// cannot be verified). The returned error will be reported back to the Server
-	// via StatusReport message (using ConnectionStatuses field).
+	// via AgentToServer message (using ConnectionStatuses field).
 	OnOtherConnectionSettings(
 		ctx context.Context,
 		name string,

@@ -61,12 +61,8 @@ func (srv *Server) onMessage(conn types.Connection, msg *protobufs.AgentToServer
 	// Start building the response.
 	response := &protobufs.ServerToAgent{}
 
-	// Is there a status report?
-	status := msg.GetStatusReport()
-	if status != nil {
-		// Process the status report and continue building the response.
-		agent.UpdateStatus(status, response)
-	}
+	// Process the status report and continue building the response.
+	agent.UpdateStatus(msg, response)
 
 	// Send the response back to the Agent.
 	return response

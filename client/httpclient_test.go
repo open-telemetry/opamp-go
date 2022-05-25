@@ -17,7 +17,7 @@ func TestHTTPPolling(t *testing.T) {
 	srv := internal.StartMockServer(t)
 	var rcvCounter int64
 	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-		if statusReport := msg.GetStatusReport(); statusReport != nil {
+		if msg != nil {
 			atomic.AddInt64(&rcvCounter, 1)
 		}
 		return nil

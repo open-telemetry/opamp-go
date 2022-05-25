@@ -366,7 +366,7 @@ func TestIncludesDetailsOnReconnect(t *testing.T) {
 	var receivedDetails int64
 	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 		// Track when we receive AgentDescription
-		if msg.StatusReport.AgentDescription != nil {
+		if msg.AgentDescription != nil {
 			atomic.AddInt64(&receivedDetails, 1)
 		}
 
@@ -426,10 +426,8 @@ func TestSetEffectiveConfig(t *testing.T) {
 		srv := internal.StartMockServer(t)
 		var rcvConfig atomic.Value
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			if statusReport := msg.GetStatusReport(); statusReport != nil {
-				if statusReport.EffectiveConfig != nil {
-					rcvConfig.Store(statusReport.EffectiveConfig)
-				}
+			if msg.EffectiveConfig != nil {
+				rcvConfig.Store(msg.EffectiveConfig)
 			}
 			return nil
 		}
@@ -487,10 +485,8 @@ func TestSetAgentDescription(t *testing.T) {
 		srv := internal.StartMockServer(t)
 		var rcvAgentDescr atomic.Value
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			if statusReport := msg.GetStatusReport(); statusReport != nil {
-				if statusReport.AgentDescription != nil {
-					rcvAgentDescr.Store(statusReport.AgentDescription)
-				}
+			if msg.AgentDescription != nil {
+				rcvAgentDescr.Store(msg.AgentDescription)
 			}
 			return nil
 		}
@@ -632,7 +628,7 @@ func TestConnectionSettings(t *testing.T) {
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			if statusReport := msg.GetStatusReport(); statusReport != nil {
+			if msg != nil {
 				atomic.AddInt64(&rcvStatus, 1)
 
 				return &protobufs.ServerToAgent{
@@ -731,7 +727,7 @@ func TestReportAgentDescription(t *testing.T) {
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The first status report after Start must have full AgentDescription.
-			assert.True(t, proto.Equal(client.AgentDescription(), msg.StatusReport.AgentDescription))
+			assert.True(t, proto.Equal(client.AgentDescription(), msg.AgentDescription))
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 
@@ -742,7 +738,7 @@ func TestReportAgentDescription(t *testing.T) {
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The status report must have compressed AgentDescription.
-			descr := msg.StatusReport.AgentDescription
+			descr := msg.AgentDescription
 			assert.Nil(t, descr.IdentifyingAttributes)
 			assert.Nil(t, descr.NonIdentifyingAttributes)
 
@@ -763,7 +759,7 @@ func TestReportAgentDescription(t *testing.T) {
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The status report must again have full AgentDescription
 			// because the Server asked for it.
-			assert.True(t, proto.Equal(client.AgentDescription(), msg.StatusReport.AgentDescription))
+			assert.True(t, proto.Equal(client.AgentDescription(), msg.AgentDescription))
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 
@@ -802,7 +798,7 @@ func TestReportEffectiveConfig(t *testing.T) {
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The first status report after Start must have full EffectiveConfig.
-			assert.True(t, proto.Equal(clientEffectiveConfig, msg.StatusReport.EffectiveConfig))
+			assert.True(t, proto.Equal(clientEffectiveConfig, msg.EffectiveConfig))
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 
@@ -813,7 +809,7 @@ func TestReportEffectiveConfig(t *testing.T) {
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The status report must have compressed EffectiveConfig.
-			cfg := msg.StatusReport.EffectiveConfig
+			cfg := msg.EffectiveConfig
 			assert.Nil(t, cfg.ConfigMap)
 
 			// Hash must be present and unchanged.
@@ -832,7 +828,7 @@ func TestReportEffectiveConfig(t *testing.T) {
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The status report must again have full EffectiveConfig
 			// because Server asked for it.
-			assert.True(t, proto.Equal(clientEffectiveConfig, msg.StatusReport.EffectiveConfig))
+			assert.True(t, proto.Equal(clientEffectiveConfig, msg.EffectiveConfig))
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 
@@ -893,7 +889,7 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// Verify that the remote config status is as expected.
-			status := msg.StatusReport.RemoteConfigStatus
+			status := msg.RemoteConfigStatus
 			assert.EqualValues(t, expectStatus.Status, status.Status)
 			assert.Equal(t, expectStatus.ErrorMessage, status.ErrorMessage)
 			assert.EqualValues(t, remoteCfg.ConfigHash, status.LastRemoteConfigHash)
@@ -912,7 +908,7 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// This time all fields except Hash must be unset. This is expected
 			// as compression in OpAMP.
-			status := msg.StatusReport.RemoteConfigStatus
+			status := msg.RemoteConfigStatus
 			assert.EqualValues(t, firstConfigStatus.Hash, status.Hash)
 			assert.EqualValues(t, protobufs.RemoteConfigStatus_UNSET, status.Status)
 			assert.EqualValues(t, "", status.ErrorMessage)
@@ -928,7 +924,7 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// Exact same full status must be present again.
-			status := msg.StatusReport.RemoteConfigStatus
+			status := msg.RemoteConfigStatus
 			assert.True(t, proto.Equal(status, firstConfigStatus))
 
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}

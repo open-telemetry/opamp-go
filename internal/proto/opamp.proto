@@ -28,20 +28,40 @@ message AgentToServer {
     // Recommended format: https://github.com/ulid/spec
     string instance_uid = 1;
 
-    // The status of the Agent. MUST be set in the first AgentToServer message that the
-    // Agent sends after connecting.
-    // This field SHOULD be unset if this information is unchanged since the last
-    // AgentToServer message for this Agent was sent in the stream.
-    StatusReport status_report = 2;
+    // Data that describes the Agent, its type, where it runs, etc.
+    // May be omitted if nothing changed since last AgentToServer message.
+    AgentDescription agent_description = 2;
+
+    // Bitmask of flags defined by AgentCapabilities enum.
+    // All bits that are not defined in AgentCapabilities enum MUST be set to 0 by
+    // the Agent. This allows extending the protocol and the AgentCapabilities enum
+    // in the future such that old Agents automatically report that they don't
+    // support the new capability.
+    // This field MUST be always set.
+    AgentCapabilities capabilities = 3;
+
+    // The current effective configuration of the Agent. The effective configuration is
+    // the one that is currently used by the Agent. The effective configuration may be
+    // different from the remote configuration received from the Server earlier, e.g.
+    // because the Agent uses a local configuration instead (or in addition).
+    //
+    // This field SHOULD be unset if the effective config is unchanged since the last
+    // AgentToServer message.
+    EffectiveConfig effective_config = 4;
+
+    // The status of the remote config that was previously received from the Server.
+    // This field SHOULD be unset if the remote config status is unchanged since the
+    // last AgentToServer message.
+    RemoteConfigStatus remote_config_status = 5;
 
     // The list of the Agent packages, including package statuses. This field SHOULD be
     // unset if this information is unchanged since the last AgentToServer message for
     // this Agent was sent in the stream.
-    PackageStatuses package_statuses = 3;
+    PackageStatuses package_statuses = 6;
 
     // AgentDisconnect MUST be set in the last AgentToServer message sent from the
     // Agent to the Server.
-    AgentDisconnect agent_disconnect = 4;
+    AgentDisconnect agent_disconnect = 7;
 
     enum AgentToServerFlags {
         FlagsUnspecified = 0;
@@ -52,7 +72,7 @@ message AgentToServer {
         RequestInstanceUid     = 0x00000001;
     }
     // Bit flags as defined by AgentToServerFlags bit masks.
-    AgentToServerFlags flags = 5;
+    AgentToServerFlags flags = 8;
 }
 
 // AgentDisconnect is the last message sent from the Agent to the Server. The Server
@@ -99,16 +119,16 @@ message ServerToAgent {
         ReportAgentDescription   = 0x00000001;
         // The Server asks the Agent to report full EffectiveConfig. This bit MUST NOT be
         // set if the Agent indicated it cannot report effective config by setting
-        // the ReportsEffectiveConfig bit to 0 in StatusReport.capabilities field.
+        // the ReportsEffectiveConfig bit to 0 in AgentToServer.capabilities field.
         ReportEffectiveConfig    = 0x00000002;
 
         // The Server asks the Agent to report full RemoteConfigStatus. This bit MUST NOT be
         // set if the Agent indicated it cannot accept remote config by setting
-        // the AcceptsRemoteConfig bit to 0 in StatusReport.capabilities field.
+        // the AcceptsRemoteConfig bit to 0 in AgentToServer.capabilities field.
         ReportRemoteConfigStatus = 0x00000004;
         // The Server asks the Agent to report full PackageStatuses. This bit MUST NOT be
         // set if the Agent indicated it cannot report package status by setting
-        // the ReportsPackageStatuses bit to 0 in StatusReport.capabilities field.
+        // the ReportsPackageStatuses bit to 0 in AgentToServer.capabilities field.
         ReportPackageStatuses    = 0x00000008;
     }
     // Bit flags as defined by Flags bit masks.
@@ -142,7 +162,7 @@ enum ServerCapabilities {
     AcceptsStatus                  = 0x00000001;
     // The Server can offer remote configuration to the Agent.
     OffersRemoteConfig             = 0x00000002;
-    // The Server can accept EffectiveConfig in StatusReport.
+    // The Server can accept EffectiveConfig in AgentToServer.
     AcceptsEffectiveConfig         = 0x00000004;
     // The Server can offer Packages.
     OffersPackages                 = 0x00000008;
@@ -328,9 +348,9 @@ message PackagesAvailable {
     map<string, PackageAvailable> packages = 1;
 
     // Aggregate hash of all remotely installed packages. The Agent SHOULD include this
-    // value in subsequent StatusReport messages. This in turn allows the management
+    // value in subsequent PackageStatuses messages. This in turn allows the management
     // Server to identify that a different set of packages is available for the Agent
-    // and specify the available packages in the next DataToAgent message.
+    // and specify the available packages in the next ServerToAgent message.
     //
     // This field MUST be always set if the management Server supports packages
     // of agents.
@@ -484,35 +504,6 @@ message AgentDescription {
     // is responsible/associated with).
 }
 
-message StatusReport {
-    // Data that describes the Agent, its type, where it runs, etc.
-    // May be omitted if nothing changed since last StatusReport.
-    AgentDescription agent_description = 1;
-
-    // Current effective config of the Agent. May be different from the remote config
-    // received from the management Server, e.g. because the Agent uses a local
-    // config instead (or in addition).
-    //
-    // This field SHOULD be unset if the effective config is unchanged since the last
-    // StatusReport message.
-    EffectiveConfig effective_config = 2;
-
-    // The status of the remote config that was previously received from the Server.
-    // This field SHOULD be unset if the remote config status is unchanged since the
-    // last StatusReport message.
-    RemoteConfigStatus remote_config_status = 3;
-
-    // Bitmask of flags defined by AgentCapabilities enum.
-    // All bits that are not defined in AgentCapabilities enum MUST be set to 0 by
-    // the Agent. This allows extending the protocol and the AgentCapabilities enum
-    // in the future such that old Agents automatically report that they don't
-    // support the new capability.
-    // This field MUST be set in the first StatusReport sent by the Agent and MAY
-    // be omitted in subsequent StatusReport messages by setting it to
-    // UnspecifiedAgentCapability value.
-    AgentCapabilities capabilities = 4;
-}
-
 enum AgentCapabilities {
     // The capabilities field is unspecified.
     UnspecifiedAgentCapability = 0;
@@ -521,7 +512,7 @@ enum AgentCapabilities {
     ReportsStatus                  = 0x00000001;
     // The Agent can accept remote configuration from the Server.
     AcceptsRemoteConfig            = 0x00000002;
-    // The Agent will report EffectiveConfig in StatusReport.
+    // The Agent will report EffectiveConfig in AgentToServer.
     ReportsEffectiveConfig         = 0x00000004;
     // The Agent can accept package offers.
     AcceptsPackages                = 0x00000008;
@@ -571,8 +562,9 @@ message RemoteConfigStatus {
     // for compression).
     bytes hash = 1;
 
-    // The hash of the remote config that was last received by this Agent from the
-    // management Server. The Server SHOULD compare this hash with the config hash
+    // The hash of the remote config that was last received by this Agent in the
+    // AgentRemoteConfig.config_hash field.
+    // The Server SHOULD compare this hash with the config hash
     // it has for the Agent and if the hashes are different the Server MUST include
     // the remote_config field in the response in the ServerToAgent message.
     bytes last_remote_config_hash = 2;
@@ -714,9 +706,9 @@ message AgentRemoteConfig {
     // AgentConfigResponse.config_hash field).
     AgentConfigMap config = 1;
 
-    // Hash of "config". The Agent SHOULD include this value in subsequent StatusReport
-    // messages. This in turn allows the management Server to identify that a new config is
-    // available for the Agent.
+    // Hash of "config". The Agent SHOULD include this value in subsequent
+    // RemoteConfigStatus messages in the last_remote_config_hash field. This in turn
+    // allows the management Server to identify that a new config is available for the Agent.
     //
     // This field MUST be always set if the management Server supports remote configuration
     // of agents.

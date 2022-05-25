@@ -176,18 +176,15 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 
 	c.sender.NextMessage().Update(
 		func(msg *protobufs.AgentToServer) {
-			if msg.StatusReport == nil {
-				msg.StatusReport = &protobufs.StatusReport{}
-			}
-			msg.StatusReport.AgentDescription = c.ClientSyncedState.AgentDescription()
-			msg.StatusReport.EffectiveConfig = cfg
-			msg.StatusReport.RemoteConfigStatus = c.ClientSyncedState.RemoteConfigStatus()
+			msg.AgentDescription = c.ClientSyncedState.AgentDescription()
+			msg.EffectiveConfig = cfg
+			msg.RemoteConfigStatus = c.ClientSyncedState.RemoteConfigStatus()
 			msg.PackageStatuses = c.ClientSyncedState.PackageStatuses()
 
 			if c.PackagesStateProvider != nil {
 				// We have a state provider, so package related capabilities can work.
-				msg.StatusReport.Capabilities |= protobufs.AgentCapabilities_AcceptsPackages
-				msg.StatusReport.Capabilities |= protobufs.AgentCapabilities_ReportsPackageStatuses
+				msg.Capabilities |= protobufs.AgentCapabilities_AcceptsPackages
+				msg.Capabilities |= protobufs.AgentCapabilities_ReportsPackageStatuses
 			}
 		},
 	)
@@ -208,8 +205,8 @@ func (c *ClientCommon) SetAgentDescription(descr *protobufs.AgentDescription) er
 	if err := c.ClientSyncedState.SetAgentDescription(descr); err != nil {
 		return err
 	}
-	c.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
-		statusReport.AgentDescription = c.ClientSyncedState.AgentDescription()
+	c.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.AgentDescription = c.ClientSyncedState.AgentDescription()
 	})
 	c.sender.ScheduleSend()
 	return nil
@@ -257,8 +254,8 @@ func (c *ClientCommon) UpdateEffectiveConfig(ctx context.Context) error {
 		calcHashEffectiveConfig(cfg)
 	}
 	// Send it to the Server.
-	c.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
-		statusReport.EffectiveConfig = cfg
+	c.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.EffectiveConfig = cfg
 	})
 	c.sender.ScheduleSend()
 

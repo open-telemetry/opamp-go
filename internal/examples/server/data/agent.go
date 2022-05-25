@@ -28,7 +28,7 @@ type Agent struct {
 	mux sync.RWMutex
 
 	// Agent's current status.
-	Status *protobufs.StatusReport
+	Status *protobufs.AgentToServer
 
 	// Effective config reported by the Agent.
 	EffectiveConfig string
@@ -58,7 +58,7 @@ func (agent *Agent) CloneReadonly() *Agent {
 	defer agent.mux.RUnlock()
 	return &Agent{
 		InstanceId:           agent.InstanceId,
-		Status:               proto.Clone(agent.Status).(*protobufs.StatusReport),
+		Status:               proto.Clone(agent.Status).(*protobufs.AgentToServer),
 		EffectiveConfig:      agent.EffectiveConfig,
 		CustomInstanceConfig: agent.CustomInstanceConfig,
 		remoteConfig:         proto.Clone(agent.remoteConfig).(*protobufs.AgentRemoteConfig),
@@ -69,12 +69,12 @@ func (agent *Agent) CloneReadonly() *Agent {
 // status report and sets appropriate fields in the response message to be sent
 // to the Agent.
 func (agent *Agent) UpdateStatus(
-	newStatus *protobufs.StatusReport,
+	statusMsg *protobufs.AgentToServer,
 	response *protobufs.ServerToAgent,
 ) {
 	agent.mux.Lock()
 
-	agent.processStatusUpdate(newStatus, response)
+	agent.processStatusUpdate(statusMsg, response)
 
 	statusUpdateWatchers := agent.statusUpdateWatchers
 	agent.statusUpdateWatchers = nil
@@ -95,7 +95,7 @@ func notifyStatusWatchers(statusUpdateWatchers []chan<- struct{}) {
 	}
 }
 
-func (agent *Agent) updateStatusField(newStatus *protobufs.StatusReport) (agentDescrChanged bool) {
+func (agent *Agent) updateStatusField(newStatus *protobufs.AgentToServer) (agentDescrChanged bool) {
 	prevStatus := agent.Status
 
 	if agent.Status == nil {
@@ -145,7 +145,7 @@ func (agent *Agent) updateStatusField(newStatus *protobufs.StatusReport) (agentD
 }
 
 func (agent *Agent) updateEffectiveConfig(
-	newStatus *protobufs.StatusReport,
+	newStatus *protobufs.AgentToServer,
 	response *protobufs.ServerToAgent,
 ) {
 	// Update effective config if provided.
@@ -175,7 +175,7 @@ func (agent *Agent) updateEffectiveConfig(
 }
 
 func (agent *Agent) processStatusUpdate(
-	newStatus *protobufs.StatusReport,
+	newStatus *protobufs.AgentToServer,
 	response *protobufs.ServerToAgent,
 ) {
 	agentDescrChanged := agent.updateStatusField(newStatus)
