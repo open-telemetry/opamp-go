@@ -10,14 +10,15 @@ import (
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
 	ErrAgentDescriptionMissing      = errors.New("AgentDescription is nil")
 	ErrAgentDescriptionNoAttributes = errors.New("AgentDescription has no attributes defined")
-	errRemoteConfigStatusMissing    = errors.New("RemoteConfigStatus is not set")
-	errAlreadyStarted               = errors.New("already started")
-	errCannotStopNotStarted         = errors.New("cannot stop because not started")
+
+	errAlreadyStarted       = errors.New("already started")
+	errCannotStopNotStarted = errors.New("cannot stop because not started")
 )
 
 // ClientCommon contains the OpAMP logic that is common between WebSocket and
@@ -28,6 +29,9 @@ type ClientCommon struct {
 
 	// Client state storage. This is needed if the Server asks to report the state.
 	ClientSyncedState ClientSyncedState
+
+	// PackagesStateProvider provides access to the local state of packages.
+	PackagesStateProvider types.PackagesStateProvider
 
 	// The transport-specific sender.
 	sender Sender
@@ -59,6 +63,7 @@ func (c *ClientCommon) PrepareStart(_ context.Context, settings types.StartSetti
 		return ErrAgentDescriptionMissing
 	}
 
+	// Prepare remote config status.
 	if settings.RemoteConfigStatus == nil {
 		// RemoteConfigStatus is not provided. Start with empty.
 		settings.RemoteConfigStatus = &protobufs.RemoteConfigStatus{
@@ -70,6 +75,27 @@ func (c *ClientCommon) PrepareStart(_ context.Context, settings types.StartSetti
 		return err
 	}
 
+	// Prepare package statuses.
+	c.PackagesStateProvider = settings.PackagesStateProvider
+	var packageStatuses *protobufs.PackageStatuses
+	if settings.PackagesStateProvider != nil {
+		// Set package status from the value previously saved in the PackagesStateProvider.
+		var err error
+		packageStatuses, err = settings.PackagesStateProvider.LastReportedStatuses()
+		if err != nil {
+			return err
+		}
+	}
+
+	if packageStatuses == nil {
+		// PackageStatuses is not provided. Start with empty.
+		packageStatuses = &protobufs.PackageStatuses{}
+	}
+	if err := c.ClientSyncedState.SetPackageStatuses(packageStatuses); err != nil {
+		return err
+	}
+
+	// Prepare callbacks.
 	c.Callbacks = settings.Callbacks
 	if c.Callbacks == nil {
 		// Make sure it is always safe to call Callbacks.
@@ -154,24 +180,24 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 				msg.StatusReport = &protobufs.StatusReport{}
 			}
 			msg.StatusReport.AgentDescription = c.ClientSyncedState.AgentDescription()
-
 			msg.StatusReport.EffectiveConfig = cfg
-
 			msg.StatusReport.RemoteConfigStatus = c.ClientSyncedState.RemoteConfigStatus()
+			msg.PackageStatuses = c.ClientSyncedState.PackageStatuses()
 
-			if msg.PackageStatuses == nil {
-				msg.PackageStatuses = &protobufs.PackageStatuses{}
+			if c.PackagesStateProvider != nil {
+				// We have a state provider, so package related capabilities can work.
+				msg.StatusReport.Capabilities |= protobufs.AgentCapabilities_AcceptsPackages
+				msg.StatusReport.Capabilities |= protobufs.AgentCapabilities_ReportsPackageStatuses
 			}
-
-			// TODO: set PackageStatuses.ServerProvidedAllPackagesHash field and
-			// handle the Hashes for PackageStatuses properly.
 		},
 	)
 	return nil
 }
 
+// AgentDescription returns the current state of the AgentDescription.
 func (c *ClientCommon) AgentDescription() *protobufs.AgentDescription {
-	return c.ClientSyncedState.AgentDescription()
+	// Return a cloned copy to allow caller to do whatever they want with the result.
+	return proto.Clone(c.ClientSyncedState.AgentDescription()).(*protobufs.AgentDescription)
 }
 
 // SetAgentDescription sends a status update to the Server with the new AgentDescription
@@ -183,7 +209,7 @@ func (c *ClientCommon) SetAgentDescription(descr *protobufs.AgentDescription) er
 		return err
 	}
 	c.sender.NextMessage().UpdateStatus(func(statusReport *protobufs.StatusReport) {
-		statusReport.AgentDescription = descr
+		statusReport.AgentDescription = c.ClientSyncedState.AgentDescription()
 	})
 	c.sender.ScheduleSend()
 	return nil

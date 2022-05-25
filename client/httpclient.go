@@ -76,5 +76,11 @@ func (c *httpClient) runUntilStopped(ctx context.Context) {
 	// Start the HTTP sender. This will make request/responses with retries for
 	// failures and will wait with configured polling interval if there is nothing
 	// to send.
-	c.sender.Run(ctx, c.opAMPServerURL, c.common.Callbacks, &c.common.ClientSyncedState)
+	c.sender.Run(
+		ctx,
+		c.opAMPServerURL,
+		c.common.Callbacks,
+		&c.common.ClientSyncedState,
+		c.common.PackagesStateProvider,
+	)
 }

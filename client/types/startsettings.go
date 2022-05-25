@@ -37,7 +37,8 @@ type StartSettings struct {
 
 	LastConnectionSettingsHash []byte
 
-	// The hash of the last locally-saved Server-provided packages. If nil is passed
-	// it will force the Server to send packages list back.
-	LastServerProvidedAllPackagesHash []byte
+	// PackagesStateProvider provides access to the local state of packages.
+	// If nil then ReportsPackageStatuses and AcceptsPackages capabilities will be disabled,
+	// i.e. package status reporting and syncing from the Server will be disabled.
+	PackagesStateProvider PackagesStateProvider
 }

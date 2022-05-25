@@ -21,6 +21,8 @@ type receivedProcessor struct {
 
 	// Client state storage. This is needed if the Server asks to report the state.
 	clientSyncedState *ClientSyncedState
+
+	packagesStateProvider types.PackagesStateProvider
 }
 
 func newReceivedProcessor(
@@ -28,12 +30,14 @@ func newReceivedProcessor(
 	callbacks types.Callbacks,
 	sender Sender,
 	clientSyncedState *ClientSyncedState,
+	packagesStateProvider types.PackagesStateProvider,
 ) receivedProcessor {
 	return receivedProcessor{
-		logger:            logger,
-		callbacks:         callbacks,
-		sender:            sender,
-		clientSyncedState: clientSyncedState,
+		logger:                logger,
+		callbacks:             callbacks,
+		sender:                sender,
+		clientSyncedState:     clientSyncedState,
+		packagesStateProvider: packagesStateProvider,
 	}
 }
 
@@ -51,7 +55,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 		scheduled := r.rcvRemoteConfig(ctx, msg.RemoteConfig)
 
 		r.rcvConnectionSettings(ctx, msg.ConnectionSettings)
-		r.rcvPackagesAvailable(msg.PackagesAvailable)
+		scheduled = scheduled || r.rcvPackagesAvailable(ctx, msg.PackagesAvailable)
 		r.rcvAgentIdentification(ctx, msg.AgentIdentification)
 
 		scheduled2, err := r.rcvFlags(ctx, msg.Flags)
@@ -244,8 +248,43 @@ func (r *receivedProcessor) processErrorResponse(body *protobufs.ServerErrorResp
 	r.logger.Errorf("received an error from server: %s", body.ErrorMessage)
 }
 
-func (r *receivedProcessor) rcvPackagesAvailable(packages *protobufs.PackagesAvailable) {
-	// TODO: implement this.
+func (r *receivedProcessor) rcvPackagesAvailable(ctx context.Context, available *protobufs.PackagesAvailable) bool {
+	if available == nil {
+		return false
+	}
+
+	syncer := NewPackagesSyncer(r.logger, available, r.sender, r.clientSyncedState, r.packagesStateProvider)
+
+	// The OnPackagesAvailable is expected to call syncer.Sync() which will
+	// do the syncing process in background.
+	err := r.callbacks.OnPackagesAvailable(ctx, available, syncer)
+	if err != nil {
+		// Could not even start syncing. Just report everything failed.
+		statuses := &protobufs.PackageStatuses{
+			ServerProvidedAllPackagesHash: available.AllPackagesHash,
+			Packages:                      map[string]*protobufs.PackageStatus{},
+			// TODO: we need a way to report general errors that occurred when trying
+			// install available packages, errors which are not related to a particular
+			// package.
+		}
+		// Until the TODO above is done we will set the same error message for all
+		// packages.
+		for name, pkg := range available.Packages {
+			statuses.Packages[name] = &protobufs.PackageStatus{
+				Name:                 name,
+				ServerOfferedVersion: pkg.Version,
+				ServerOfferedHash:    pkg.Hash,
+				Status:               protobufs.PackageStatus_InstallFailed,
+				ErrorMessage:         err.Error(),
+			}
+		}
+		_ = r.clientSyncedState.SetPackageStatuses(statuses)
+		r.sender.NextMessage().Update(
+			func(msg *protobufs.AgentToServer) { msg.PackageStatuses = statuses },
+		)
+	}
+
+	return true
 }
 
 func (r *receivedProcessor) rcvAgentIdentification(ctx context.Context, agentId *protobufs.AgentIdentification) {

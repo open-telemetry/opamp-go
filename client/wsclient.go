@@ -216,7 +216,14 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 	}
 
 	// First status report sent. Now loop to receive and process messages.
-	r := internal.NewWSReceiver(c.common.Logger, c.common.Callbacks, c.conn, c.sender, &c.common.ClientSyncedState)
+	r := internal.NewWSReceiver(
+		c.common.Logger,
+		c.common.Callbacks,
+		c.conn,
+		c.sender,
+		&c.common.ClientSyncedState,
+		c.common.PackagesStateProvider,
+	)
 	r.ReceiverLoop(ctx)
 
 	// Stop the background processors.

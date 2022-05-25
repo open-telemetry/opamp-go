@@ -29,6 +29,7 @@ type MockServer struct {
 	srv         *httptest.Server
 
 	expectedHandlers chan receivedMessageHandler
+	expectedComplete chan struct{}
 	isExpectMode     bool
 }
 
@@ -41,6 +42,7 @@ func StartMockServer(t *testing.T) *MockServer {
 	srv := &MockServer{
 		t:                t,
 		expectedHandlers: make(chan receivedMessageHandler, 0),
+		expectedComplete: make(chan struct{}, 0),
 	}
 
 	m := http.NewServeMux()
@@ -144,6 +146,7 @@ func (m *MockServer) handleReceivedBytes(msgBytes []byte, alwaysRespond bool) []
 		t := time.NewTimer(5 * time.Second)
 		select {
 		case h := <-m.expectedHandlers:
+			defer func() { m.expectedComplete <- struct{}{} }()
 			response = h(&request)
 		case <-t.C:
 			m.t.Error("Time out waiting for Expect() to handle the received message")
@@ -182,8 +185,55 @@ func (m *MockServer) Expect(handler receivedMessageHandler) {
 		// push the handler to the channel.
 		// the handler will be fetched and called by handleReceivedBytes() when
 		// message is received.
+		<-m.expectedComplete
+
 	case <-t.C:
 		m.t.Error("Time out waiting to receive a message from the client")
+	}
+}
+
+// EventuallyExpect expects to receive a message and calls the handler for every
+// received message until eventually the handler returns true for the second
+// element of the return tuple.
+// Typically used when we know we expect to receive a particular message but 0 or more
+// other messages may be received before that.
+func (m *MockServer) EventuallyExpect(
+	msg string,
+	handler func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent, bool),
+) {
+	t := time.NewTimer(5 * time.Second)
+
+	conditionCh := make(chan bool)
+	wrappedHandler := func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+		response, condition := handler(msg)
+		conditionCh <- condition
+		return response
+	}
+
+	for {
+		select {
+		case m.expectedHandlers <- wrappedHandler:
+			// push the handler to the channel.
+			// the handler will be fetched and called by handleReceivedBytes() when
+			// message is received.
+
+			select {
+			case condition := <-conditionCh:
+				<-m.expectedComplete
+				if condition {
+					return
+				}
+			case <-t.C:
+				m.t.Errorf("Time out expecting a message from the client: %v", msg)
+				<-conditionCh
+				<-m.expectedComplete
+				return
+			}
+
+		case <-t.C:
+			m.t.Errorf("Time out expecting a message from the client: %v", msg)
+			return
+		}
 	}
 }
 
