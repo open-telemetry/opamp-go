@@ -221,7 +221,7 @@ func (agent *Agent) onRemoteConfig(
 func (agent *Agent) onOwnTelemetryConnectionSettings(
 	_ context.Context,
 	telemetryType types.OwnTelemetryType,
-	settings *protobufs.ConnectionSettings,
+	settings *protobufs.TelemetryConnectionSettings,
 ) error {
 	switch telemetryType {
 	case types.OwnMetrics:
@@ -243,7 +243,7 @@ func (agent *Agent) onAgentIdentificationFunc(
 	return nil
 }
 
-func (agent *Agent) initMeter(settings *protobufs.ConnectionSettings) {
+func (agent *Agent) initMeter(settings *protobufs.TelemetryConnectionSettings) {
 	reporter, err := NewMetricReporter(agent.logger, settings, agent.agentType, agent.agentVersion, agent.instanceId)
 	if err != nil {
 		agent.logger.Errorf("Cannot collect metrics: %v", err)

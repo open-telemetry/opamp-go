@@ -91,7 +91,7 @@ type Callbacks interface {
 	// See OnRemoteConfig for the behavior.
 	OnOpampConnectionSettings(
 		ctx context.Context,
-		settings *protobufs.ConnectionSettings,
+		settings *protobufs.OpAMPConnectionSettings,
 	) error
 
 	// OnOpampConnectionSettingsAccepted will be called after the settings are
@@ -99,7 +99,7 @@ type Callbacks interface {
 	// new settings succeeds). The Agent should store the settings and use them
 	// in the future. Old connection settings should be forgotten.
 	OnOpampConnectionSettingsAccepted(
-		settings *protobufs.ConnectionSettings,
+		settings *protobufs.OpAMPConnectionSettings,
 	)
 
 	// OnOwnTelemetryConnectionSettings is called when the Agent receives a
@@ -116,7 +116,7 @@ type Callbacks interface {
 	OnOwnTelemetryConnectionSettings(
 		ctx context.Context,
 		telemetryType OwnTelemetryType,
-		settings *protobufs.ConnectionSettings,
+		settings *protobufs.TelemetryConnectionSettings,
 	) error
 
 	// OnOtherConnectionSettings is called when the Agent receives a
@@ -131,7 +131,7 @@ type Callbacks interface {
 	OnOtherConnectionSettings(
 		ctx context.Context,
 		name string,
-		certificate *protobufs.ConnectionSettings,
+		certificate *protobufs.OtherConnectionSettings,
 	) error
 
 	// OnPackagesAvailable is called when the Server has packages available which are
@@ -169,22 +169,22 @@ type CallbacksStruct struct {
 
 	OnOpampConnectionSettingsFunc func(
 		ctx context.Context,
-		settings *protobufs.ConnectionSettings,
+		settings *protobufs.OpAMPConnectionSettings,
 	) error
 	OnOpampConnectionSettingsAcceptedFunc func(
-		settings *protobufs.ConnectionSettings,
+		settings *protobufs.OpAMPConnectionSettings,
 	)
 
 	OnOwnTelemetryConnectionSettingsFunc func(
 		ctx context.Context,
 		telemetryType OwnTelemetryType,
-		settings *protobufs.ConnectionSettings,
+		settings *protobufs.TelemetryConnectionSettings,
 	) error
 
 	OnOtherConnectionSettingsFunc func(
 		ctx context.Context,
 		name string,
-		settings *protobufs.ConnectionSettings,
+		settings *protobufs.OtherConnectionSettings,
 	) error
 
 	OnPackagesAvailableFunc   func(ctx context.Context, packages *protobufs.PackagesAvailable, syncer PackagesSyncer) error
@@ -237,7 +237,7 @@ func (c CallbacksStruct) GetEffectiveConfig(ctx context.Context) (*protobufs.Eff
 }
 
 func (c CallbacksStruct) OnOpampConnectionSettings(
-	ctx context.Context, settings *protobufs.ConnectionSettings,
+	ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
 ) error {
 	if c.OnOpampConnectionSettingsFunc != nil {
 		return c.OnOpampConnectionSettingsFunc(ctx, settings)
@@ -245,7 +245,7 @@ func (c CallbacksStruct) OnOpampConnectionSettings(
 	return nil
 }
 
-func (c CallbacksStruct) OnOpampConnectionSettingsAccepted(settings *protobufs.ConnectionSettings) {
+func (c CallbacksStruct) OnOpampConnectionSettingsAccepted(settings *protobufs.OpAMPConnectionSettings) {
 	if c.OnOpampConnectionSettingsAcceptedFunc != nil {
 		c.OnOpampConnectionSettingsAcceptedFunc(settings)
 	}
@@ -253,7 +253,7 @@ func (c CallbacksStruct) OnOpampConnectionSettingsAccepted(settings *protobufs.C
 
 func (c CallbacksStruct) OnOwnTelemetryConnectionSettings(
 	ctx context.Context, telemetryType OwnTelemetryType,
-	settings *protobufs.ConnectionSettings,
+	settings *protobufs.TelemetryConnectionSettings,
 ) error {
 	if c.OnOwnTelemetryConnectionSettingsFunc != nil {
 		return c.OnOwnTelemetryConnectionSettingsFunc(ctx, telemetryType, settings)
@@ -262,7 +262,7 @@ func (c CallbacksStruct) OnOwnTelemetryConnectionSettings(
 }
 
 func (c CallbacksStruct) OnOtherConnectionSettings(
-	ctx context.Context, name string, settings *protobufs.ConnectionSettings,
+	ctx context.Context, name string, settings *protobufs.OtherConnectionSettings,
 ) error {
 	if c.OnOtherConnectionSettingsFunc != nil {
 		return c.OnOtherConnectionSettingsFunc(ctx, name, settings)

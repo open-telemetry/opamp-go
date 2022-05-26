@@ -268,7 +268,7 @@ func (s *Supervisor) onRemoteConfig(
 func (s *Supervisor) onOwnTelemetryConnectionSettings(
 	ctx context.Context,
 	telemetryType types.OwnTelemetryType,
-	settings *protobufs.ConnectionSettings,
+	settings *protobufs.TelemetryConnectionSettings,
 ) error {
 	switch telemetryType {
 	case types.OwnMetrics:
@@ -298,7 +298,7 @@ func (s *Supervisor) onAgentIdentificationFunc(
 	return nil
 }
 
-func (s *Supervisor) setupOwnMetrics(ctx context.Context, settings *protobufs.ConnectionSettings) {
+func (s *Supervisor) setupOwnMetrics(ctx context.Context, settings *protobufs.TelemetryConnectionSettings) {
 	var cfg string
 	if settings.DestinationEndpoint == "" {
 		// No destination. Disable metric collection.

@@ -46,7 +46,7 @@ type MetricReporter struct {
 
 func NewMetricReporter(
 	logger types.Logger,
-	dest *protobufs.ConnectionSettings,
+	dest *protobufs.TelemetryConnectionSettings,
 	agentType string,
 	agentVersion string,
 	instanceId ulid.ULID,

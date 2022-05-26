@@ -333,7 +333,7 @@ func (agent *Agent) calcConnectionSettings(response *protobufs.ServerToAgent) {
 	response.ConnectionSettings = &protobufs.ConnectionSettingsOffers{
 		Hash:  nil, // TODO: calc has from settings.
 		Opamp: nil,
-		OwnMetrics: &protobufs.ConnectionSettings{
+		OwnMetrics: &protobufs.TelemetryConnectionSettings{
 			// We just hard-code this to a port on a localhost on which we can
 			// run an Otel Collector for demo purposes. With real production
 			// servers this should likely point to an OTLP backend.
