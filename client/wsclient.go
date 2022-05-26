@@ -101,6 +101,14 @@ func (c *wsClient) UpdateEffectiveConfig(ctx context.Context) error {
 	return c.common.UpdateEffectiveConfig(ctx)
 }
 
+func (c *wsClient) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) error {
+	return c.common.SetRemoteConfigStatus(status)
+}
+
+func (c *wsClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) error {
+	return c.common.SetPackageStatuses(statuses)
+}
+
 // Try to connect once. Returns an error if connection fails and optional retryAfter
 // duration to indicate to the caller to retry after the specified time as instructed
 // by the Server.

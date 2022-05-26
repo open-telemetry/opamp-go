@@ -1334,9 +1334,7 @@ type ConnectionSettingsOffers struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Hash of all settings, including settings that may be omitted from this message
-	// because they are unchanged. The Agent should remember the hash and include
-	// it in the subsequent ConnectionStatuses message, in the last_connection_settings_hash
-	// field.
+	// because they are unchanged.
 	Hash []byte `protobuf:"bytes,1,opt,name=hash,proto3" json:"hash,omitempty"`
 	// Settings to connect to the OpAMP Server.
 	// If this field is not set then the Agent should assume that the settings are

@@ -47,6 +47,7 @@ type OpAMPClient interface {
 	// May be also called after Start(), in which case the attributes will be included
 	// in the next outgoing status report. This is typically used by Agents which allow
 	// their AgentDescription to change dynamically while the OpAMPClient is started.
+	// May be also called from OnMessage handler.
 	//
 	// The Hash field will be calculated and updated from the content of the rest of
 	// the fields.
@@ -59,5 +60,18 @@ type OpAMPClient interface {
 
 	// UpdateEffectiveConfig fetches the current local effective config using
 	// GetEffectiveConfig callback and sends it to the Server.
+	// May be called anytime after Start(), including from OnMessage handler.
 	UpdateEffectiveConfig(ctx context.Context) error
+
+	// SetRemoteConfigStatus sets the current RemoteConfigStatus.
+	// LastRemoteConfigHash field must be non-nil.
+	// May be called anytime after Start(), including from OnMessage handler.
+	// nil values are not allowed and will return an error.
+	SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) error
+
+	// SetPackageStatuses sets the current PackageStatuses.
+	// ServerProvidedAllPackagesHash must be non-nil.
+	// May be called anytime after Start(), including from OnMessage handler.
+	// nil values are not allowed and will return an error.
+	SetPackageStatuses(statuses *protobufs.PackageStatuses) error
 }
