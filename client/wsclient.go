@@ -97,6 +97,10 @@ func (c *wsClient) SetAgentDescription(descr *protobufs.AgentDescription) error 
 	return c.common.SetAgentDescription(descr)
 }
 
+func (c *wsClient) SetHealth(health *protobufs.AgentHealth) error {
+	return c.common.SetHealth(health)
+}
+
 func (c *wsClient) UpdateEffectiveConfig(ctx context.Context) error {
 	return c.common.UpdateEffectiveConfig(ctx)
 }

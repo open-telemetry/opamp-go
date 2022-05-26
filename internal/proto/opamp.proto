@@ -46,6 +46,10 @@ message AgentToServer {
     // This field MUST be always set.
     AgentCapabilities capabilities = 4;
 
+    // The current health of the Agent.
+    // May be omitted if nothing changed since last AgentToServer message.
+    AgentHealth health = 5;
+
     // The current effective configuration of the Agent. The effective configuration is
     // the one that is currently used by the Agent. The effective configuration may be
     // different from the remote configuration received from the Server earlier, e.g.
@@ -53,21 +57,21 @@ message AgentToServer {
     //
     // This field SHOULD be unset if the effective config is unchanged since the last
     // AgentToServer message.
-    EffectiveConfig effective_config = 5;
+    EffectiveConfig effective_config = 6;
 
     // The status of the remote config that was previously received from the Server.
     // This field SHOULD be unset if the remote config status is unchanged since the
     // last AgentToServer message.
-    RemoteConfigStatus remote_config_status = 6;
+    RemoteConfigStatus remote_config_status = 7;
 
     // The list of the Agent packages, including package statuses. This field SHOULD be
     // unset if this information is unchanged since the last AgentToServer message for
     // this Agent was sent in the stream.
-    PackageStatuses package_statuses = 7;
+    PackageStatuses package_statuses = 8;
 
     // AgentDisconnect MUST be set in the last AgentToServer message sent from the
     // Agent to the Server.
-    AgentDisconnect agent_disconnect = 8;
+    AgentDisconnect agent_disconnect = 9;
 
     enum AgentToServerFlags {
         FlagsUnspecified = 0;
@@ -78,7 +82,7 @@ message AgentToServer {
         RequestInstanceUid     = 0x00000001;
     }
     // Bit flags as defined by AgentToServerFlags bit masks.
-    AgentToServerFlags flags = 9;
+    AgentToServerFlags flags = 10;
 }
 
 // AgentDisconnect is the last message sent from the Agent to the Server. The Server
@@ -536,6 +540,21 @@ enum AgentCapabilities {
     AcceptsRestartCommand          = 0x00000400;
 
     // Add new capabilities here, continuing with the least significant unused bit.
+}
+
+// The health of the Agent.
+message AgentHealth {
+    // Set to true if the Agent is up and running.
+    bool up = 1;
+
+    // Timestamp since the Agent is up, i.e. when the agent was started.
+    // Value is UNIX Epoch time in nanoseconds since 00:00:00 UTC on 1 January 1970.
+    // If "up" is false this field is unused.
+    fixed64 start_time_unix_nano = 2;
+
+    // Human-readable error message if the Agent is in erroneous state. Typically set
+    // when up==false.
+    string last_error = 3;
 }
 
 message EffectiveConfig {

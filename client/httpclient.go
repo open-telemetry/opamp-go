@@ -68,6 +68,10 @@ func (c *httpClient) SetAgentDescription(descr *protobufs.AgentDescription) erro
 	return c.common.SetAgentDescription(descr)
 }
 
+func (c *httpClient) SetHealth(health *protobufs.AgentHealth) error {
+	return c.common.SetHealth(health)
+}
+
 func (c *httpClient) UpdateEffectiveConfig(ctx context.Context) error {
 	return c.common.UpdateEffectiveConfig(ctx)
 }

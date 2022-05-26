@@ -737,6 +737,77 @@ func TestReportAgentDescription(t *testing.T) {
 	})
 }
 
+func TestReportAgentHealth(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+
+		// Start a Server.
+		srv := internal.StartMockServer(t)
+		srv.EnableExpectMode()
+
+		// Start a client.
+		settings := types.StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+		}
+		prepareClient(t, &settings, client)
+
+		assert.Error(t, client.SetHealth(nil))
+
+		sendHealth := &protobufs.AgentHealth{
+			Up:                true,
+			StartTimeUnixNano: 123,
+			LastError:         "bad error",
+		}
+		assert.NoError(t, client.SetHealth(sendHealth))
+
+		// Client --->
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		// ---> Server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			assert.EqualValues(t, 0, msg.SequenceNum)
+			// The first status report after Start must have the Health.
+			assert.True(t, proto.Equal(sendHealth, msg.Health))
+			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+		})
+
+		// Client --->
+		// Trigger a status report.
+		_ = client.UpdateEffectiveConfig(context.Background())
+
+		// ---> Server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// The status report must have compressed Health.
+			assert.Nil(t, msg.Health)
+
+			assert.EqualValues(t, 1, msg.SequenceNum)
+
+			// Ask client for full AgentDescription.
+			return &protobufs.ServerToAgent{
+				InstanceUid: msg.InstanceUid,
+				Flags:       protobufs.ServerToAgent_ReportFullState,
+			}
+		})
+
+		// Server has requested the client to report, so there will be another message
+		// coming to the Server.
+		// ---> Server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			assert.EqualValues(t, 2, msg.SequenceNum)
+			// The status report must again have full Health
+			// because the Server asked for it.
+			assert.True(t, proto.Equal(sendHealth, msg.Health))
+			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+		})
+
+		// Shutdown the Server.
+		srv.Close()
+
+		// Shutdown the client.
+		err := client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
 func TestReportEffectiveConfig(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 
