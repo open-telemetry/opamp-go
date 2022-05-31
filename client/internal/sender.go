@@ -35,7 +35,10 @@ type SenderCommon struct {
 }
 
 func NewSenderCommon() SenderCommon {
-	return SenderCommon{hasPendingMessage: make(chan struct{}, 1)}
+	return SenderCommon{
+		hasPendingMessage: make(chan struct{}, 1),
+		nextMessage:       NewNextMessage(),
+	}
 }
 
 // ScheduleSend signals to HTTPSender that the message in NextMessage struct

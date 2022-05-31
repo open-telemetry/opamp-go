@@ -11,18 +11,24 @@ import (
 // concurrency-safe interface to work with the message.
 type NextMessage struct {
 	// The next message to send.
-	nextMessage protobufs.AgentToServer
+	nextMessage *protobufs.AgentToServer
 	// Indicates that nextMessage is pending to be sent.
 	messagePending bool
 	// Mutex to protect the above 2 fields.
 	messageMutex sync.Mutex
 }
 
+func NewNextMessage() NextMessage {
+	return NextMessage{
+		nextMessage: &protobufs.AgentToServer{},
+	}
+}
+
 // Update applies the specified modifier function to the next message that
 // will be sent and marks the message as pending to be sent.
 func (s *NextMessage) Update(modifier func(msg *protobufs.AgentToServer)) {
 	s.messageMutex.Lock()
-	modifier(&s.nextMessage)
+	modifier(s.nextMessage)
 	s.messagePending = true
 	s.messageMutex.Unlock()
 }
@@ -35,12 +41,12 @@ func (s *NextMessage) PopPending() *protobufs.AgentToServer {
 	if s.messagePending {
 		// Clone the message to have a copy for sending and avoid blocking
 		// future updates to s.NextMessage field.
-		msgToSend = proto.Clone(&s.nextMessage).(*protobufs.AgentToServer)
+		msgToSend = proto.Clone(s.nextMessage).(*protobufs.AgentToServer)
 		s.messagePending = false
 
 		// Reset fields that we do not have to send unless they change before the
 		// next report after this one. Keep the "hash" fields.
-		msg := protobufs.AgentToServer{
+		msg := &protobufs.AgentToServer{
 			InstanceUid: s.nextMessage.InstanceUid,
 			AgentDescription: &protobufs.AgentDescription{
 				Hash: s.nextMessage.AgentDescription.Hash,
