@@ -13,8 +13,10 @@ import (
 )
 
 var (
-	errRemoteConfigStatusMissing = errors.New("RemoteConfigStatus is not set")
-	errPackageStatusesMissing    = errors.New("PackageStatuses is not set")
+	errRemoteConfigStatusMissing        = errors.New("RemoteConfigStatus is not set")
+	errLastRemoteConfigHashNil          = errors.New("LastRemoteConfigHash is nil")
+	errPackageStatusesMissing           = errors.New("PackageStatuses is not set")
+	errServerProvidedAllPackagesHashNil = errors.New("ServerProvidedAllPackagesHash is nil")
 )
 
 // ClientSyncedState stores the state of the Agent messages that the OpAMP Client needs to

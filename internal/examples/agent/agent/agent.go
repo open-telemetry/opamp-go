@@ -96,15 +96,13 @@ func (agent *Agent) start() error {
 			OnErrorFunc: func(err *protobufs.ServerErrorResponse) {
 				agent.logger.Errorf("Server returned an error response: %v", err.ErrorMessage)
 			},
-			OnRemoteConfigFunc: agent.onRemoteConfig,
 			SaveRemoteConfigStatusFunc: func(_ context.Context, status *protobufs.RemoteConfigStatus) {
 				agent.remoteConfigStatus = status
 			},
-			OnOwnTelemetryConnectionSettingsFunc: agent.onOwnTelemetryConnectionSettings,
-			OnAgentIdentificationFunc:            agent.onAgentIdentificationFunc,
 			GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 				return agent.composeEffectiveConfig(), nil
 			},
+			OnMessageFunc: agent.onMessage,
 		},
 		RemoteConfigStatus: agent.remoteConfigStatus,
 	}
@@ -204,43 +202,6 @@ func (agent *Agent) composeEffectiveConfig() *protobufs.EffectiveConfig {
 			},
 		},
 	}
-}
-
-func (agent *Agent) onRemoteConfig(
-	_ context.Context,
-	remoteConfig *protobufs.AgentRemoteConfig,
-) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {
-	configChanged, err = agent.applyRemoteConfig(remoteConfig)
-	if err != nil {
-		return nil, false, err
-	}
-
-	return agent.composeEffectiveConfig(), configChanged, nil
-}
-
-func (agent *Agent) onOwnTelemetryConnectionSettings(
-	_ context.Context,
-	telemetryType types.OwnTelemetryType,
-	settings *protobufs.TelemetryConnectionSettings,
-) error {
-	switch telemetryType {
-	case types.OwnMetrics:
-		agent.initMeter(settings)
-	}
-
-	return nil
-}
-
-func (agent *Agent) onAgentIdentificationFunc(
-	_ context.Context,
-	agentId *protobufs.AgentIdentification,
-) error {
-	newInstanceId, err := ulid.Parse(agentId.NewInstanceUid)
-	if err != nil {
-		return err
-	}
-	agent.updateAgentIdentity(newInstanceId)
-	return nil
 }
 
 func (agent *Agent) initMeter(settings *protobufs.TelemetryConnectionSettings) {
@@ -355,5 +316,44 @@ func (agent *Agent) Shutdown() {
 	agent.logger.Debugf("Agent shutting down...")
 	if agent.opampClient != nil {
 		_ = agent.opampClient.Stop(context.Background())
+	}
+}
+
+func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
+	configChanged := false
+	if msg.RemoteConfig != nil {
+		var err error
+		configChanged, err = agent.applyRemoteConfig(msg.RemoteConfig)
+		if err != nil {
+			agent.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
+				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
+				Status:               protobufs.RemoteConfigStatus_FAILED,
+				ErrorMessage:         err.Error(),
+			})
+		} else {
+			agent.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
+				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
+				Status:               protobufs.RemoteConfigStatus_APPLIED,
+			})
+		}
+	}
+
+	if msg.OwnMetricsConnSettings != nil {
+		agent.initMeter(msg.OwnMetricsConnSettings)
+	}
+
+	if msg.AgentIdentification != nil {
+		newInstanceId, err := ulid.Parse(msg.AgentIdentification.NewInstanceUid)
+		if err != nil {
+			agent.logger.Errorf(err.Error())
+		}
+		agent.updateAgentIdentity(newInstanceId)
+	}
+
+	if configChanged {
+		err := agent.opampClient.UpdateEffectiveConfig(ctx)
+		if err != nil {
+			agent.logger.Errorf(err.Error())
+		}
 	}
 }

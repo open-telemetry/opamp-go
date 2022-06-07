@@ -72,6 +72,14 @@ func (c *httpClient) UpdateEffectiveConfig(ctx context.Context) error {
 	return c.common.UpdateEffectiveConfig(ctx)
 }
 
+func (c *httpClient) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) error {
+	return c.common.SetRemoteConfigStatus(status)
+}
+
+func (c *httpClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) error {
+	return c.common.SetPackageStatuses(statuses)
+}
+
 func (c *httpClient) runUntilStopped(ctx context.Context) {
 	// Start the HTTP sender. This will make request/responses with retries for
 	// failures and will wait with configured polling interval if there is nothing

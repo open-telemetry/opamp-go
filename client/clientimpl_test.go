@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"errors"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -325,20 +324,11 @@ func TestFirstStatusReport(t *testing.T) {
 				OnConnectFunc: func() {
 					atomic.AddInt64(&connected, 1)
 				},
-				OnRemoteConfigFunc: func(
-					ctx context.Context,
-					config *protobufs.AgentRemoteConfig,
-				) (
-					effectiveConfig *protobufs.EffectiveConfig, configChanged bool,
-					err error,
-				) {
+				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
 					// Verify that the client received exactly the remote config that
 					// the Server sent.
-					assert.True(t, proto.Equal(remoteConfig, config))
+					assert.True(t, proto.Equal(remoteConfig, msg.RemoteConfig))
 					atomic.AddInt64(&remoteConfigReceived, 1)
-					return &protobufs.EffectiveConfig{
-						ConfigMap: remoteConfig.Config,
-					}, true, nil
 				},
 			},
 		}
@@ -380,12 +370,6 @@ func TestIncludesDetailsOnReconnect(t *testing.T) {
 		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func() {
 				atomic.AddInt64(&connected, 1)
-			},
-			OnRemoteConfigFunc: func(
-				ctx context.Context,
-				config *protobufs.AgentRemoteConfig,
-			) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {
-				return &protobufs.EffectiveConfig{}, false, nil
 			},
 		},
 	}
@@ -565,14 +549,6 @@ func TestAgentIdentification(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{}
 		settings.OpAMPServerURL = "ws://" + srv.Endpoint
-		settings.Callbacks = types.CallbacksStruct{
-			OnAgentIdentificationFunc: func(
-				ctx context.Context,
-				agentId *protobufs.AgentIdentification,
-			) error {
-				return nil
-			},
-		}
 		prepareClient(t, &settings, client)
 
 		oldInstanceUid := settings.InstanceUid
@@ -654,37 +630,22 @@ func TestConnectionSettings(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{
 			Callbacks: types.CallbacksStruct{
+				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+					assert.True(t, proto.Equal(metricsSettings, msg.OwnMetricsConnSettings))
+					assert.True(t, proto.Equal(tracesSettings, msg.OwnTracesConnSettings))
+					assert.True(t, proto.Equal(logsSettings, msg.OwnLogsConnSettings))
+					atomic.AddInt64(&gotOwnSettings, 1)
+
+					assert.Len(t, msg.OtherConnSettings, 1)
+					assert.True(t, proto.Equal(otherSettings, msg.OtherConnSettings["other"]))
+					atomic.AddInt64(&gotOtherSettings, 1)
+				},
+
 				OnOpampConnectionSettingsFunc: func(
 					ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
 				) error {
 					assert.True(t, proto.Equal(opampSettings, settings))
 					atomic.AddInt64(&gotOpampSettings, 1)
-					return nil
-				},
-
-				OnOwnTelemetryConnectionSettingsFunc: func(
-					ctx context.Context, telemetryType types.OwnTelemetryType,
-					settings *protobufs.TelemetryConnectionSettings,
-				) error {
-					switch telemetryType {
-					case types.OwnMetrics:
-						assert.True(t, proto.Equal(metricsSettings, settings))
-					case types.OwnTraces:
-						assert.True(t, proto.Equal(tracesSettings, settings))
-					case types.OwnLogs:
-						assert.True(t, proto.Equal(logsSettings, settings))
-					}
-					atomic.AddInt64(&gotOwnSettings, 1)
-					return nil
-				},
-
-				OnOtherConnectionSettingsFunc: func(
-					ctx context.Context, name string,
-					settings *protobufs.OtherConnectionSettings,
-				) error {
-					assert.EqualValues(t, "other", name)
-					assert.True(t, proto.Equal(otherSettings, settings))
-					atomic.AddInt64(&gotOtherSettings, 1)
 					return nil
 				},
 			},
@@ -695,7 +656,7 @@ func TestConnectionSettings(t *testing.T) {
 		assert.NoError(t, client.Start(context.Background(), settings))
 
 		eventually(t, func() bool { return atomic.LoadInt64(&gotOpampSettings) == 1 })
-		eventually(t, func() bool { return atomic.LoadInt64(&gotOwnSettings) == 3 })
+		eventually(t, func() bool { return atomic.LoadInt64(&gotOwnSettings) == 1 })
 		eventually(t, func() bool { return atomic.LoadInt64(&gotOtherSettings) == 1 })
 		eventually(t, func() bool { return atomic.LoadInt64(&rcvStatus) == 1 })
 
@@ -848,22 +809,28 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
 
-		// Prepare a callback that returns either success or failure.
-		onRemoteConfigFunc := func(
-			ctx context.Context, remoteConfig *protobufs.AgentRemoteConfig,
-		) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {
-			if successCase {
-				return createEffectiveConfig(), true, nil
-			} else {
-				return nil, false, errors.New("cannot update remote config")
-			}
-		}
-
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
 			Callbacks: types.CallbacksStruct{
-				OnRemoteConfigFunc: onRemoteConfigFunc,
+				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+					if msg.RemoteConfig != nil {
+						if successCase {
+							client.SetRemoteConfigStatus(
+								&protobufs.RemoteConfigStatus{
+									LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
+									Status:               protobufs.RemoteConfigStatus_APPLIED,
+								})
+						} else {
+							client.SetRemoteConfigStatus(
+								&protobufs.RemoteConfigStatus{
+									LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
+									Status:               protobufs.RemoteConfigStatus_FAILED,
+									ErrorMessage:         "cannot update remote config",
+								})
+						}
+					}
+				},
 			},
 		}
 		prepareClient(t, &settings, client)
@@ -909,6 +876,7 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 			// This time all fields except Hash must be unset. This is expected
 			// as compression in OpAMP.
 			status := msg.RemoteConfigStatus
+			require.NotNil(t, status)
 			assert.EqualValues(t, firstConfigStatus.Hash, status.Hash)
 			assert.EqualValues(t, protobufs.RemoteConfigStatus_UNSET, status.Status)
 			assert.EqualValues(t, "", status.ErrorMessage)
@@ -977,6 +945,7 @@ type packageTestCase struct {
 	available           *protobufs.PackagesAvailable
 	expectedStatus      *protobufs.PackageStatuses
 	expectedFileContent map[string][]byte
+	expectedError       string
 }
 
 const packageUpdateErrorMsg = "cannot update packages"
@@ -993,14 +962,18 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 		var syncerDoneCh <-chan struct{}
 
 		// Prepare a callback that returns either success or failure.
-		onPackagesAvailable := func(ctx context.Context, packages *protobufs.PackagesAvailable, syncer types.PackagesSyncer) error {
-			if testCase.errorOnCallback {
-				return errors.New(packageUpdateErrorMsg)
-			} else {
-				syncerDoneCh = syncer.Done()
-				err := syncer.Sync(ctx)
-				require.NoError(t, err)
-				return nil
+		onMessageFunc := func(ctx context.Context, msg *types.MessageData) {
+			if msg.PackageSyncer != nil {
+				if testCase.errorOnCallback {
+					client.SetPackageStatuses(&protobufs.PackageStatuses{
+						ServerProvidedAllPackagesHash: msg.PackagesAvailable.AllPackagesHash,
+						ErrorMessage:                  packageUpdateErrorMsg,
+					})
+				} else {
+					syncerDoneCh = msg.PackageSyncer.Done()
+					err := msg.PackageSyncer.Sync(ctx)
+					require.NoError(t, err)
+				}
 			}
 		}
 
@@ -1008,7 +981,7 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
 			Callbacks: types.CallbacksStruct{
-				OnPackagesAvailableFunc: onPackagesAvailable,
+				OnMessageFunc: onMessageFunc,
 			},
 			PackagesStateProvider: localPackageState,
 		}
@@ -1041,6 +1014,11 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 				require.NotNil(t, status)
 				assert.EqualValues(t, testCase.expectedStatus.ServerProvidedAllPackagesHash, status.ServerProvidedAllPackagesHash)
 				lastStatusHash = status.Hash
+
+				if testCase.expectedError != "" {
+					assert.EqualValues(t, testCase.expectedError, status.ErrorMessage)
+					return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}, true
+				}
 
 				// Verify individual package statuses.
 				for name, pkgExpected := range testCase.expectedStatus.Packages {
@@ -1209,8 +1187,7 @@ func TestUpdatePackages(t *testing.T) {
 
 	// A case when OnPackagesAvailable callback returns an error.
 	errorOnCallback := createPackageTestCase("error on callback", downloadSrv)
-	errorOnCallback.expectedStatus.Packages["package1"].Status = protobufs.PackageStatus_InstallFailed
-	errorOnCallback.expectedStatus.Packages["package1"].ErrorMessage = packageUpdateErrorMsg
+	errorOnCallback.expectedError = packageUpdateErrorMsg
 	errorOnCallback.errorOnCallback = true
 	tests = append(tests, errorOnCallback)
 

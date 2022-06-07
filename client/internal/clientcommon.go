@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -51,10 +52,14 @@ type ClientCommon struct {
 }
 
 func NewClientCommon(logger types.Logger, sender Sender) ClientCommon {
-	return ClientCommon{Logger: logger, sender: sender, stoppedSignal: make(chan struct{}, 1)}
+	return ClientCommon{
+		Logger: logger, sender: sender, stoppedSignal: make(chan struct{}, 1),
+	}
 }
 
-func (c *ClientCommon) PrepareStart(_ context.Context, settings types.StartSettings) error {
+func (c *ClientCommon) PrepareStart(
+	_ context.Context, settings types.StartSettings,
+) error {
 	if c.isStarted {
 		return errAlreadyStarted
 	}
@@ -205,9 +210,11 @@ func (c *ClientCommon) SetAgentDescription(descr *protobufs.AgentDescription) er
 	if err := c.ClientSyncedState.SetAgentDescription(descr); err != nil {
 		return err
 	}
-	c.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
-		msg.AgentDescription = c.ClientSyncedState.AgentDescription()
-	})
+	c.sender.NextMessage().Update(
+		func(msg *protobufs.AgentToServer) {
+			msg.AgentDescription = c.ClientSyncedState.AgentDescription()
+		},
+	)
 	c.sender.ScheduleSend()
 	return nil
 }
@@ -254,13 +261,75 @@ func (c *ClientCommon) UpdateEffectiveConfig(ctx context.Context) error {
 		calcHashEffectiveConfig(cfg)
 	}
 	// Send it to the Server.
-	c.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
-		msg.EffectiveConfig = cfg
-	})
+	c.sender.NextMessage().Update(
+		func(msg *protobufs.AgentToServer) {
+			msg.EffectiveConfig = cfg
+		},
+	)
+	// TODO: if this call is coming from OnMessage callback don't schedule the send
+	// immediately, wait until the end of OnMessage to send one message only.
 	c.sender.ScheduleSend()
 
 	// Note that we do not store the EffectiveConfig anywhere else. It will be deleted
 	// from NextMessage when the message is sent. This avoids storing EffectiveConfig
 	// in memory for longer than it is needed.
+	return nil
+}
+
+func (c *ClientCommon) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) error {
+	if status.LastRemoteConfigHash == nil {
+		return errLastRemoteConfigHashNil
+	}
+
+	// Get the hash of the status before we update it.
+	prevHash := c.ClientSyncedState.RemoteConfigStatus().GetHash()
+
+	// Remember the new status.
+	if err := c.ClientSyncedState.SetRemoteConfigStatus(status); err != nil {
+		return err
+	}
+
+	// Check if the new status is different from the previous by comparing the hashes.
+	if !bytes.Equal(prevHash, status.Hash) {
+		// Let the Server know about the new status.
+		c.sender.NextMessage().Update(
+			func(msg *protobufs.AgentToServer) {
+				msg.RemoteConfigStatus = c.ClientSyncedState.RemoteConfigStatus()
+			},
+		)
+		// TODO: if this call is coming from OnMessage callback don't schedule the send
+		// immediately, wait until the end of OnMessage to send one message only.
+		c.sender.ScheduleSend()
+	}
+
+	return nil
+}
+
+func (c *ClientCommon) SetPackageStatuses(statuses *protobufs.PackageStatuses) error {
+	if statuses.ServerProvidedAllPackagesHash == nil {
+		return errServerProvidedAllPackagesHashNil
+	}
+
+	// Get the hash of the status before we update it.
+	prevHash := c.ClientSyncedState.PackageStatuses().GetHash()
+
+	if err := c.ClientSyncedState.SetPackageStatuses(statuses); err != nil {
+		return err
+	}
+
+	// Check if the new status is different from the previous by comparing the hashes.
+	if !bytes.Equal(prevHash, statuses.Hash) {
+		// Let the Server know about the new status.
+
+		c.sender.NextMessage().Update(
+			func(msg *protobufs.AgentToServer) {
+				msg.PackageStatuses = c.ClientSyncedState.PackageStatuses()
+			},
+		)
+		// TODO: if this call is coming from OnMessage callback don't schedule the send
+		// immediately, wait until the end of OnMessage to send one message only.
+		c.sender.ScheduleSend()
+	}
+
 	return nil
 }

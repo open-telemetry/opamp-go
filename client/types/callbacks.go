@@ -6,13 +6,37 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
-type OwnTelemetryType int
+type MessageData struct {
+	// RemoteConfig is offered by the Server. The Agent must process it and call
+	// OpAMPClient.SetRemoteConfigStatus to indicate success or failure. If the
+	// effective config has changed as a result of processing the Agent must also call
+	// OpAMPClient.UpdateEffectiveConfig. SetRemoteConfigStatus and UpdateEffectiveConfig
+	// may be called from OnMessage handler or after OnMessage returns.
+	RemoteConfig *protobufs.AgentRemoteConfig
 
-const (
-	OwnMetrics OwnTelemetryType = iota
-	OwnTraces
-	OwnLogs
-)
+	// Connection settings are offered by the Server. These fields should be processed
+	// as described in the ConnectionSettingsOffers message.
+	OwnMetricsConnSettings *protobufs.TelemetryConnectionSettings
+	OwnTracesConnSettings  *protobufs.TelemetryConnectionSettings
+	OwnLogsConnSettings    *protobufs.TelemetryConnectionSettings
+	OtherConnSettings      map[string]*protobufs.OtherConnectionSettings
+
+	// PackagesAvailable offered by the Server. The Agent must process the offer.
+	// The typical way to process is to call PackageSyncer.Sync() function, which will
+	// take care of reporting the status to the Server as processing happens.
+	//
+	// If PackageSyncer.Sync() function is not called then it is the responsibility of
+	// OnMessage handler to do the processing and call OpAMPClient.SetPackageStatuses to
+	// reflect the processing status. SetPackageStatuses may be called from OnMessage
+	// handler or after OnMessage returns.
+	PackagesAvailable *protobufs.PackagesAvailable
+	PackageSyncer     PackagesSyncer
+
+	// AgentIdentification indicates a new identification received from the Server.
+	// The Agent must save this identification and use it in the future instantiations
+	// of OpAMPClient.
+	AgentIdentification *protobufs.AgentIdentification
+}
 
 type Callbacks interface {
 	OnConnect()
@@ -28,45 +52,15 @@ type Callbacks interface {
 	// ErrorResponse_UNAVAILABLE case internally by performing retries as necessary.
 	OnError(err *protobufs.ServerErrorResponse)
 
-	// OnRemoteConfig is called when the Agent receives a remote config from the Server.
-	// The config parameter will not be nil.
-	//
-	// The Agent should process the config and return the effective config if processing
-	// succeeded or an error if processing failed.
-	//
-	// configChanged must be set to true if as a result of applying the remote config
-	// the effective config has changed.
-	//
-	// The returned effective config or the error will be reported back to the Server
-	// via AgentToServer message (using EffectiveConfig and RemoteConfigStatus fields).
-	//
-	// Only one OnRemoteConfig call can be active at any time. Until OnRemoteConfig
-	// returns it will not be called again. Any other remote configs received from
-	// the Server while OnRemoteConfig call has not returned will be remembered.
-	// Once OnRemoteConfig call returns it will be called again with the most recent
-	// remote config received.
-	//
-	// The EffectiveConfig.Hash field will be calculated and updated from the content
-	// of the rest of the fields.
-	OnRemoteConfig(
-		ctx context.Context,
-		remoteConfig *protobufs.AgentRemoteConfig,
-	) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error)
-
-	// SaveRemoteConfigStatus is called after OnRemoteConfig returns. The status
-	// will be set either as APPLIED or FAILED depending on whether OnRemoteConfig
-	// returned a success or error.
-	// The Agent must remember this RemoteConfigStatus and supply in the future
-	// calls to Start() in StartSettings.RemoteConfigStatus.
-	SaveRemoteConfigStatus(ctx context.Context, status *protobufs.RemoteConfigStatus)
-
-	// GetEffectiveConfig returns the current effective config. Only one
-	// GetEffectiveConfig call can be active at any time. Until GetEffectiveConfig
-	// returns it will not be called again.
-	//
-	// The Hash field in the returned EffectiveConfig will be calculated and updated
-	// by the caller from the content of the rest of the fields.
-	GetEffectiveConfig(ctx context.Context) (*protobufs.EffectiveConfig, error)
+	// OnMessage is called when the Agent receives a message that needs processing.
+	// See MessageData definition for the data that may be available for processing.
+	// During OnMessage execution the OpAMPClient functions that change the status
+	// of the client may be called, e.g. if RemoteConfig is processed then
+	// SetRemoteConfigStatus should be called to reflect the processing result.
+	// These functions may also be called after OnMessage returns. This is advisable
+	// if processing can take a long time. In that case returning quickly is preferable
+	// to avoid blocking the OpAMPClient.
+	OnMessage(ctx context.Context, msg *MessageData)
 
 	// OnOpampConnectionSettings is called when the Agent receives an OpAMP
 	// connection settings offer from the Server. Typically the settings can specify
@@ -75,17 +69,13 @@ type Callbacks interface {
 	//
 	// The Agent should process the offer and return an error if the Agent does not
 	// want to accept the settings (e.g. if the TSL certificate in the settings
-	// cannot be verified). The returned error will be reported back to the Server
-	// via AgentToServer message (using ConnectionStatuses field).
+	// cannot be verified).
 	//
 	// If OnOpampConnectionSettings returns nil and then the caller will
 	// attempt to reconnect to the OpAMP Server using the new settings.
 	// If the connection fails the settings will be rejected and an error will
 	// be reported to the Server. If the connection succeeds the new settings
 	// will be used by the client from that moment on.
-	//
-	// Accepted or rejected settings will be reported back to the Server via
-	// ConnectionStatuses message.
 	//
 	// Only one OnOpampConnectionSettings call can be active at any time.
 	// See OnRemoteConfig for the behavior.
@@ -102,55 +92,27 @@ type Callbacks interface {
 		settings *protobufs.OpAMPConnectionSettings,
 	)
 
-	// OnOwnTelemetryConnectionSettings is called when the Agent receives a
-	// connection settings to be used for reporting Agent's own telemetry.
-	//
-	// The Agent should process the settings and return an error if the Agent does not
-	// want to accept the settings (e.g. if the TSL certificate in the settings
-	// cannot be verified). The returned error will be reported back to the Server
-	// via AgentToServer message (using ConnectionStatuses field).
-	// If the Agent accepts the settings it should return nil and begin sending
-	// its own telemetry to the destination specified in the settings.
-	// We currently support 3 types of Agent's own telemetry: metrics, traces, logs.
-	// The Agent can support any subset of these types.
-	OnOwnTelemetryConnectionSettings(
-		ctx context.Context,
-		telemetryType OwnTelemetryType,
-		settings *protobufs.TelemetryConnectionSettings,
-	) error
-
-	// OnOtherConnectionSettings is called when the Agent receives a
-	// connection settings to be used for by the Agent for any other purposes.
-	// Typically these are used by the Agent to send collected data to the destinations
-	// it is configured to. The name is typically the name of the destination.
-	//
-	// The Agent should process the settings and return an error if the Agent does not
-	// want to accept the settings (e.g. if the TSL certificate in the settings
-	// cannot be verified). The returned error will be reported back to the Server
-	// via AgentToServer message (using ConnectionStatuses field).
-	OnOtherConnectionSettings(
-		ctx context.Context,
-		name string,
-		certificate *protobufs.OtherConnectionSettings,
-	) error
-
-	// OnPackagesAvailable is called when the Server has packages available which are
-	// different from what the Agent indicated it has via
-	// LastServerProvidedAllPackagesHash.
-	// syncer can be used to initiate syncing the packages from the Server.
-	OnPackagesAvailable(ctx context.Context, packages *protobufs.PackagesAvailable, syncer PackagesSyncer) error
-
-	// OnAgentIdentification is called when the Server requests changing identification of the Agent.
-	// Agent should be updated with new id and use it for all further communication.
-	// If Agent does not support the identification override from the Server, the function should return an error.
-	OnAgentIdentification(ctx context.Context, agentId *protobufs.AgentIdentification) error
-
-	// OnCommand is called when the Server requests that the connected Agent perform a command.
-	OnCommand(command *protobufs.ServerToAgentCommand) error
-
 	// For all methods that accept a context parameter the caller may cancel the
 	// context if processing takes too long. In that case the method should return
 	// as soon as possible with an error.
+
+	// SaveRemoteConfigStatus is called after OnRemoteConfig returns. The status
+	// will be set either as APPLIED or FAILED depending on whether OnRemoteConfig
+	// returned a success or error.
+	// The Agent must remember this RemoteConfigStatus and supply in the future
+	// calls to Start() in StartSettings.RemoteConfigStatus.
+	SaveRemoteConfigStatus(ctx context.Context, status *protobufs.RemoteConfigStatus)
+
+	// GetEffectiveConfig returns the current effective config. Only one
+	// GetEffectiveConfig call can be active at any time. Until GetEffectiveConfig
+	// returns it will not be called again.
+	//
+	// The Hash field in the returned EffectiveConfig will be calculated and updated
+	// by the caller from the content of the rest of the fields.
+	GetEffectiveConfig(ctx context.Context) (*protobufs.EffectiveConfig, error)
+
+	// OnCommand is called when the Server requests that the connected Agent perform a command.
+	OnCommand(command *protobufs.ServerToAgentCommand) error
 }
 
 type CallbacksStruct struct {
@@ -158,14 +120,7 @@ type CallbacksStruct struct {
 	OnConnectFailedFunc func(err error)
 	OnErrorFunc         func(err *protobufs.ServerErrorResponse)
 
-	OnRemoteConfigFunc func(
-		ctx context.Context,
-		remoteConfig *protobufs.AgentRemoteConfig,
-	) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error)
-
-	SaveRemoteConfigStatusFunc func(ctx context.Context, status *protobufs.RemoteConfigStatus)
-
-	GetEffectiveConfigFunc func(ctx context.Context) (*protobufs.EffectiveConfig, error)
+	OnMessageFunc func(ctx context.Context, msg *MessageData)
 
 	OnOpampConnectionSettingsFunc func(
 		ctx context.Context,
@@ -175,22 +130,10 @@ type CallbacksStruct struct {
 		settings *protobufs.OpAMPConnectionSettings,
 	)
 
-	OnOwnTelemetryConnectionSettingsFunc func(
-		ctx context.Context,
-		telemetryType OwnTelemetryType,
-		settings *protobufs.TelemetryConnectionSettings,
-	) error
-
-	OnOtherConnectionSettingsFunc func(
-		ctx context.Context,
-		name string,
-		settings *protobufs.OtherConnectionSettings,
-	) error
-
-	OnPackagesAvailableFunc   func(ctx context.Context, packages *protobufs.PackagesAvailable, syncer PackagesSyncer) error
-	OnAgentIdentificationFunc func(ctx context.Context, agentId *protobufs.AgentIdentification) error
-
 	OnCommandFunc func(command *protobufs.ServerToAgentCommand) error
+
+	SaveRemoteConfigStatusFunc func(ctx context.Context, status *protobufs.RemoteConfigStatus)
+	GetEffectiveConfigFunc     func(ctx context.Context) (*protobufs.EffectiveConfig, error)
 }
 
 var _ Callbacks = (*CallbacksStruct)(nil)
@@ -213,14 +156,10 @@ func (c CallbacksStruct) OnError(err *protobufs.ServerErrorResponse) {
 	}
 }
 
-func (c CallbacksStruct) OnRemoteConfig(
-	ctx context.Context,
-	remoteConfig *protobufs.AgentRemoteConfig,
-) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {
-	if c.OnRemoteConfigFunc != nil {
-		return c.OnRemoteConfigFunc(ctx, remoteConfig)
+func (c CallbacksStruct) OnMessage(ctx context.Context, msg *MessageData) {
+	if c.OnMessageFunc != nil {
+		c.OnMessageFunc(ctx, msg)
 	}
-	return nil, false, nil
 }
 
 func (c CallbacksStruct) SaveRemoteConfigStatus(ctx context.Context, status *protobufs.RemoteConfigStatus) {
@@ -251,49 +190,9 @@ func (c CallbacksStruct) OnOpampConnectionSettingsAccepted(settings *protobufs.O
 	}
 }
 
-func (c CallbacksStruct) OnOwnTelemetryConnectionSettings(
-	ctx context.Context, telemetryType OwnTelemetryType,
-	settings *protobufs.TelemetryConnectionSettings,
-) error {
-	if c.OnOwnTelemetryConnectionSettingsFunc != nil {
-		return c.OnOwnTelemetryConnectionSettingsFunc(ctx, telemetryType, settings)
-	}
-	return nil
-}
-
-func (c CallbacksStruct) OnOtherConnectionSettings(
-	ctx context.Context, name string, settings *protobufs.OtherConnectionSettings,
-) error {
-	if c.OnOtherConnectionSettingsFunc != nil {
-		return c.OnOtherConnectionSettingsFunc(ctx, name, settings)
-	}
-	return nil
-}
-
-func (c CallbacksStruct) OnPackagesAvailable(
-	ctx context.Context,
-	packages *protobufs.PackagesAvailable,
-	syncer PackagesSyncer,
-) error {
-	if c.OnPackagesAvailableFunc != nil {
-		return c.OnPackagesAvailableFunc(ctx, packages, syncer)
-	}
-	return nil
-}
-
 func (c CallbacksStruct) OnCommand(command *protobufs.ServerToAgentCommand) error {
 	if c.OnCommandFunc != nil {
 		return c.OnCommandFunc(command)
-	}
-	return nil
-}
-
-func (c CallbacksStruct) OnAgentIdentification(
-	ctx context.Context,
-	agentId *protobufs.AgentIdentification,
-) error {
-	if c.OnAgentIdentificationFunc != nil {
-		return c.OnAgentIdentificationFunc(ctx, agentId)
 	}
 	return nil
 }

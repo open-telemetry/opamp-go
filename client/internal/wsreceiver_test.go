@@ -2,7 +2,6 @@ package internal
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 
@@ -86,16 +85,15 @@ func TestServerToAgentCommand(t *testing.T) {
 
 func TestServerToAgentCommandExclusive(t *testing.T) {
 	calledCommand := false
-	calledRemoteConfig := false
+	calledOnMessageConfig := false
 
 	callbacks := types.CallbacksStruct{
 		OnCommandFunc: func(command *protobufs.ServerToAgentCommand) error {
 			calledCommand = true
 			return nil
 		},
-		OnRemoteConfigFunc: func(ctx context.Context, remoteConfig *protobufs.AgentRemoteConfig) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {
-			calledRemoteConfig = true
-			return nil, false, nil
+		OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+			calledOnMessageConfig = true
 		},
 	}
 	clientSyncedState := ClientSyncedState{}
@@ -107,30 +105,5 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 		RemoteConfig: &protobufs.AgentRemoteConfig{},
 	})
 	assert.Equal(t, true, calledCommand, "OnCommand should be called when a Command is specified")
-	assert.Equal(t, false, calledRemoteConfig, "OnRemoteConfig should not be called when a Command is specified")
-}
-
-func TestOnRemoteConfigReportsError(t *testing.T) {
-	expectMsg := "error occurred while handling configuration"
-	expectStatus := protobufs.RemoteConfigStatus_FAILED
-
-	callbacks := types.CallbacksStruct{
-		OnRemoteConfigFunc: func(ctx context.Context, remoteConfig *protobufs.AgentRemoteConfig) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {
-			return nil, false, errors.New(expectMsg)
-		},
-	}
-
-	sender := NewSender(TestLogger{t})
-	clientSyncedState := ClientSyncedState{}
-	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, sender, &clientSyncedState, nil)
-
-	receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
-		RemoteConfig: &protobufs.AgentRemoteConfig{},
-	})
-
-	gotStatus := receiver.sender.NextMessage().nextMessage.RemoteConfigStatus.Status
-	gotMsg := receiver.sender.NextMessage().nextMessage.RemoteConfigStatus.ErrorMessage
-
-	assert.Equal(t, expectStatus, gotStatus)
-	assert.Equal(t, expectMsg, gotMsg)
+	assert.Equal(t, false, calledOnMessageConfig, "OnMessage should not be called when a Command is specified")
 }

@@ -145,12 +145,10 @@ func (s *Supervisor) startOpAMP() error {
 			OnErrorFunc: func(err *protobufs.ServerErrorResponse) {
 				s.logger.Errorf("Server returned an error response: %v", err.ErrorMessage)
 			},
-			OnRemoteConfigFunc:                   s.onRemoteConfig,
-			OnOwnTelemetryConnectionSettingsFunc: s.onOwnTelemetryConnectionSettings,
-			OnAgentIdentificationFunc:            s.onAgentIdentificationFunc,
 			GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 				return s.createEffectiveConfigMsg(), nil
 			},
+			OnMessageFunc: s.onMessage,
 		},
 	}
 	err := s.opampClient.SetAgentDescription(s.createAgentDescription())
@@ -243,67 +241,15 @@ func (s *Supervisor) createEffectiveConfigMsg() *protobufs.EffectiveConfig {
 	return cfg
 }
 
-// onRemoteConfig processes a remote config message received from OpAMP Server.
-func (s *Supervisor) onRemoteConfig(
-	_ context.Context,
-	remoteConfig *protobufs.AgentRemoteConfig,
-) (effectiveConfig *protobufs.EffectiveConfig, configChanged bool, err error) {
-	if remoteConfig == nil {
-		return nil, false, nil
-	}
-
-	s.remoteConfig = remoteConfig
-	s.logger.Debugf("Received remote config from server, hash=%x.", s.remoteConfig.ConfigHash)
-
-	configChanged, err = s.recalcEffectiveConfig()
-	if err != nil {
-		return nil, false, err
-	}
-
-	return s.createEffectiveConfigMsg(), configChanged, nil
-}
-
-// onOwnTelemetryConnectionSettings processes a own telemetry settings message
-// received from OpAMP Server.
-func (s *Supervisor) onOwnTelemetryConnectionSettings(
-	ctx context.Context,
-	telemetryType types.OwnTelemetryType,
-	settings *protobufs.TelemetryConnectionSettings,
-) error {
-	switch telemetryType {
-	case types.OwnMetrics:
-		s.setupOwnMetrics(ctx, settings)
-	}
-
-	return nil
-}
-
-// onAgentIdentificationFunc processes new identification message
-// received from OpAMP Server.
-func (s *Supervisor) onAgentIdentificationFunc(
-	_ context.Context,
-	agentId *protobufs.AgentIdentification,
-) error {
-	newInstanceId, err := ulid.Parse(agentId.NewInstanceUid)
-	if err != nil {
-		return err
-	}
-
-	s.logger.Debugf("Agent identify is being changed from id=%v to id=%v",
-		s.instanceId.String(),
-		newInstanceId.String())
-	s.instanceId = newInstanceId
-
-	// TODO: update metrics pipeline.
-	return nil
-}
-
-func (s *Supervisor) setupOwnMetrics(ctx context.Context, settings *protobufs.TelemetryConnectionSettings) {
+func (s *Supervisor) setupOwnMetrics(ctx context.Context, settings *protobufs.TelemetryConnectionSettings) (configChanged bool) {
 	var cfg string
 	if settings.DestinationEndpoint == "" {
 		// No destination. Disable metric collection.
+		s.logger.Debugf("Disabling own metrics pipeline in the config")
 		cfg = ""
 	} else {
+		s.logger.Debugf("Enabling own metrics pipeline in the config")
+
 		// TODO: choose the scraping port dynamically instead of hard-coding to 8888.
 		cfg = fmt.Sprintf(
 			`
@@ -337,13 +283,7 @@ service:
 		return
 	}
 
-	if configChanged {
-		// TODO: make explicit in the OpAMPClient contract that we are allowed to call
-		// UpdateEffectiveConfig from the callbacks (like it is done here).
-		// This currently works, but is not ideal since it may result in 2 messages sent:
-		// one as a result of this call and another when the callback returns.
-		s.opampClient.UpdateEffectiveConfig(ctx)
-	}
+	return configChanged
 }
 
 // composeEffectiveConfig composes the effective config from multiple sources:
@@ -427,21 +367,6 @@ func (s *Supervisor) recalcEffectiveConfig() (configChanged bool, err error) {
 		return configChanged, err
 	}
 
-	// TODO: delay the application of this config in case there is another callback coming
-	// that will change the connection settings and will result in effective config
-	// change again. Currently we unnecessarily restart the agent twice.
-
-	if configChanged {
-		s.logger.Debugf("Config is changed. Signal to restart the agent.")
-		// Signal that there is a new config.
-		select {
-		case s.hasNewConfig <- struct{}{}:
-		default:
-		}
-	} else {
-		s.logger.Debugf("Config is unchanged, nothing to do.")
-	}
-
 	return configChanged, nil
 }
 
@@ -506,5 +431,61 @@ func (s *Supervisor) Shutdown() {
 	s.logger.Debugf("Supervisor shutting down...")
 	if s.opampClient != nil {
 		_ = s.opampClient.Stop(context.Background())
+	}
+}
+
+func (s *Supervisor) onMessage(ctx context.Context, msg *types.MessageData) {
+	configChanged := false
+	if msg.RemoteConfig != nil {
+		s.remoteConfig = msg.RemoteConfig
+		s.logger.Debugf("Received remote config from server, hash=%x.", s.remoteConfig.ConfigHash)
+
+		var err error
+		configChanged, err = s.recalcEffectiveConfig()
+		if err != nil {
+			s.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
+				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
+				Status:               protobufs.RemoteConfigStatus_FAILED,
+				ErrorMessage:         err.Error(),
+			})
+		} else {
+			s.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
+				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
+				Status:               protobufs.RemoteConfigStatus_APPLIED,
+			})
+		}
+	}
+
+	if msg.OwnMetricsConnSettings != nil {
+		configChanged = s.setupOwnMetrics(ctx, msg.OwnMetricsConnSettings) || configChanged
+	}
+
+	if msg.AgentIdentification != nil {
+		newInstanceId, err := ulid.Parse(msg.AgentIdentification.NewInstanceUid)
+		if err != nil {
+			s.logger.Errorf(err.Error())
+		}
+
+		s.logger.Debugf("Agent identify is being changed from id=%v to id=%v",
+			s.instanceId.String(),
+			newInstanceId.String())
+		s.instanceId = newInstanceId
+
+		// TODO: update metrics pipeline by altering configuration and setting
+		// the instance id when Collector implements https://github.com/open-telemetry/opentelemetry-collector/pull/5402.
+	}
+
+	if configChanged {
+		err := s.opampClient.UpdateEffectiveConfig(ctx)
+		if err != nil {
+			s.logger.Errorf(err.Error())
+		}
+
+		s.logger.Debugf("Config is changed. Signal to restart the agent.")
+		// Signal that there is a new config.
+		select {
+		case s.hasNewConfig <- struct{}{}:
+		default:
+		}
 	}
 }
