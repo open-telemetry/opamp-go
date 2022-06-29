@@ -29,10 +29,7 @@ type StartSettings struct {
 	// after the connection is established.
 
 	// The remote config status. If nil is passed it will force
-	// the Server to send a remote config back. It is not required to set the Hash
-	// field, it will be calculated by Start() function.
-	// The Hash field will be calculated and updated from the content of the rest of
-	// the fields.
+	// the Server to send a remote config back.
 	RemoteConfigStatus *protobufs.RemoteConfigStatus
 
 	LastConnectionSettingsHash []byte

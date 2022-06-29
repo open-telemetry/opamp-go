@@ -28,9 +28,15 @@ message AgentToServer {
     // Recommended format: https://github.com/ulid/spec
     string instance_uid = 1;
 
+    // The sequence number is incremented by 1 for every AgentToServer sent
+    // by the Agent. This allows the Server to detect that it missed a message when
+    // it notices that the sequence_num is not exactly by 1 greater than the previously
+    // received one.
+    uint64 sequence_num = 2;
+
     // Data that describes the Agent, its type, where it runs, etc.
     // May be omitted if nothing changed since last AgentToServer message.
-    AgentDescription agent_description = 2;
+    AgentDescription agent_description = 3;
 
     // Bitmask of flags defined by AgentCapabilities enum.
     // All bits that are not defined in AgentCapabilities enum MUST be set to 0 by
@@ -38,7 +44,7 @@ message AgentToServer {
     // in the future such that old Agents automatically report that they don't
     // support the new capability.
     // This field MUST be always set.
-    AgentCapabilities capabilities = 3;
+    AgentCapabilities capabilities = 4;
 
     // The current effective configuration of the Agent. The effective configuration is
     // the one that is currently used by the Agent. The effective configuration may be
@@ -47,21 +53,21 @@ message AgentToServer {
     //
     // This field SHOULD be unset if the effective config is unchanged since the last
     // AgentToServer message.
-    EffectiveConfig effective_config = 4;
+    EffectiveConfig effective_config = 5;
 
     // The status of the remote config that was previously received from the Server.
     // This field SHOULD be unset if the remote config status is unchanged since the
     // last AgentToServer message.
-    RemoteConfigStatus remote_config_status = 5;
+    RemoteConfigStatus remote_config_status = 6;
 
     // The list of the Agent packages, including package statuses. This field SHOULD be
     // unset if this information is unchanged since the last AgentToServer message for
     // this Agent was sent in the stream.
-    PackageStatuses package_statuses = 6;
+    PackageStatuses package_statuses = 7;
 
     // AgentDisconnect MUST be set in the last AgentToServer message sent from the
     // Agent to the Server.
-    AgentDisconnect agent_disconnect = 7;
+    AgentDisconnect agent_disconnect = 8;
 
     enum AgentToServerFlags {
         FlagsUnspecified = 0;
@@ -72,7 +78,7 @@ message AgentToServer {
         RequestInstanceUid     = 0x00000001;
     }
     // Bit flags as defined by AgentToServerFlags bit masks.
-    AgentToServerFlags flags = 8;
+    AgentToServerFlags flags = 9;
 }
 
 // AgentDisconnect is the last message sent from the Agent to the Server. The Server
@@ -111,25 +117,13 @@ message ServerToAgent {
 
         // Flags is a bit mask. Values below define individual bits.
 
-        // Report* flags an be used by the Server if the Agent did not include the
+        // ReportFullState flag can be used by the Server if the Agent did not include the
         // particular bit of information in the last status report (which is an allowed
-        // optimization) but the Server does not have it (e.g. was restarted and lost state).
-
-        // The Server asks the Agent to report full AgentDescription.
-        ReportAgentDescription   = 0x00000001;
-        // The Server asks the Agent to report full EffectiveConfig. This bit MUST NOT be
-        // set if the Agent indicated it cannot report effective config by setting
-        // the ReportsEffectiveConfig bit to 0 in AgentToServer.capabilities field.
-        ReportEffectiveConfig    = 0x00000002;
-
-        // The Server asks the Agent to report full RemoteConfigStatus. This bit MUST NOT be
-        // set if the Agent indicated it cannot accept remote config by setting
-        // the AcceptsRemoteConfig bit to 0 in AgentToServer.capabilities field.
-        ReportRemoteConfigStatus = 0x00000004;
-        // The Server asks the Agent to report full PackageStatuses. This bit MUST NOT be
-        // set if the Agent indicated it cannot report package status by setting
-        // the ReportsPackageStatuses bit to 0 in AgentToServer.capabilities field.
-        ReportPackageStatuses    = 0x00000008;
+        // optimization) but the Server detects that it does not have it (e.g. was
+        // restarted and lost state). The detection happens using
+        // AgentToServer.sequence_num values.
+        // The Server asks the Agent to report full status.
+        ReportFullState = 0x00000001;
     }
     // Bit flags as defined by Flags bit masks.
     Flags flags = 6;
@@ -471,10 +465,6 @@ message ServerToAgentCommand {
 // Status reporting
 
 message AgentDescription {
-    // The hash of the content of all other fields (even if the other fields are omitted
-    // for compression).
-    bytes hash = 1;
-
     // Attributes that identify the Agent.
     // Keys/values are according to OpenTelemetry semantic conventions, see:
     // https://github.com/open-telemetry/opentelemetry-specification/tree/main/specification/resource/semantic_conventions
@@ -495,7 +485,7 @@ message AgentDescription {
     // telemetry. The combination of identifying attributes SHOULD be sufficient to
     // uniquely identify the Agent's own telemetry in the destination system to which
     // the Agent sends its own telemetry.
-    repeated KeyValue identifying_attributes = 2;
+    repeated KeyValue identifying_attributes = 1;
 
     // Attributes that do not necessarily identify the Agent but help describe
     // where it runs.
@@ -507,7 +497,7 @@ message AgentDescription {
     //   environment it runs in.
     // - any user-defined attributes that the end user would like to associate
     //   with this Agent.
-    repeated KeyValue non_identifying_attributes = 3;
+    repeated KeyValue non_identifying_attributes = 2;
 
     // TODO: add ability to specify related entities (such as the Service the Agent is
     // is responsible/associated with).
@@ -549,34 +539,17 @@ enum AgentCapabilities {
 }
 
 message EffectiveConfig {
-    // The hash of the effective config. After establishing OpAMP connection if the
-    // effective config did not change since it was last reported during the previous
-    // connection sessions the Agent is recommended to include only the hash and omit the
-    // config_map field to save bandwidth.
-    // The Server SHOULD compare this hash with the last hash of effective config
-    // it received from the Agent and if the hashes are different the Server SHOULD
-    // ask the Agent to report its full effective config by sending a DataForAgent
-    // message with ReportEffectiveConfig flag set.
-    bytes hash = 1;
-
-    // The effective config of the Agent. SHOULD be omitted if unchanged since last
-    // reported.
-    // MUST be set if the Agent has received the ReportEffectiveConfig flag in the
-    // DataForAgent message.
-    AgentConfigMap config_map = 2;
+    // The effective config of the Agent.
+    AgentConfigMap config_map = 1;
 }
 
 message RemoteConfigStatus {
-    // The hash of the content of all other fields (even if the other fields are omitted
-    // for compression).
-    bytes hash = 1;
-
     // The hash of the remote config that was last received by this Agent in the
     // AgentRemoteConfig.config_hash field.
     // The Server SHOULD compare this hash with the config hash
     // it has for the Agent and if the hashes are different the Server MUST include
     // the remote_config field in the response in the ServerToAgent message.
-    bytes last_remote_config_hash = 2;
+    bytes last_remote_config_hash = 1;
 
     enum Status {
         // The value of status field is not set.
@@ -592,22 +565,18 @@ message RemoteConfigStatus {
         // See error_message for more details.
         FAILED = 3;
     }
-    Status status = 3;
+    Status status = 2;
 
     // Optional error message if status==FAILED.
-    string error_message = 4;
+    string error_message = 3;
 }
 
 // The PackageStatuses message describes the status of all packages that the Agent
 // has or was offered.
 message PackageStatuses {
-    // The hash of the content of all other fields (even if the other fields are omitted
-    // for compression).
-    bytes hash = 1;
-
     // A map of PackageStatus messages, where the keys are package names.
     // The key MUST match the name field of PackageStatus message.
-    map<string, PackageStatus> packages = 2;
+    map<string, PackageStatus> packages = 1;
 
     // The aggregate hash of all packages that this Agent previously received from the
     // Server via PackagesAvailable message.
@@ -615,13 +584,13 @@ message PackageStatuses {
     // The Server SHOULD compare this hash to the aggregate hash of all packages that
     // it has for this Agent and if the hashes are different the Server SHOULD send
     // an PackagesAvailable message to the Agent.
-    bytes server_provided_all_packages_hash = 3;
+    bytes server_provided_all_packages_hash = 2;
 
     // This field is set if the Agent encountered an error when processing the
     // PackagesAvailable message and that error is not related to any particular single
     // package.
     // The field must be unset is there were no processing errors.
-    string error_message = 4;
+    string error_message = 3;
 }
 
 // The status of a single package.

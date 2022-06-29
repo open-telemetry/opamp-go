@@ -108,38 +108,25 @@ func (r *receivedProcessor) rcvFlags(
 	// If the Server asks to report data we fetch it from the client state storage and
 	// send to the Server.
 
-	if flags&protobufs.ServerToAgent_ReportAgentDescription != 0 {
-		r.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
-			msg.AgentDescription = r.clientSyncedState.AgentDescription()
-		})
-		scheduleSend = true
-	}
-
-	if flags&protobufs.ServerToAgent_ReportRemoteConfigStatus != 0 {
-		r.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
-			msg.RemoteConfigStatus = r.clientSyncedState.RemoteConfigStatus()
-		})
-		scheduleSend = true
-	}
-
-	if flags&protobufs.ServerToAgent_ReportPackageStatuses != 0 {
-		r.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
-			msg.PackageStatuses = r.clientSyncedState.PackageStatuses()
-		})
-		scheduleSend = true
-	}
-
-	// The logic for EffectiveConfig is similar to the previous 3 messages however
-	// the EffectiveConfig is fetched using GetEffectiveConfig instead of
-	// from clientSyncedState. We do this to avoid keeping EffectiveConfig in-memory.
-	if flags&protobufs.ServerToAgent_ReportEffectiveConfig != 0 {
+	if flags&protobufs.ServerToAgent_ReportFullState != 0 {
 		cfg, err := r.callbacks.GetEffectiveConfig(ctx)
 		if err != nil {
-			return false, err
+			r.logger.Errorf("Cannot GetEffectiveConfig: %v", err)
+			cfg = nil
 		}
-		r.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
-			msg.EffectiveConfig = cfg
-		})
+
+		r.sender.NextMessage().Update(
+			func(msg *protobufs.AgentToServer) {
+				msg.AgentDescription = r.clientSyncedState.AgentDescription()
+				msg.RemoteConfigStatus = r.clientSyncedState.RemoteConfigStatus()
+				msg.PackageStatuses = r.clientSyncedState.PackageStatuses()
+
+				// The logic for EffectiveConfig is similar to the previous 3 messages however
+				// the EffectiveConfig is fetched using GetEffectiveConfig instead of
+				// from clientSyncedState. We do this to avoid keeping EffectiveConfig in-memory.
+				msg.EffectiveConfig = cfg
+			},
+		)
 		scheduleSend = true
 	}
 

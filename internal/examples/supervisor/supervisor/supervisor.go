@@ -2,7 +2,6 @@ package supervisor
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"math/rand"
 	"os"
@@ -226,11 +225,7 @@ func (s *Supervisor) createEffectiveConfigMsg() *protobufs.EffectiveConfig {
 		cfgStr = ""
 	}
 
-	hash := sha256.Sum256([]byte(cfgStr))
-	hashBytes := hash[:]
-
 	cfg := &protobufs.EffectiveConfig{
-		Hash: hashBytes,
 		ConfigMap: &protobufs.AgentConfigMap{
 			ConfigMap: map[string]*protobufs.AgentConfigFile{
 				"": {Body: []byte(cfgStr)},
@@ -393,8 +388,7 @@ func (s *Supervisor) runAgentProcess() {
 			s.applyConfigWithAgentRestart()
 
 		case <-s.commander.Done():
-			s.logger.Debugf(
-				"Agent process PID=%d exited unexpectedly, exit code=%d. Will restart in a bit...",
+			s.logger.Debugf("Agent process PID=%d exited unexpectedly, exit code=%d. Will restart in a bit...",
 				s.commander.Pid(), s.commander.ExitCode())
 
 			// TODO: decide why the agent stopped. If it was due to bad config, report it to server.

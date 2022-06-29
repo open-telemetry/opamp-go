@@ -45,30 +45,12 @@ func (s *NextMessage) PopPending() *protobufs.AgentToServer {
 		s.messagePending = false
 
 		// Reset fields that we do not have to send unless they change before the
-		// next report after this one. Keep the "hash" fields.
+		// next report after this one.
 		msg := &protobufs.AgentToServer{
 			InstanceUid: s.nextMessage.InstanceUid,
-			AgentDescription: &protobufs.AgentDescription{
-				Hash: s.nextMessage.AgentDescription.Hash,
-			},
-		}
-
-		if s.nextMessage.EffectiveConfig != nil {
-			msg.EffectiveConfig = &protobufs.EffectiveConfig{
-				Hash: s.nextMessage.EffectiveConfig.Hash,
-			}
-		}
-
-		if s.nextMessage.RemoteConfigStatus != nil {
-			msg.RemoteConfigStatus = &protobufs.RemoteConfigStatus{
-				Hash: s.nextMessage.RemoteConfigStatus.Hash,
-			}
-		}
-
-		if s.nextMessage.PackageStatuses != nil {
-			msg.PackageStatuses = &protobufs.PackageStatuses{
-				Hash: s.nextMessage.PackageStatuses.Hash,
-			}
+			// Increment the sequence number.
+			SequenceNum:  s.nextMessage.SequenceNum + 1,
+			Capabilities: s.nextMessage.Capabilities,
 		}
 
 		s.nextMessage = msg

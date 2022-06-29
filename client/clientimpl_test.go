@@ -311,6 +311,7 @@ func TestFirstStatusReport(t *testing.T) {
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			assert.EqualValues(t, 0, msg.SequenceNum)
 			return &protobufs.ServerToAgent{
 				InstanceUid:  msg.InstanceUid,
 				RemoteConfig: remoteConfig,
@@ -353,8 +354,13 @@ func TestFirstStatusReport(t *testing.T) {
 func TestIncludesDetailsOnReconnect(t *testing.T) {
 	srv := internal.StartMockServer(t)
 
+	seqNum := 0
+
 	var receivedDetails int64
 	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+		assert.EqualValues(t, seqNum, msg.SequenceNum)
+		seqNum++
+
 		// Track when we receive AgentDescription
 		if msg.AgentDescription != nil {
 			atomic.AddInt64(&receivedDetails, 1)
@@ -687,6 +693,7 @@ func TestReportAgentDescription(t *testing.T) {
 
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			assert.EqualValues(t, 0, msg.SequenceNum)
 			// The first status report after Start must have full AgentDescription.
 			assert.True(t, proto.Equal(client.AgentDescription(), msg.AgentDescription))
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
@@ -699,18 +706,14 @@ func TestReportAgentDescription(t *testing.T) {
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The status report must have compressed AgentDescription.
-			descr := msg.AgentDescription
-			assert.Nil(t, descr.IdentifyingAttributes)
-			assert.Nil(t, descr.NonIdentifyingAttributes)
+			assert.Nil(t, msg.AgentDescription)
 
-			// The Hash field must be present and unchanged.
-			assert.NotNil(t, descr.Hash)
-			assert.EqualValues(t, client.AgentDescription().Hash, descr.Hash)
+			assert.EqualValues(t, 1, msg.SequenceNum)
 
 			// Ask client for full AgentDescription.
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
-				Flags:       protobufs.ServerToAgent_ReportAgentDescription,
+				Flags:       protobufs.ServerToAgent_ReportFullState,
 			}
 		})
 
@@ -718,6 +721,7 @@ func TestReportAgentDescription(t *testing.T) {
 		// coming to the Server.
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			assert.EqualValues(t, 2, msg.SequenceNum)
 			// The status report must again have full AgentDescription
 			// because the Server asked for it.
 			assert.True(t, proto.Equal(client.AgentDescription(), msg.AgentDescription))
@@ -758,6 +762,7 @@ func TestReportEffectiveConfig(t *testing.T) {
 
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			assert.EqualValues(t, 0, msg.SequenceNum)
 			// The first status report after Start must have full EffectiveConfig.
 			assert.True(t, proto.Equal(clientEffectiveConfig, msg.EffectiveConfig))
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
@@ -770,23 +775,21 @@ func TestReportEffectiveConfig(t *testing.T) {
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			// The status report must have compressed EffectiveConfig.
-			cfg := msg.EffectiveConfig
-			assert.Nil(t, cfg.ConfigMap)
+			assert.Nil(t, msg.EffectiveConfig)
 
-			// Hash must be present and unchanged.
-			assert.NotNil(t, cfg.Hash)
-			assert.EqualValues(t, clientEffectiveConfig.Hash, cfg.Hash)
+			assert.EqualValues(t, 1, msg.SequenceNum)
 
 			// Ask client for full AgentDescription.
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
-				Flags:       protobufs.ServerToAgent_ReportEffectiveConfig,
+				Flags:       protobufs.ServerToAgent_ReportFullState,
 			}
 		})
 
 		// Server has requested the client to report, so there will be another message.
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			assert.EqualValues(t, 2, msg.SequenceNum)
 			// The status report must again have full EffectiveConfig
 			// because Server asked for it.
 			assert.True(t, proto.Equal(clientEffectiveConfig, msg.EffectiveConfig))
@@ -841,6 +844,7 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 		remoteCfg := createRemoteConfig()
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			assert.EqualValues(t, 0, msg.SequenceNum)
 			// Send the remote config to the Agent.
 			return &protobufs.ServerToAgent{
 				InstanceUid:  msg.InstanceUid,
@@ -855,12 +859,12 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			assert.EqualValues(t, 1, msg.SequenceNum)
 			// Verify that the remote config status is as expected.
 			status := msg.RemoteConfigStatus
 			assert.EqualValues(t, expectStatus.Status, status.Status)
 			assert.Equal(t, expectStatus.ErrorMessage, status.ErrorMessage)
 			assert.EqualValues(t, remoteCfg.ConfigHash, status.LastRemoteConfigHash)
-			assert.NotNil(t, status.Hash)
 
 			firstConfigStatus = proto.Clone(status).(*protobufs.RemoteConfigStatus)
 
@@ -873,24 +877,21 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			// This time all fields except Hash must be unset. This is expected
+			// This time the RemoteConfigStatus field must be unset. This is expected
 			// as compression in OpAMP.
-			status := msg.RemoteConfigStatus
-			require.NotNil(t, status)
-			assert.EqualValues(t, firstConfigStatus.Hash, status.Hash)
-			assert.EqualValues(t, protobufs.RemoteConfigStatus_UNSET, status.Status)
-			assert.EqualValues(t, "", status.ErrorMessage)
-			assert.Nil(t, status.LastRemoteConfigHash)
+			require.Nil(t, msg.RemoteConfigStatus)
+			assert.EqualValues(t, 2, msg.SequenceNum)
 
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
 				// Ask client to report full status.
-				Flags: protobufs.ServerToAgent_ReportRemoteConfigStatus,
+				Flags: protobufs.ServerToAgent_ReportFullState,
 			}
 		})
 
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			assert.EqualValues(t, 3, msg.SequenceNum)
 			// Exact same full status must be present again.
 			status := msg.RemoteConfigStatus
 			assert.True(t, proto.Equal(status, firstConfigStatus))
@@ -992,6 +993,7 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			assert.EqualValues(t, 0, msg.SequenceNum)
 			// Send the packages to the Agent.
 			return &protobufs.ServerToAgent{
 				InstanceUid:       msg.InstanceUid,
@@ -1002,8 +1004,6 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 		// The Agent will try to install the packages and will send the status
 		// report about it back to the Server.
 
-		var lastStatusHash []byte
-
 		// ---> Server
 		// Wait for the expected package statuses to be received.
 		srv.EventuallyExpect("full PackageStatuses",
@@ -1013,7 +1013,6 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 				status := msg.PackageStatuses
 				require.NotNil(t, status)
 				assert.EqualValues(t, testCase.expectedStatus.ServerProvidedAllPackagesHash, status.ServerProvidedAllPackagesHash)
-				lastStatusHash = status.Hash
 
 				if testCase.expectedError != "" {
 					assert.EqualValues(t, testCase.expectedError, status.ErrorMessage)
@@ -1046,7 +1045,6 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 						assert.Len(t, status.Packages, len(testCase.available.Packages))
 					}
 				}
-				assert.NotNil(t, status.Hash)
 
 				return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}, expectedStatusReceived
 			})
@@ -1069,21 +1067,13 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 		srv.EventuallyExpect("compressed PackageStatuses",
 			func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent, bool) {
 				// Ensure that compressed status is received.
-				status := msg.PackageStatuses
-				require.NotNil(t, status)
-				compressedReceived := status.ServerProvidedAllPackagesHash == nil
-				if compressedReceived {
-					assert.Nil(t, status.ServerProvidedAllPackagesHash)
-					assert.Nil(t, status.Packages)
-				}
-				assert.NotNil(t, status.Hash)
-				assert.Equal(t, lastStatusHash, status.Hash)
+				compressedReceived := msg.PackageStatuses == nil
 
 				response := &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 
 				if compressedReceived {
 					// Ask for full report again.
-					response.Flags = protobufs.ServerToAgent_ReportPackageStatuses
+					response.Flags = protobufs.ServerToAgent_ReportFullState
 				} else {
 					// Keep triggering status report by setting AgentDescription
 					// until the compressed PackageStatuses arrives.
@@ -1114,8 +1104,7 @@ func createDownloadSrv(t *testing.T) *httptest.Server {
 			w.WriteHeader(http.StatusOK)
 			_, err := w.Write(packageFileContent)
 			assert.NoError(t, err)
-		},
-	)
+		})
 
 	srv := httptest.NewServer(m)
 
