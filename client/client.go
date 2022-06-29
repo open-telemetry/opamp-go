@@ -49,9 +49,6 @@ type OpAMPClient interface {
 	// their AgentDescription to change dynamically while the OpAMPClient is started.
 	// May be also called from OnMessage handler.
 	//
-	// The Hash field will be calculated and updated from the content of the rest of
-	// the fields.
-	//
 	// nil values are not allowed and will return an error.
 	SetAgentDescription(descr *protobufs.AgentDescription) error
 

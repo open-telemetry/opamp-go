@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"math/rand"
 	"os"
@@ -45,8 +44,7 @@ type Agent struct {
 	agentType    string
 	agentVersion string
 
-	effectiveConfig     string
-	effectiveConfigHash []byte
+	effectiveConfig string
 
 	instanceId ulid.ULID
 
@@ -189,13 +187,10 @@ func (agent *Agent) loadLocalConfig() {
 	}
 
 	agent.effectiveConfig = string(effectiveConfigBytes)
-	hash := sha256.Sum256(effectiveConfigBytes)
-	agent.effectiveConfigHash = hash[:]
 }
 
 func (agent *Agent) composeEffectiveConfig() *protobufs.EffectiveConfig {
 	return &protobufs.EffectiveConfig{
-		Hash: agent.effectiveConfigHash,
 		ConfigMap: &protobufs.AgentConfigMap{
 			ConfigMap: map[string]*protobufs.AgentConfigFile{
 				"": {Body: []byte(agent.effectiveConfig)},
@@ -304,8 +299,6 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 	if agent.effectiveConfig != newEffectiveConfig {
 		agent.logger.Debugf("Effective config changed. Need to report to server.")
 		agent.effectiveConfig = newEffectiveConfig
-		hash := sha256.Sum256(effectiveConfigBytes)
-		agent.effectiveConfigHash = hash[:]
 		configChanged = true
 	}
 

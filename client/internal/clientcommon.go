@@ -1,12 +1,9 @@
 package internal
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
-	"sort"
 	"sync"
 
 	"github.com/open-telemetry/opamp-go/client/types"
@@ -175,9 +172,6 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if cfg != nil {
-		calcHashEffectiveConfig(cfg)
-	}
 
 	c.sender.NextMessage().Update(
 		func(msg *protobufs.AgentToServer) {
@@ -219,36 +213,6 @@ func (c *ClientCommon) SetAgentDescription(descr *protobufs.AgentDescription) er
 	return nil
 }
 
-// calcHashEffectiveConfig calculates and sets the Hash field from the rest of the
-// fields in the message.
-func calcHashEffectiveConfig(msg *protobufs.EffectiveConfig) {
-	cfgMap := msg.GetConfigMap().GetConfigMap()
-
-	// Construct hash
-	h := sha256.New()
-
-	// If the config is empty don't attemp to add more to the hash
-	if len(cfgMap) > 0 {
-		// Sort keys of configMap to make deterministic hash
-		keys := make([]string, 0, len(cfgMap))
-		for k := range cfgMap {
-			keys = append(keys, k)
-		}
-
-		sort.Strings(keys)
-
-		if msg.ConfigMap != nil {
-			for _, k := range keys {
-				v := cfgMap[k]
-				h.Write([]byte(k))
-				h.Write(v.Body)
-				h.Write([]byte(v.ContentType))
-			}
-		}
-	}
-	msg.Hash = h.Sum(nil)
-}
-
 // UpdateEffectiveConfig fetches the current local effective config using
 // GetEffectiveConfig callback and sends it to the Server using provided Sender.
 func (c *ClientCommon) UpdateEffectiveConfig(ctx context.Context) error {
@@ -257,9 +221,7 @@ func (c *ClientCommon) UpdateEffectiveConfig(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("GetEffectiveConfig failed: %w", err)
 	}
-	if cfg != nil {
-		calcHashEffectiveConfig(cfg)
-	}
+
 	// Send it to the Server.
 	c.sender.NextMessage().Update(
 		func(msg *protobufs.AgentToServer) {
@@ -281,16 +243,14 @@ func (c *ClientCommon) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatu
 		return errLastRemoteConfigHashNil
 	}
 
-	// Get the hash of the status before we update it.
-	prevHash := c.ClientSyncedState.RemoteConfigStatus().GetHash()
+	statusChanged := !proto.Equal(c.ClientSyncedState.RemoteConfigStatus(), status)
 
 	// Remember the new status.
 	if err := c.ClientSyncedState.SetRemoteConfigStatus(status); err != nil {
 		return err
 	}
 
-	// Check if the new status is different from the previous by comparing the hashes.
-	if !bytes.Equal(prevHash, status.Hash) {
+	if statusChanged {
 		// Let the Server know about the new status.
 		c.sender.NextMessage().Update(
 			func(msg *protobufs.AgentToServer) {
@@ -310,15 +270,14 @@ func (c *ClientCommon) SetPackageStatuses(statuses *protobufs.PackageStatuses) e
 		return errServerProvidedAllPackagesHashNil
 	}
 
-	// Get the hash of the status before we update it.
-	prevHash := c.ClientSyncedState.PackageStatuses().GetHash()
+	statusChanged := !proto.Equal(c.ClientSyncedState.PackageStatuses(), statuses)
 
 	if err := c.ClientSyncedState.SetPackageStatuses(statuses); err != nil {
 		return err
 	}
 
-	// Check if the new status is different from the previous by comparing the hashes.
-	if !bytes.Equal(prevHash, statuses.Hash) {
+	// Check if the new status is different from the previous.
+	if statusChanged {
 		// Let the Server know about the new status.
 
 		c.sender.NextMessage().Update(

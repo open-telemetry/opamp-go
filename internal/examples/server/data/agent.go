@@ -103,25 +103,25 @@ func (agent *Agent) updateStatusField(newStatus *protobufs.AgentToServer) (agent
 		agent.Status = newStatus
 		agentDescrChanged = true
 	} else {
-		// Not a new Agent. Checks what's changed in the Agent's description.
+		// Not a new Agent. Update the Status.
+		agent.Status.SequenceNum = newStatus.SequenceNum
+
+		// Check what's changed in the AgentDescription.
 		if newStatus.AgentDescription != nil {
 			// If the AgentDescription field is set it means the Agent tells us
 			// something is changed in the field since the last status report
 			// (or this is the first report).
 			// Make full comparison of previous and new descriptions to see if it
 			// really is different.
-			if prevStatus != nil && bytes.Equal(prevStatus.AgentDescription.Hash, newStatus.AgentDescription.Hash) {
+			if prevStatus != nil && proto.Equal(
+				prevStatus.AgentDescription, newStatus.AgentDescription,
+			) {
 				// Agent description didn't change.
 				agentDescrChanged = false
 			} else {
 				// Yes, the description is different, update it.
-				if newStatus.AgentDescription.IdentifyingAttributes == nil &&
-					newStatus.AgentDescription.NonIdentifyingAttributes == nil {
-					// TODO: request full AgentDescription
-				} else {
-					agent.Status.AgentDescription = newStatus.AgentDescription
-					agentDescrChanged = true
-				}
+				agent.Status.AgentDescription = newStatus.AgentDescription
+				agentDescrChanged = true
 			}
 		} else {
 			// AgentDescription field is not set, which means description didn't change.
@@ -130,14 +130,8 @@ func (agent *Agent) updateStatusField(newStatus *protobufs.AgentToServer) (agent
 
 		// Update remote config status if it is included and is different from what we have.
 		if newStatus.RemoteConfigStatus != nil &&
-			!bytes.Equal(agent.Status.RemoteConfigStatus.Hash, newStatus.RemoteConfigStatus.Hash) {
-
-			if newStatus.RemoteConfigStatus.Status == protobufs.RemoteConfigStatus_UNSET {
-				// TODO: Request full RemoteConfigStatus using
-				// ServerToAgent_ReportRemoteConfigStatus flag.
-			} else {
-				agent.Status.RemoteConfigStatus = newStatus.RemoteConfigStatus
-			}
+			!proto.Equal(agent.Status.RemoteConfigStatus, newStatus.RemoteConfigStatus) {
+			agent.Status.RemoteConfigStatus = newStatus.RemoteConfigStatus
 		}
 	}
 
@@ -163,27 +157,23 @@ func (agent *Agent) updateEffectiveConfig(
 			}
 		}
 	}
-
-	if agent.Status.EffectiveConfig == nil ||
-		newStatus.EffectiveConfig == nil ||
-		agent.Status.EffectiveConfig.ConfigMap == nil ||
-		!bytes.Equal(agent.Status.EffectiveConfig.Hash, newStatus.EffectiveConfig.Hash) {
-		// Ask the Agent to report back the effective config since we don't have it
-		// or what we have is different from what the Agent has because hashes don't match.
-		response.Flags = response.Flags | protobufs.ServerToAgent_ReportEffectiveConfig
-	}
 }
 
 func (agent *Agent) processStatusUpdate(
 	newStatus *protobufs.AgentToServer,
 	response *protobufs.ServerToAgent,
 ) {
+	if agent.Status != nil && agent.Status.SequenceNum+1 != newStatus.SequenceNum {
+		// We lost the previous status update. Request full status update from the agent.
+		response.Flags |= protobufs.ServerToAgent_ReportFullState
+	}
+
 	agentDescrChanged := agent.updateStatusField(newStatus)
 
 	configChanged := false
 	if agentDescrChanged {
 		// Agent description is changed.
-		//
+
 		// We need to recalculate the config.
 		configChanged = agent.calcRemoteConfig()
 

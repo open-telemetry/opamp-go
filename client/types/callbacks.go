@@ -106,9 +106,6 @@ type Callbacks interface {
 	// GetEffectiveConfig returns the current effective config. Only one
 	// GetEffectiveConfig call can be active at any time. Until GetEffectiveConfig
 	// returns it will not be called again.
-	//
-	// The Hash field in the returned EffectiveConfig will be calculated and updated
-	// by the caller from the content of the rest of the fields.
 	GetEffectiveConfig(ctx context.Context) (*protobufs.EffectiveConfig, error)
 
 	// OnCommand is called when the Server requests that the connected Agent perform a command.
