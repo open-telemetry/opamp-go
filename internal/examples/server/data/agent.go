@@ -188,7 +188,9 @@ func (agent *Agent) processStatusUpdate(
 		configChanged = agent.calcRemoteConfig()
 
 		// And set connection settings that are appropriate for the Agent description.
-		agent.calcConnectionSettings(response)
+		// TODO: Uncomment this once we set the right configurations for metrics.
+		// Uncommented as of 07/30/2022 to stop connection refused error.
+		//agent.calcConnectionSettings(response)
 	}
 
 	// If remote config is changed and different from what the Agent has then
