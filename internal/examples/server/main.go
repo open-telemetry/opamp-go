@@ -1,18 +1,32 @@
 package main
 
 import (
-	"log"
-	"os"
-	"os/signal"
+	//"github.com/gin-gonic/gin"
+	//"net/http"
 
 	"github.com/open-telemetry/opamp-go/internal/examples/server/data"
 	"github.com/open-telemetry/opamp-go/internal/examples/server/opampsrv"
 	"github.com/open-telemetry/opamp-go/internal/examples/server/uisrv"
+	"log"
+	"os"
+	"os/signal"
 )
 
 var logger = log.New(log.Default().Writer(), "[MAIN] ", log.Default().Flags()|log.Lmsgprefix|log.Lmicroseconds)
 
+//type configuration struct {
+//	ID   string `json:"id"`
+//	Name string `json:"name"`
+//}
+//
+//var config = configuration{ID: "1", Name: "config"}
+
 func main() {
+	//router := gin.Default()
+	//router.GET("/config", fetchConfig)
+	//router.POST("/config", createConfig)
+	//router.Run()
+
 	curDir, err := os.Getwd()
 	if err != nil {
 		panic(err)
@@ -34,3 +48,13 @@ func main() {
 	uisrv.Shutdown()
 	opampSrv.Stop()
 }
+
+//func fetchConfig(c *gin.Context) {
+//	c.IndentedJSON(http.StatusOK, config)
+//}
+//
+//func createConfig(c *gin.Context) {
+//	var newConfig configuration
+//	config = newConfig
+//	c.IndentedJSON(http.StatusCreated, config)
+//}
