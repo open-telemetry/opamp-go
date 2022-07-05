@@ -45,6 +45,8 @@ type Supervisor struct {
 	// Commander that starts/stops the Agent process.
 	commander *commander.Commander
 
+	startedAt time.Time
+
 	// Supervisor's own config.
 	config config.Supervisor
 
@@ -94,7 +96,7 @@ func NewSupervisor(logger types.Logger) (*Supervisor, error) {
 	s.loadAgentEffectiveConfig()
 
 	if err := s.startOpAMP(); err != nil {
-		return nil, fmt.Errorf("Cannot startOpAMP OpAMP client: %v", err)
+		return nil, fmt.Errorf("Cannot start OpAMP client: %v", err)
 	}
 
 	var err error
@@ -368,8 +370,18 @@ func (s *Supervisor) recalcEffectiveConfig() (configChanged bool, err error) {
 func (s *Supervisor) startAgent() {
 	err := s.commander.Start(context.Background())
 	if err != nil {
-		s.logger.Errorf("Cannot startOpAMP the agent: %v", err)
+		errMsg := fmt.Sprintf("Cannot start the agent: %v", err)
+		s.logger.Errorf(errMsg)
+		s.opampClient.SetHealth(&protobufs.AgentHealth{Up: false, LastError: errMsg})
+		return
 	}
+	s.startedAt = time.Now()
+	s.opampClient.SetHealth(
+		&protobufs.AgentHealth{
+			Up:                true,
+			StartTimeUnixNano: uint64(s.startedAt.UnixNano()),
+		},
+	)
 }
 
 func (s *Supervisor) runAgentProcess() {
@@ -388,8 +400,12 @@ func (s *Supervisor) runAgentProcess() {
 			s.applyConfigWithAgentRestart()
 
 		case <-s.commander.Done():
-			s.logger.Debugf("Agent process PID=%d exited unexpectedly, exit code=%d. Will restart in a bit...",
-				s.commander.Pid(), s.commander.ExitCode())
+			errMsg := fmt.Sprintf(
+				"Agent process PID=%d exited unexpectedly, exit code=%d. Will restart in a bit...",
+				s.commander.Pid(), s.commander.ExitCode(),
+			)
+			s.logger.Debugf(errMsg)
+			s.opampClient.SetHealth(&protobufs.AgentHealth{Up: false, LastError: errMsg})
 
 			// TODO: decide why the agent stopped. If it was due to bad config, report it to server.
 
@@ -423,7 +439,15 @@ func (s *Supervisor) writeEffectiveConfigToFile(cfg string, filePath string) {
 
 func (s *Supervisor) Shutdown() {
 	s.logger.Debugf("Supervisor shutting down...")
+	if s.commander != nil {
+		s.commander.Stop(context.Background())
+	}
 	if s.opampClient != nil {
+		s.opampClient.SetHealth(
+			&protobufs.AgentHealth{
+				Up: false, LastError: "Supervisor is shutdown",
+			},
+		)
 		_ = s.opampClient.Stop(context.Background())
 	}
 }

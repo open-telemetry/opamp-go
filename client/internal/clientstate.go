@@ -34,6 +34,7 @@ type ClientSyncedState struct {
 	mutex sync.Mutex
 
 	agentDescription   *protobufs.AgentDescription
+	health             *protobufs.AgentHealth
 	remoteConfigStatus *protobufs.RemoteConfigStatus
 	packageStatuses    *protobufs.PackageStatuses
 }
@@ -42,6 +43,12 @@ func (s *ClientSyncedState) AgentDescription() *protobufs.AgentDescription {
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	return s.agentDescription
+}
+
+func (s *ClientSyncedState) Health() *protobufs.AgentHealth {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	return s.health
 }
 
 func (s *ClientSyncedState) RemoteConfigStatus() *protobufs.RemoteConfigStatus {
@@ -71,6 +78,20 @@ func (s *ClientSyncedState) SetAgentDescription(descr *protobufs.AgentDescriptio
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	s.agentDescription = clone
+
+	return nil
+}
+
+func (s *ClientSyncedState) SetHealth(health *protobufs.AgentHealth) error {
+	if health == nil {
+		return ErrAgentHealthMissing
+	}
+
+	clone := proto.Clone(health).(*protobufs.AgentHealth)
+
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	s.health = clone
 
 	return nil
 }

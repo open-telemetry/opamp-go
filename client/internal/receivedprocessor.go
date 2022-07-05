@@ -118,10 +118,11 @@ func (r *receivedProcessor) rcvFlags(
 		r.sender.NextMessage().Update(
 			func(msg *protobufs.AgentToServer) {
 				msg.AgentDescription = r.clientSyncedState.AgentDescription()
+				msg.Health = r.clientSyncedState.Health()
 				msg.RemoteConfigStatus = r.clientSyncedState.RemoteConfigStatus()
 				msg.PackageStatuses = r.clientSyncedState.PackageStatuses()
 
-				// The logic for EffectiveConfig is similar to the previous 3 messages however
+				// The logic for EffectiveConfig is similar to the previous 4 sub-messages however
 				// the EffectiveConfig is fetched using GetEffectiveConfig instead of
 				// from clientSyncedState. We do this to avoid keeping EffectiveConfig in-memory.
 				msg.EffectiveConfig = cfg

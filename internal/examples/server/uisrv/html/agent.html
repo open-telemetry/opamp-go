@@ -22,7 +22,22 @@
             <table border="1" style="border-collapse: collapse">
                 <tr>
                     <td>Instance ID:</td><td>{{ .InstanceId }}</td>
+                </tr>
+                {{if .Status.Health }}
                 <tr>
+                    <td>Up:</td><td>{{ .Status.Health.Up }}</td>
+                </tr>
+                {{if .Status.Health.LastError }}
+                <tr>
+                    <td></td><td><span style="color:red">{{ .Status.Health.LastError }}</span></td>
+                </tr>
+                {{end}}
+                {{if .Status.Health.Up }}
+                <tr>
+                    <td>Up since:</td><td>{{ .StartedAt }}</td>
+                </tr>
+                {{end}}
+                {{end}}
             </table>
         </td>
         <td valign="top">

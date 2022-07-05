@@ -14,6 +14,7 @@ import (
 var (
 	ErrAgentDescriptionMissing      = errors.New("AgentDescription is nil")
 	ErrAgentDescriptionNoAttributes = errors.New("AgentDescription has no attributes defined")
+	ErrAgentHealthMissing           = errors.New("AgentHealth is nil")
 
 	errAlreadyStarted       = errors.New("already started")
 	errCannotStopNotStarted = errors.New("cannot stop because not started")
@@ -207,6 +208,23 @@ func (c *ClientCommon) SetAgentDescription(descr *protobufs.AgentDescription) er
 	c.sender.NextMessage().Update(
 		func(msg *protobufs.AgentToServer) {
 			msg.AgentDescription = c.ClientSyncedState.AgentDescription()
+		},
+	)
+	c.sender.ScheduleSend()
+	return nil
+}
+
+// SetHealth sends a status update to the Server with the new AgentHealth
+// and remembers the AgentHealth in the client state so that it can be sent
+// to the Server when the Server asks for it.
+func (c *ClientCommon) SetHealth(health *protobufs.AgentHealth) error {
+	// store the AgentHealth to send on reconnect
+	if err := c.ClientSyncedState.SetHealth(health); err != nil {
+		return err
+	}
+	c.sender.NextMessage().Update(
+		func(msg *protobufs.AgentToServer) {
+			msg.Health = c.ClientSyncedState.Health()
 		},
 	)
 	c.sender.ScheduleSend()

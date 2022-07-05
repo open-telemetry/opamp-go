@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -29,6 +30,9 @@ type Agent struct {
 
 	// Agent's current status.
 	Status *protobufs.AgentToServer
+
+	// The time when the agent has started. Valid only if Status.Health.Up==true
+	StartedAt time.Time
 
 	// Effective config reported by the Agent.
 	EffectiveConfig string
@@ -62,6 +66,7 @@ func (agent *Agent) CloneReadonly() *Agent {
 		EffectiveConfig:      agent.EffectiveConfig,
 		CustomInstanceConfig: agent.CustomInstanceConfig,
 		remoteConfig:         proto.Clone(agent.remoteConfig).(*protobufs.AgentRemoteConfig),
+		StartedAt:            agent.StartedAt,
 	}
 }
 
@@ -95,7 +100,7 @@ func notifyStatusWatchers(statusUpdateWatchers []chan<- struct{}) {
 	}
 }
 
-func (agent *Agent) updateStatusField(newStatus *protobufs.AgentToServer) (agentDescrChanged bool) {
+func (agent *Agent) updateAgentDescription(newStatus *protobufs.AgentToServer) (agentDescrChanged bool) {
 	prevStatus := agent.Status
 
 	if agent.Status == nil {
@@ -113,9 +118,7 @@ func (agent *Agent) updateStatusField(newStatus *protobufs.AgentToServer) (agent
 			// (or this is the first report).
 			// Make full comparison of previous and new descriptions to see if it
 			// really is different.
-			if prevStatus != nil && proto.Equal(
-				prevStatus.AgentDescription, newStatus.AgentDescription,
-			) {
+			if prevStatus != nil && proto.Equal(prevStatus.AgentDescription, newStatus.AgentDescription) {
 				// Agent description didn't change.
 				agentDescrChanged = false
 			} else {
@@ -134,6 +137,38 @@ func (agent *Agent) updateStatusField(newStatus *protobufs.AgentToServer) (agent
 			agent.Status.RemoteConfigStatus = newStatus.RemoteConfigStatus
 		}
 	}
+	return agentDescrChanged
+}
+
+func (agent *Agent) updateHealth(newStatus *protobufs.AgentToServer) {
+	if newStatus.Health == nil {
+		return
+	}
+
+	agent.Status.Health = newStatus.Health
+
+	if agent.Status != nil && agent.Status.Health != nil && agent.Status.Health.Up {
+		agent.StartedAt = time.Unix(0, int64(agent.Status.Health.StartTimeUnixNano)).UTC()
+	}
+}
+
+func (agent *Agent) updateRemoteConfigStatus(newStatus *protobufs.AgentToServer) {
+	// Update remote config status if it is included and is different from what we have.
+	if newStatus.RemoteConfigStatus != nil {
+		agent.Status.RemoteConfigStatus = newStatus.RemoteConfigStatus
+	}
+}
+
+func (agent *Agent) updateStatusField(newStatus *protobufs.AgentToServer) (agentDescrChanged bool) {
+	if agent.Status == nil {
+		// First time this Agent reports a status, remember it.
+		agent.Status = newStatus
+		agentDescrChanged = true
+	}
+
+	agentDescrChanged = agent.updateAgentDescription(newStatus) || agentDescrChanged
+	agent.updateRemoteConfigStatus(newStatus)
+	agent.updateHealth(newStatus)
 
 	return agentDescrChanged
 }
