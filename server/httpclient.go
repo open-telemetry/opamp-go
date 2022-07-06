@@ -35,7 +35,7 @@ type successResponse struct {
 }
 
 // MachineInformation Sample response structure
-type MachineInformation struct {
+type MachineInformation []struct {
 	Version     string `json:"version"`
 	Md5Checksum string `json:"md5Checksum"`
 	S3Path      string `json:"s3Path"`
