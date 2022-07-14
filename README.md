@@ -43,7 +43,7 @@ Approvers ([@open-telemetry/opamp-go-approvers](https://github.com/orgs/open-tel
 
 Maintainers ([@open-telemetry/opamp-go-maintainers](https://github.com/orgs/open-telemetry/teams/opamp-go-maintainers)):
 
-- [Daniel Jaglowski](https://github.com/djaglowski), observIQ
+- [Andy Keller](https://github.com/andykellr), observIQ
 - [Tigran Najaryan](https://github.com/tigrannajaryan), Splunk
 
 Learn more about roles in the [community repository](https://github.com/open-telemetry/community/blob/main/community-membership.md).
