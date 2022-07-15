@@ -206,12 +206,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.EffectiveConfig = cfg
 			msg.RemoteConfigStatus = c.ClientSyncedState.RemoteConfigStatus()
 			msg.PackageStatuses = c.ClientSyncedState.PackageStatuses()
-
-			if c.PackagesStateProvider != nil {
-				// We have a state provider, so package related capabilities can work.
-				msg.Capabilities |= protobufs.AgentCapabilities_AcceptsPackages
-				msg.Capabilities |= protobufs.AgentCapabilities_ReportsPackageStatuses
-			}
+			msg.Capabilities = c.Capabilities
 		},
 	)
 	return nil
