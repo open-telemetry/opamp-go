@@ -39,6 +39,9 @@ Approvers ([@open-telemetry/opamp-go-approvers](https://github.com/orgs/open-tel
 - [Alex Boten](https://github.com/codeboten), Lightstep
 - [Andy Keller](https://github.com/andykellr), observIQ
 - [Anthony Mirabella](https://github.com/Aneurysm9), AWS
+
+Emeritus Approvers
+
 - [Przemek Maciolek](https://github.com/pmm-sumo), Sumo Logic
 
 Maintainers ([@open-telemetry/opamp-go-maintainers](https://github.com/orgs/open-telemetry/teams/opamp-go-maintainers)):
