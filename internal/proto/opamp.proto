@@ -80,6 +80,12 @@ message AgentToServer {
         // The Agent requests Server go generate a new instance_uid, which will
         // be sent back in ServerToAgent message
         RequestInstanceUid     = 0x00000001;
+
+        // Indicates that the Agent included full status in this message, that none
+        // of the the status fields is omitted. This tells the Server that it is
+        // that this message is full and there is no need to request full status.
+        // See https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#agent-status-compression
+        StatusIsFullySet       = 0x00000002;
     }
     // Bit flags as defined by AgentToServerFlags bit masks.
     AgentToServerFlags flags = 10;

@@ -180,6 +180,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.EffectiveConfig = cfg
 			msg.RemoteConfigStatus = c.ClientSyncedState.RemoteConfigStatus()
 			msg.PackageStatuses = c.ClientSyncedState.PackageStatuses()
+			msg.Flags |= protobufs.AgentToServer_StatusIsFullySet
 
 			if c.PackagesStateProvider != nil {
 				// We have a state provider, so package related capabilities can work.

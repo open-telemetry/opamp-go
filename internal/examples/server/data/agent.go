@@ -198,8 +198,17 @@ func (agent *Agent) processStatusUpdate(
 	newStatus *protobufs.AgentToServer,
 	response *protobufs.ServerToAgent,
 ) {
-	if agent.Status != nil && agent.Status.SequenceNum+1 != newStatus.SequenceNum {
-		// We lost the previous status update. Request full status update from the agent.
+	// The status is not fully set in the message that we received. Agent compressed the status
+	// by omitting some fields.
+	receivedFullStatus := newStatus.Flags&protobufs.AgentToServer_StatusIsFullySet != 0
+
+	// We don't have any status for this Agent, or we lost the previous status update from the Agent, so our
+	// current status is not up-to-date.
+	lostPreviousUpdate := (agent.Status == nil) || (agent.Status != nil && agent.Status.SequenceNum+1 != newStatus.SequenceNum)
+
+	if !receivedFullStatus && lostPreviousUpdate {
+		// The status message is not fully set in the message that we received, but we lost the previous
+		// status update. Request full status update from the agent.
 		response.Flags |= protobufs.ServerToAgent_ReportFullState
 	}
 
@@ -219,8 +228,8 @@ func (agent *Agent) processStatusUpdate(
 	// If remote config is changed and different from what the Agent has then
 	// send the new remote config to the Agent.
 	if configChanged ||
-		(newStatus.RemoteConfigStatus != nil &&
-			bytes.Compare(newStatus.RemoteConfigStatus.LastRemoteConfigHash, agent.remoteConfig.ConfigHash) != 0) {
+		(agent.Status.RemoteConfigStatus != nil &&
+			bytes.Compare(agent.Status.RemoteConfigStatus.LastRemoteConfigHash, agent.remoteConfig.ConfigHash) != 0) {
 		// The new status resulted in a change in the config of the Agent or the Agent
 		// does not have this config (hash is different). Send the new config the Agent.
 		response.RemoteConfig = agent.remoteConfig

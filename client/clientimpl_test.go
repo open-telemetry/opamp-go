@@ -696,6 +696,7 @@ func TestReportAgentDescription(t *testing.T) {
 			assert.EqualValues(t, 0, msg.SequenceNum)
 			// The first status report after Start must have full AgentDescription.
 			assert.True(t, proto.Equal(client.AgentDescription(), msg.AgentDescription))
+			assert.True(t, msg.Flags&protobufs.AgentToServer_StatusIsFullySet != 0)
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 
@@ -709,6 +710,7 @@ func TestReportAgentDescription(t *testing.T) {
 			assert.Nil(t, msg.AgentDescription)
 
 			assert.EqualValues(t, 1, msg.SequenceNum)
+			assert.True(t, msg.Flags&protobufs.AgentToServer_StatusIsFullySet == 0)
 
 			// Ask client for full AgentDescription.
 			return &protobufs.ServerToAgent{
@@ -725,6 +727,7 @@ func TestReportAgentDescription(t *testing.T) {
 			// The status report must again have full AgentDescription
 			// because the Server asked for it.
 			assert.True(t, proto.Equal(client.AgentDescription(), msg.AgentDescription))
+			assert.True(t, msg.Flags&protobufs.AgentToServer_StatusIsFullySet != 0)
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 

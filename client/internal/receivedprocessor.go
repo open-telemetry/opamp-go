@@ -121,6 +121,7 @@ func (r *receivedProcessor) rcvFlags(
 				msg.Health = r.clientSyncedState.Health()
 				msg.RemoteConfigStatus = r.clientSyncedState.RemoteConfigStatus()
 				msg.PackageStatuses = r.clientSyncedState.PackageStatuses()
+				msg.Flags |= protobufs.AgentToServer_StatusIsFullySet
 
 				// The logic for EffectiveConfig is similar to the previous 4 sub-messages however
 				// the EffectiveConfig is fetched using GetEffectiveConfig instead of
