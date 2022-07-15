@@ -15,9 +15,13 @@ var (
 	ErrAgentDescriptionMissing      = errors.New("AgentDescription is nil")
 	ErrAgentDescriptionNoAttributes = errors.New("AgentDescription has no attributes defined")
 	ErrAgentHealthMissing           = errors.New("AgentHealth is nil")
+	ErrReportsEffectiveConfigNotSet = errors.New("ReportsEffectiveConfig capability is not set")
+	ErrPackagesStateProviderNotSet  = errors.New("PackagesStateProvider must be set")
+	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 
-	errAlreadyStarted       = errors.New("already started")
-	errCannotStopNotStarted = errors.New("cannot stop because not started")
+	errAlreadyStarted               = errors.New("already started")
+	errCannotStopNotStarted         = errors.New("cannot stop because not started")
+	errReportsPackageStatusesNotSet = errors.New("ReportsPackageStatuses capability is not set")
 )
 
 // ClientCommon contains the OpAMP logic that is common between WebSocket and
@@ -25,6 +29,9 @@ var (
 type ClientCommon struct {
 	Logger    types.Logger
 	Callbacks types.Callbacks
+
+	// Agent's capabilities defined at Start() time.
+	Capabilities protobufs.AgentCapabilities
 
 	// Client state storage. This is needed if the Server asks to report the state.
 	ClientSyncedState ClientSyncedState
@@ -62,8 +69,17 @@ func (c *ClientCommon) PrepareStart(
 		return errAlreadyStarted
 	}
 
+	c.Capabilities = settings.Capabilities
+
+	// According to OpAMP spec this capability MUST be set, since all Agents MUST report status.
+	c.Capabilities |= protobufs.AgentCapabilities_ReportsStatus
+
 	if c.ClientSyncedState.AgentDescription() == nil {
 		return ErrAgentDescriptionMissing
+	}
+
+	if c.Capabilities&protobufs.AgentCapabilities_ReportsHealth != 0 && c.ClientSyncedState.Health() == nil {
+		return ErrAgentHealthMissing
 	}
 
 	// Prepare remote config status.
@@ -82,11 +98,21 @@ func (c *ClientCommon) PrepareStart(
 	c.PackagesStateProvider = settings.PackagesStateProvider
 	var packageStatuses *protobufs.PackageStatuses
 	if settings.PackagesStateProvider != nil {
+		if c.Capabilities&protobufs.AgentCapabilities_AcceptsPackages == 0 ||
+			c.Capabilities&protobufs.AgentCapabilities_ReportsPackageStatuses == 0 {
+			return ErrAcceptsPackagesNotSet
+		}
+
 		// Set package status from the value previously saved in the PackagesStateProvider.
 		var err error
 		packageStatuses, err = settings.PackagesStateProvider.LastReportedStatuses()
 		if err != nil {
 			return err
+		}
+	} else {
+		if c.Capabilities&protobufs.AgentCapabilities_AcceptsPackages != 0 ||
+			c.Capabilities&protobufs.AgentCapabilities_ReportsPackageStatuses != 0 {
+			return ErrPackagesStateProviderNotSet
 		}
 	}
 
@@ -234,6 +260,10 @@ func (c *ClientCommon) SetHealth(health *protobufs.AgentHealth) error {
 // UpdateEffectiveConfig fetches the current local effective config using
 // GetEffectiveConfig callback and sends it to the Server using provided Sender.
 func (c *ClientCommon) UpdateEffectiveConfig(ctx context.Context) error {
+	if c.Capabilities&protobufs.AgentCapabilities_ReportsEffectiveConfig == 0 {
+		return ErrReportsEffectiveConfigNotSet
+	}
+
 	// Fetch the locally stored config.
 	cfg, err := c.Callbacks.GetEffectiveConfig(ctx)
 	if err != nil {
@@ -284,6 +314,10 @@ func (c *ClientCommon) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatu
 }
 
 func (c *ClientCommon) SetPackageStatuses(statuses *protobufs.PackageStatuses) error {
+	if c.Capabilities&protobufs.AgentCapabilities_ReportsPackageStatuses == 0 {
+		return errReportsPackageStatusesNotSet
+	}
+
 	if statuses.ServerProvidedAllPackagesHash == nil {
 		return errServerProvidedAllPackagesHashNil
 	}

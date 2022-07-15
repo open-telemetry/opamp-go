@@ -235,6 +235,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		c.sender,
 		&c.common.ClientSyncedState,
 		c.common.PackagesStateProvider,
+		c.common.Capabilities,
 	)
 	r.ReceiverLoop(ctx)
 

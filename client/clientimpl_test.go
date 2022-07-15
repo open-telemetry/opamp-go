@@ -332,6 +332,7 @@ func TestFirstStatusReport(t *testing.T) {
 					atomic.AddInt64(&remoteConfigReceived, 1)
 				},
 			},
+			Capabilities: protobufs.AgentCapabilities_AcceptsRemoteConfig,
 		}
 		settings.OpAMPServerURL = "ws://" + srv.Endpoint
 		startClient(t, settings, client)
@@ -430,6 +431,7 @@ func TestSetEffectiveConfig(t *testing.T) {
 					return sendConfig, nil
 				},
 			},
+			Capabilities: protobufs.AgentCapabilities_ReportsEffectiveConfig,
 		}
 		settings.OpAMPServerURL = "ws://" + srv.Endpoint
 		prepareClient(t, &settings, client)
@@ -655,6 +657,11 @@ func TestConnectionSettings(t *testing.T) {
 					return nil
 				},
 			},
+			Capabilities: protobufs.AgentCapabilities_ReportsOwnTraces |
+				protobufs.AgentCapabilities_ReportsOwnMetrics |
+				protobufs.AgentCapabilities_ReportsOwnLogs |
+				protobufs.AgentCapabilities_AcceptsOtherConnectionSettings |
+				protobufs.AgentCapabilities_AcceptsOpAMPConnectionSettings,
 		}
 		settings.OpAMPServerURL = "ws://" + srv.Endpoint
 		prepareClient(t, &settings, client)
@@ -685,6 +692,7 @@ func TestReportAgentDescription(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
+			Capabilities:   protobufs.AgentCapabilities_ReportsEffectiveConfig,
 		}
 		prepareClient(t, &settings, client)
 
@@ -747,6 +755,7 @@ func TestReportAgentHealth(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
+			Capabilities:   protobufs.AgentCapabilities_ReportsEffectiveConfig | protobufs.AgentCapabilities_ReportsHealth,
 		}
 		prepareClient(t, &settings, client)
 
@@ -906,6 +915,7 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 					}
 				},
 			},
+			Capabilities: protobufs.AgentCapabilities_AcceptsRemoteConfig,
 		}
 		prepareClient(t, &settings, client)
 
@@ -1056,6 +1066,7 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 				OnMessageFunc: onMessageFunc,
 			},
 			PackagesStateProvider: localPackageState,
+			Capabilities:          protobufs.AgentCapabilities_AcceptsPackages | protobufs.AgentCapabilities_ReportsPackageStatuses,
 		}
 		prepareClient(t, &settings, client)
 
@@ -1256,4 +1267,113 @@ func TestUpdatePackages(t *testing.T) {
 			verifyUpdatePackages(t, test)
 		})
 	}
+}
+
+func TestMissingCapabilities(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a server.
+		srv := internal.StartMockServer(t)
+		srv.EnableExpectMode()
+
+		// Start a client.
+		settings := types.StartSettings{
+			Callbacks: types.CallbacksStruct{
+				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+					// These fields must not be set since we did not define the capabilities to accept them.
+					assert.Nil(t, msg.RemoteConfig)
+					assert.Nil(t, msg.OwnLogsConnSettings)
+					assert.Nil(t, msg.OwnMetricsConnSettings)
+					assert.Nil(t, msg.OwnTracesConnSettings)
+					assert.Nil(t, msg.OtherConnSettings)
+					assert.Nil(t, msg.PackagesAvailable)
+				},
+				OnOpampConnectionSettingsFunc: func(
+					ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
+				) error {
+					assert.Fail(t, "should not be called since capability is not set to accept it")
+					return nil
+				},
+			},
+		}
+		settings.OpAMPServerURL = "ws://" + srv.Endpoint
+		prepareClient(t, &settings, client)
+
+		require.NoError(t, client.Start(context.Background(), settings))
+
+		// Change the config.
+		err := client.UpdateEffectiveConfig(context.Background())
+
+		assert.ErrorIs(t, err, internal.ErrReportsEffectiveConfigNotSet)
+
+		remoteCfg := createRemoteConfig()
+		// ---> Server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			opampSettings := &protobufs.OpAMPConnectionSettings{DestinationEndpoint: "http://opamp.com"}
+			metricsSettings := &protobufs.TelemetryConnectionSettings{DestinationEndpoint: "http://metrics.com"}
+			tracesSettings := &protobufs.TelemetryConnectionSettings{DestinationEndpoint: "http://traces.com"}
+			logsSettings := &protobufs.TelemetryConnectionSettings{DestinationEndpoint: "http://logs.com"}
+			otherSettings := &protobufs.OtherConnectionSettings{DestinationEndpoint: "http://other.com"}
+			hash := []byte{1, 2, 3}
+
+			return &protobufs.ServerToAgent{
+				InstanceUid:  msg.InstanceUid,
+				RemoteConfig: remoteCfg,
+				ConnectionSettings: &protobufs.ConnectionSettingsOffers{
+					Hash:       hash,
+					Opamp:      opampSettings,
+					OwnMetrics: metricsSettings,
+					OwnTraces:  tracesSettings,
+					OwnLogs:    logsSettings,
+					OtherConnections: map[string]*protobufs.OtherConnectionSettings{
+						"other": otherSettings,
+					},
+				},
+				PackagesAvailable: &protobufs.PackagesAvailable{
+					Packages:        map[string]*protobufs.PackageAvailable{},
+					AllPackagesHash: []byte{1, 2, 3, 4, 5},
+				},
+			}
+		})
+
+		// Shutdown the Server.
+		srv.Close()
+
+		// Shutdown the client.
+		err = client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
+func TestMissingPackagesStateProvider(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a client.
+		settings := types.StartSettings{
+			Callbacks:    types.CallbacksStruct{},
+			Capabilities: protobufs.AgentCapabilities_AcceptsPackages | protobufs.AgentCapabilities_ReportsPackageStatuses,
+		}
+		prepareClient(t, &settings, client)
+
+		assert.ErrorIs(t, client.Start(context.Background(), settings), internal.ErrPackagesStateProviderNotSet)
+
+		// Start a client.
+		localPackageState := internal.NewInMemPackagesStore()
+		settings = types.StartSettings{
+			Callbacks:             types.CallbacksStruct{},
+			PackagesStateProvider: localPackageState,
+			Capabilities:          protobufs.AgentCapabilities_AcceptsPackages,
+		}
+		prepareClient(t, &settings, client)
+
+		assert.ErrorIs(t, client.Start(context.Background(), settings), internal.ErrAcceptsPackagesNotSet)
+
+		// Start a client.
+		settings = types.StartSettings{
+			Callbacks:             types.CallbacksStruct{},
+			PackagesStateProvider: localPackageState,
+			Capabilities:          protobufs.AgentCapabilities_ReportsPackageStatuses,
+		}
+		prepareClient(t, &settings, client)
+
+		assert.ErrorIs(t, client.Start(context.Background(), settings), internal.ErrAcceptsPackagesNotSet)
+	})
 }
