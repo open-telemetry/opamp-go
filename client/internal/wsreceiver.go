@@ -20,6 +20,8 @@ type wsReceiver struct {
 	processor receivedProcessor
 }
 
+// NewWSReceiver creates a new Receiver that uses WebSocket to receive
+// messages from the server.
 func NewWSReceiver(
 	logger types.Logger,
 	callbacks types.Callbacks,
@@ -39,6 +41,7 @@ func NewWSReceiver(
 	return w
 }
 
+// ReceiverLoop runs the receiver loop. To stop the receiver cancel the context.
 func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 	runContext, cancelFunc := context.WithCancel(ctx)
 

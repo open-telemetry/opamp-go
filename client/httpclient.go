@@ -20,6 +20,7 @@ type httpClient struct {
 	sender *internal.HTTPSender
 }
 
+// NewHTTP creates a new OpAMP Client that uses HTTP transport.
 func NewHTTP(logger types.Logger) *httpClient {
 	if logger == nil {
 		logger = &sharedinternal.NopLogger{}
@@ -33,6 +34,7 @@ func NewHTTP(logger types.Logger) *httpClient {
 	return w
 }
 
+// Start starts the client and runs until Stop is called.
 func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) error {
 	if err := c.common.PrepareStart(ctx, settings); err != nil {
 		return err

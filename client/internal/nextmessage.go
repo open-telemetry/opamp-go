@@ -18,6 +18,7 @@ type NextMessage struct {
 	messageMutex sync.Mutex
 }
 
+// NewNextMessage returns a new empty NextMessage.
 func NewNextMessage() NextMessage {
 	return NextMessage{
 		nextMessage: &protobufs.AgentToServer{},

@@ -39,6 +39,8 @@ type MessageData struct {
 }
 
 type Callbacks interface {
+	// OnConnect is called when the connection is successfully established to the Server.
+	// May be called after Start() is called and every time connected to the Server.
 	OnConnect()
 
 	// OnConnectFailed is called when the connection to the Server cannot be established.
@@ -63,7 +65,7 @@ type Callbacks interface {
 	OnMessage(ctx context.Context, msg *MessageData)
 
 	// OnOpampConnectionSettings is called when the Agent receives an OpAMP
-	// connection settings offer from the Server. Typically the settings can specify
+	// connection settings offer from the Server. Typically, the settings can specify
 	// authorization headers or TLS certificate, potentially also a different
 	// OpAMP destination to work with.
 	//

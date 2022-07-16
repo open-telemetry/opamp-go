@@ -19,6 +19,8 @@ type WSSender struct {
 	stopped chan struct{}
 }
 
+// NewSender creates a new Sender that uses WebSocket to send
+// messages to the server.
 func NewSender(logger types.Logger) *WSSender {
 	return &WSSender{
 		logger:       logger,

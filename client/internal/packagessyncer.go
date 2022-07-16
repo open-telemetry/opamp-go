@@ -23,6 +23,7 @@ type packagesSyncer struct {
 	doneCh   chan struct{}
 }
 
+// NewPackagesSyncer creates a new packages syncer.
 func NewPackagesSyncer(
 	logger types.Logger,
 	available *protobufs.PackagesAvailable,
@@ -40,6 +41,7 @@ func NewPackagesSyncer(
 	}
 }
 
+// Sync performs the package syncing process.
 func (s *packagesSyncer) Sync(ctx context.Context) error {
 
 	defer func() {
@@ -95,6 +97,7 @@ func (s *packagesSyncer) initStatuses() error {
 	return nil
 }
 
+// doSync performs the actual syncing process.
 func (s *packagesSyncer) doSync(ctx context.Context) {
 	hash, err := s.localState.AllPackagesHash()
 	if err != nil {
@@ -136,6 +139,7 @@ func (s *packagesSyncer) doSync(ctx context.Context) {
 	_ = s.reportStatuses(true)
 }
 
+// syncPackage downloads the package from the server and installs it.
 func (s *packagesSyncer) syncPackage(
 	ctx context.Context,
 	pkgName string,
@@ -214,6 +218,9 @@ func (s *packagesSyncer) syncPackage(
 	return err
 }
 
+// syncPackageFile downloads the package file from the server.
+// If the file already exists and contents are
+// unchanged, it is not downloaded again.
 func (s *packagesSyncer) syncPackageFile(
 	ctx context.Context, pkgName string, file *protobufs.DownloadableFile,
 ) error {
@@ -225,6 +232,7 @@ func (s *packagesSyncer) syncPackageFile(
 	return err
 }
 
+// shouldDownloadFile returns true if the file should be downloaded.
 func (s *packagesSyncer) shouldDownloadFile(
 	packageName string,
 	file *protobufs.DownloadableFile,
@@ -246,6 +254,7 @@ func (s *packagesSyncer) shouldDownloadFile(
 	return false, nil
 }
 
+// downloadFile downloads the file from the server.
 func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file *protobufs.DownloadableFile) error {
 	s.logger.Debugf("Downloading package %s file from %s", pkgName, file.DownloadUrl)
 
@@ -274,6 +283,9 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 	return nil
 }
 
+// deleteUnneededLocalPackages deletes local packages that are not
+// needed anymore. This is done by comparing the local package state
+// with the server's package state.
 func (s *packagesSyncer) deleteUnneededLocalPackages() error {
 	// Read the list of packages we have locally.
 	localPackages, err := s.localState.Packages()
@@ -303,6 +315,9 @@ func (s *packagesSyncer) deleteUnneededLocalPackages() error {
 	return lastErr
 }
 
+// reportStatuses saves the last reported statuses to provider and client state.
+// If sendImmediately is true, the statuses are scheduled to be
+// sent to the server.
 func (s *packagesSyncer) reportStatuses(sendImmediately bool) error {
 	// Save it in the user-supplied state provider.
 	if err := s.localState.SetLastReportedStatuses(s.statuses); err != nil {
