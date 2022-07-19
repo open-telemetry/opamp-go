@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	yamlv2 "gopkg.in/yaml.v2"
 	"math/rand"
 	"os"
 	"runtime"
@@ -37,6 +38,23 @@ service:
       processors: []
       exporters: [otlp]
 `
+
+type Metadata struct {
+	Name string
+}
+
+type Spec struct {
+	Config string
+}
+
+type CollectorConfig struct {
+	ApiVersion string
+	Kind       string
+	Metadata
+	Spec
+}
+
+const defaultConfigMap = "config_1"
 
 type Agent struct {
 	logger types.Logger
@@ -79,10 +97,11 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 }
 
 func (agent *Agent) start() error {
-	agent.opampClient = client.NewWebSocket(agent.logger)
-
+	//agent.opampClient = client.NewWebSocket(agent.logger)
+	agent.opampClient = client.NewHTTP(agent.logger)
 	settings := types.StartSettings{
-		OpAMPServerURL: "ws://127.0.0.1:4320/v1/opamp",
+		//OpAMPServerURL: "ws://127.0.0.1:4320/v1/opamp",
+		OpAMPServerURL: "http://127.0.0.1:3000/v1/opamp",
 		InstanceUid:    agent.instanceId.String(),
 		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func() {
@@ -317,6 +336,7 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	if msg.RemoteConfig != nil {
 		var err error
 		configChanged, err = agent.applyRemoteConfig(msg.RemoteConfig)
+
 		if err != nil {
 			agent.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
 				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
@@ -344,9 +364,28 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	}
 
 	if configChanged {
-		err := agent.opampClient.UpdateEffectiveConfig(ctx)
+		err := agent.ConfigWriteToFile(msg)
+		if err != nil {
+			agent.logger.Errorf(err.Error())
+		}
+		err = agent.opampClient.UpdateEffectiveConfig(ctx)
 		if err != nil {
 			agent.logger.Errorf(err.Error())
 		}
 	}
+}
+
+func (agent *Agent) ConfigWriteToFile(msg *types.MessageData) error {
+	yamlConfig := &CollectorConfig{}
+	configByteData := msg.RemoteConfig.Config.ConfigMap[defaultConfigMap].Body
+	err := yamlv2.Unmarshal(configByteData, yamlConfig)
+	if err != nil {
+		return err
+	}
+	filename := yamlConfig.Kind + "-" + yamlConfig.Name + ".yaml"
+	err = os.WriteFile(filename, []byte(yamlConfig.Config), 0644)
+	if err != nil {
+		return err
+	}
+	return nil
 }

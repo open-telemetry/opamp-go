@@ -38,8 +38,6 @@ build-example-server:
 	cd internal/examples && go build -o server/bin/server server/main.go
 
 run-examples: build-examples
-	cd internal/examples/server && ./bin/server &
-	@echo Server UI is running at http://localhost:4321/
 	cd internal/examples/agent && ./bin/agent
 
 # Generate Protobuf Go files.
