@@ -40,7 +40,7 @@ type MessageData struct {
 
 type Callbacks interface {
 	// OnConnect is called when the connection is successfully established to the Server.
-	// May be called after Start() is called and every time connected to the Server.
+	// May be called after Start() is called and every time a connection is established to the Server.
 	OnConnect()
 
 	// OnConnectFailed is called when the connection to the Server cannot be established.
