@@ -538,6 +538,8 @@ enum AgentCapabilities {
     AcceptsOtherConnectionSettings = 0x00000200;
     // The Agent can accept restart requests.
     AcceptsRestartCommand          = 0x00000400;
+    // The Agent will report Health via AgentToServer.health field.
+    ReportsHealth                  = 0x00000800;
 
     // Add new capabilities here, continuing with the least significant unused bit.
 }
