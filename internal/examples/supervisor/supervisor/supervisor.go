@@ -151,8 +151,17 @@ func (s *Supervisor) startOpAMP() error {
 			},
 			OnMessageFunc: s.onMessage,
 		},
+		Capabilities: protobufs.AgentCapabilities_AcceptsRemoteConfig |
+			protobufs.AgentCapabilities_ReportsEffectiveConfig |
+			protobufs.AgentCapabilities_ReportsOwnMetrics |
+			protobufs.AgentCapabilities_ReportsHealth,
 	}
 	err := s.opampClient.SetAgentDescription(s.createAgentDescription())
+	if err != nil {
+		return err
+	}
+
+	err = s.opampClient.SetHealth(&protobufs.AgentHealth{Up: false})
 	if err != nil {
 		return err
 	}

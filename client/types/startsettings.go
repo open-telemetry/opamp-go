@@ -38,4 +38,8 @@ type StartSettings struct {
 	// If nil then ReportsPackageStatuses and AcceptsPackages capabilities will be disabled,
 	// i.e. package status reporting and syncing from the Server will be disabled.
 	PackagesStateProvider PackagesStateProvider
+
+	// Defines the capabilities of the Agent. AgentCapabilities_ReportsStatus bit does not need to
+	// be set in this field, it will be set automatically since it is required by OpAMP protocol.
+	Capabilities protobufs.AgentCapabilities
 }
