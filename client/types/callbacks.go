@@ -41,6 +41,8 @@ type MessageData struct {
 type Callbacks interface {
 	// OnConnect is called when the connection is successfully established to the Server.
 	// May be called after Start() is called and every time a connection is established to the Server.
+	// For WebSocket clients this is called after the handshake is completed without any error.
+	// For HTTP clients this is called for any request if the response status is OK.
 	OnConnect()
 
 	// OnConnectFailed is called when the connection to the Server cannot be established.
