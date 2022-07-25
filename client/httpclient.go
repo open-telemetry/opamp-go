@@ -20,6 +20,7 @@ type httpClient struct {
 	sender *internal.HTTPSender
 }
 
+// NewHTTP creates a new OpAMP Client that uses HTTP transport.
 func NewHTTP(logger types.Logger) *httpClient {
 	if logger == nil {
 		logger = &sharedinternal.NopLogger{}
@@ -33,6 +34,7 @@ func NewHTTP(logger types.Logger) *httpClient {
 	return w
 }
 
+// Start implements OpAMPClient.Start.
 func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) error {
 	if err := c.common.PrepareStart(ctx, settings); err != nil {
 		return err
@@ -56,30 +58,37 @@ func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) er
 	return nil
 }
 
+// Stop implements OpAMPClient.Stop.
 func (c *httpClient) Stop(ctx context.Context) error {
 	return c.common.Stop(ctx)
 }
 
+// AgentDescription implements OpAMPClient.AgentDescription.
 func (c *httpClient) AgentDescription() *protobufs.AgentDescription {
 	return c.common.AgentDescription()
 }
 
+// SetAgentDescription implements OpAMPClient.SetAgentDescription.
 func (c *httpClient) SetAgentDescription(descr *protobufs.AgentDescription) error {
 	return c.common.SetAgentDescription(descr)
 }
 
+// SetHealth implements OpAMPClient.SetHealth.
 func (c *httpClient) SetHealth(health *protobufs.AgentHealth) error {
 	return c.common.SetHealth(health)
 }
 
+// UpdateEffectiveConfig implements OpAMPClient.UpdateEffectiveConfig.
 func (c *httpClient) UpdateEffectiveConfig(ctx context.Context) error {
 	return c.common.UpdateEffectiveConfig(ctx)
 }
 
+// SetRemoteConfigStatus implements OpAMPClient.SetRemoteConfigStatus.
 func (c *httpClient) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) error {
 	return c.common.SetRemoteConfigStatus(status)
 }
 
+// SetPackageStatuses implements OpAMPClient.SetPackageStatuses.
 func (c *httpClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) error {
 	return c.common.SetPackageStatuses(statuses)
 }

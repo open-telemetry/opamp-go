@@ -23,7 +23,7 @@ type Sender interface {
 	SetInstanceUid(instanceUid string) error
 }
 
-// SenderCommon is partial Sender implementation that is common WebSocket and plain
+// SenderCommon is partial Sender implementation that is common between WebSocket and plain
 // HTTP transports. This struct is intended to be embedded in the WebSocket and
 // HTTP Sender implementations.
 type SenderCommon struct {
@@ -34,6 +34,8 @@ type SenderCommon struct {
 	nextMessage NextMessage
 }
 
+// NewSenderCommon creates a new SenderCommon. This is intended to be used by
+// the WebSocket and HTTP Sender implementations.
 func NewSenderCommon() SenderCommon {
 	return SenderCommon{
 		hasPendingMessage: make(chan struct{}, 1),

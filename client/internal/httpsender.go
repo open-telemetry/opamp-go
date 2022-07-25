@@ -41,6 +41,8 @@ type HTTPSender struct {
 	receiveProcessor receivedProcessor
 }
 
+// NewHTTPSender creates a new Sender that uses HTTP to send messages
+// with default settings.
 func NewHTTPSender(logger types.Logger) *HTTPSender {
 	h := &HTTPSender{
 		SenderCommon:      NewSenderCommon(),
@@ -103,6 +105,9 @@ func (h *HTTPSender) SetRequestHeader(header http.Header) {
 	h.requestHeader.Set(headerContentType, contentTypeProtobuf)
 }
 
+// makeOneRequestRoundtrip sends a request and receives a response.
+// It will retry the request if the server responds with too many
+// requests or unavailable status.
 func (h *HTTPSender) makeOneRequestRoundtrip(ctx context.Context) {
 	resp, err := h.sendRequestWithRetries(ctx)
 	if err != nil {

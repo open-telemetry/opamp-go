@@ -56,12 +56,15 @@ type ClientCommon struct {
 	stoppedSignal chan struct{}
 }
 
+// NewClientCommon creates a new ClientCommon.
 func NewClientCommon(logger types.Logger, sender Sender) ClientCommon {
 	return ClientCommon{
 		Logger: logger, sender: sender, stoppedSignal: make(chan struct{}, 1),
 	}
 }
 
+// PrepareStart prepares the client state for the next Start() call.
+// It returns an error if the client is already started, or if the settings are invalid.
 func (c *ClientCommon) PrepareStart(
 	_ context.Context, settings types.StartSettings,
 ) error {
@@ -138,6 +141,7 @@ func (c *ClientCommon) PrepareStart(
 	return nil
 }
 
+// Stop stops the client. It returns an error if the client is not started.
 func (c *ClientCommon) Stop(ctx context.Context) error {
 	if !c.isStarted {
 		return errCannotStopNotStarted
@@ -159,12 +163,15 @@ func (c *ClientCommon) Stop(ctx context.Context) error {
 	return nil
 }
 
+// IsStopping returns true if Stop() was called.
 func (c *ClientCommon) IsStopping() bool {
 	c.isStoppingMutex.RLock()
 	defer c.isStoppingMutex.RUnlock()
 	return c.isStoppingFlag
 }
 
+// StartConnectAndRun initiates the connection with the Server and starts the
+// background goroutine that handles the communication unitl client is stopped.
 func (c *ClientCommon) StartConnectAndRun(runner func(ctx context.Context)) {
 	// Create a cancellable context.
 	runCtx, runCancel := context.WithCancel(context.Background())
@@ -286,6 +293,10 @@ func (c *ClientCommon) UpdateEffectiveConfig(ctx context.Context) error {
 	return nil
 }
 
+// SetRemoteConfigStatus sends a status update to the Server if the new RemoteConfigStatus
+// is different from the status we already have in the state.
+// It also remembers the new RemoteConfigStatus in the client state so that it can be
+// sent to the Server when the Server asks for it.
 func (c *ClientCommon) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) error {
 	if status.LastRemoteConfigHash == nil {
 		return errLastRemoteConfigHashNil
@@ -313,6 +324,10 @@ func (c *ClientCommon) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatu
 	return nil
 }
 
+// SetPackageStatuses sends a status update to the Server if the new PackageStatuses
+// are different from the ones we already have in the state.
+// It also remembers the new PackageStatuses in the client state so that it can be
+// sent to the Server when the Server asks for it.
 func (c *ClientCommon) SetPackageStatuses(statuses *protobufs.PackageStatuses) error {
 	if c.Capabilities&protobufs.AgentCapabilities_ReportsPackageStatuses == 0 {
 		return errReportsPackageStatusesNotSet
