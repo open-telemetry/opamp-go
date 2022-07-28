@@ -915,7 +915,7 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 					}
 				},
 			},
-			Capabilities: protobufs.AgentCapabilities_AcceptsRemoteConfig,
+			Capabilities: protobufs.AgentCapabilities_AcceptsRemoteConfig | protobufs.AgentCapabilities_ReportsRemoteConfig,
 		}
 		prepareClient(t, &settings, client)
 

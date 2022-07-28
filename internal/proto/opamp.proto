@@ -540,6 +540,8 @@ enum AgentCapabilities {
     AcceptsRestartCommand          = 0x00000400;
     // The Agent will report Health via AgentToServer.health field.
     ReportsHealth                  = 0x00000800;
+    // The Agent will report RemoteConfig status via AgentToServer.remote_config_status field.
+    ReportsRemoteConfig            = 0x00001000;
 
     // Add new capabilities here, continuing with the least significant unused bit.
 }

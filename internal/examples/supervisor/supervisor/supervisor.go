@@ -152,6 +152,7 @@ func (s *Supervisor) startOpAMP() error {
 			OnMessageFunc: s.onMessage,
 		},
 		Capabilities: protobufs.AgentCapabilities_AcceptsRemoteConfig |
+			protobufs.AgentCapabilities_ReportsRemoteConfig |
 			protobufs.AgentCapabilities_ReportsEffectiveConfig |
 			protobufs.AgentCapabilities_ReportsOwnMetrics |
 			protobufs.AgentCapabilities_ReportsHealth,
