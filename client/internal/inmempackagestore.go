@@ -46,7 +46,7 @@ func (l *InMemPackagesStore) PackageState(packageName string) (state types.Packa
 	return types.PackageState{Exists: false}, nil
 }
 
-func (l *InMemPackagesStore) CreatePackage(packageName string, typ protobufs.PackageAvailable_PackageType) error {
+func (l *InMemPackagesStore) CreatePackage(packageName string, typ protobufs.PackageType) error {
 	l.pkgState[packageName] = types.PackageState{
 		Exists: true,
 		Type:   typ,

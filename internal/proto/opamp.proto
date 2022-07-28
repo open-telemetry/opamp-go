@@ -73,16 +73,18 @@ message AgentToServer {
     // Agent to the Server.
     AgentDisconnect agent_disconnect = 9;
 
-    enum AgentToServerFlags {
-        FlagsUnspecified = 0;
-        // AgentToServerFlags is a bit mask. Values below define individual bits.
-
-        // The Agent requests Server go generate a new instance_uid, which will
-        // be sent back in ServerToAgent message
-        RequestInstanceUid     = 0x00000001;
-    }
     // Bit flags as defined by AgentToServerFlags bit masks.
     AgentToServerFlags flags = 10;
+}
+
+enum AgentToServerFlags {
+    AgentToServerFlags_Unspecified = 0;
+
+    // AgentToServerFlags is a bit mask. Values below define individual bits.
+
+    // The Agent requests Server go generate a new instance_uid, which will
+    // be sent back in ServerToAgent message
+    AgentToServerFlags_RequestInstanceUid     = 0x00000001;
 }
 
 // AgentDisconnect is the last message sent from the Agent to the Server. The Server
@@ -116,21 +118,8 @@ message ServerToAgent {
     // This field is set when the Server has packages to offer to the Agent.
     PackagesAvailable packages_available = 5;
 
-    enum Flags {
-        FlagsUnspecified = 0;
-
-        // Flags is a bit mask. Values below define individual bits.
-
-        // ReportFullState flag can be used by the Server if the Agent did not include the
-        // particular bit of information in the last status report (which is an allowed
-        // optimization) but the Server detects that it does not have it (e.g. was
-        // restarted and lost state). The detection happens using
-        // AgentToServer.sequence_num values.
-        // The Server asks the Agent to report full status.
-        ReportFullState = 0x00000001;
-    }
     // Bit flags as defined by Flags bit masks.
-    Flags flags = 6;
+    ServerToAgentFlags flags = 6;
 
     // Bitmask of flags defined by ServerCapabilities enum.
     // All bits that are not defined in ServerCapabilities enum MUST be set to 0
@@ -152,22 +141,37 @@ message ServerToAgent {
     ServerToAgentCommand command = 9;
 }
 
+enum ServerToAgentFlags {
+    ServerToAgentFlags_Unspecified = 0;
+
+    // Flags is a bit mask. Values below define individual bits.
+
+    // ReportFullState flag can be used by the Server if the Agent did not include the
+    // particular bit of information in the last status report (which is an allowed
+    // optimization) but the Server detects that it does not have it (e.g. was
+    // restarted and lost state). The detection happens using
+    // AgentToServer.sequence_num values.
+    // The Server asks the Agent to report full status.
+    ServerToAgentFlags_ReportFullState = 0x00000001;
+}
+
 enum ServerCapabilities {
     // The capabilities field is unspecified.
-    UnspecifiedServerCapability = 0;
+    ServerCapabilities_Unspecified = 0;
+
     // The Server can accept status reports. This bit MUST be set, since all Server
     // MUST be able to accept status reports.
-    AcceptsStatus                  = 0x00000001;
+    ServerCapabilities_AcceptsStatus            = 0x00000001;
     // The Server can offer remote configuration to the Agent.
-    OffersRemoteConfig             = 0x00000002;
+    ServerCapabilities_OffersRemoteConfig       = 0x00000002;
     // The Server can accept EffectiveConfig in AgentToServer.
-    AcceptsEffectiveConfig         = 0x00000004;
+    ServerCapabilities_AcceptsEffectiveConfig   = 0x00000004;
     // The Server can offer Packages.
-    OffersPackages                 = 0x00000008;
+    ServerCapabilities_OffersPackages           = 0x00000008;
     // The Server can accept Packages status.
-    AcceptsPackagesStatus          = 0x00000010;
+    ServerCapabilities_AcceptsPackagesStatus    = 0x00000010;
     // The Server can offer connection settings.
-    OffersConnectionSettings       = 0x00000020;
+    ServerCapabilities_OffersConnectionSettings = 0x00000020;
 
     // Add new capabilities here, continuing with the least significant unused bit.
 }
@@ -382,11 +386,6 @@ message PackagesAvailable {
 // hash then the Agent does not need to do anything, it already
 // has the right version of the package.
 message PackageAvailable {
-    // The type of the package, either an addon or a top-level package.
-    enum PackageType {
-        TopLevelPackage = 0;
-        AddonPackage    = 1;
-    }
     PackageType type = 1;
 
     // The package version that is available on the Server side. The Agent may for
@@ -402,6 +401,12 @@ message PackageAvailable {
     // used by the Agent to determine if the package it has is different from the
     // package the Server is offering.
     bytes hash = 4;
+}
+
+// The type of the package, either an addon or a top-level package.
+enum PackageType {
+    PackageType_TopLevel = 0;
+    PackageType_Addon    = 1;
 }
 
 message DownloadableFile {
@@ -424,22 +429,7 @@ message DownloadableFile {
 }
 
 message ServerErrorResponse {
-    enum Type {
-        // Unknown error. Something went wrong, but it is not known what exactly.
-        // The Agent SHOULD NOT retry the message.
-        // The error_message field may contain a description of the problem.
-        Unknown = 0;
-
-        // The AgentToServer message was malformed. The Agent SHOULD NOT retry
-        // the message.
-        BadRequest = 1;
-
-        // The Server is overloaded and unable to process the request. The Agent
-        // should retry the message later. retry_info field may be optionally
-        // set with additional information about retrying.
-        Unavailable = 2;
-    }
-    Type type = 1;
+    ServerErrorResponseType type = 1;
 
     // Error message in the string form, typically human readable.
     string error_message = 2;
@@ -450,6 +440,22 @@ message ServerErrorResponse {
     }
 }
 
+enum ServerErrorResponseType {
+    // Unknown error. Something went wrong, but it is not known what exactly.
+    // The Agent SHOULD NOT retry the message.
+    // The error_message field may contain a description of the problem.
+    ServerErrorResponseType_Unknown = 0;
+
+    // The AgentToServer message was malformed. The Agent SHOULD NOT retry
+    // the message.
+    ServerErrorResponseType_BadRequest = 1;
+
+    // The Server is overloaded and unable to process the request. The Agent
+    // should retry the message later. retry_info field may be optionally
+    // set with additional information about retrying.
+    ServerErrorResponseType_Unavailable = 2;
+}
+
 message RetryInfo {
     uint64 retry_after_nanoseconds = 1;
 }
@@ -457,12 +463,13 @@ message RetryInfo {
 // ServerToAgentCommand is sent from the Server to the Agent to request that the Agent
 // perform a command.
 message ServerToAgentCommand {
-    enum CommandType {
-        // The Agent should restart. This request will be ignored if the Agent does not
-        // support restart.
-        Restart = 0;
-    }
     CommandType type = 1;
+}
+
+enum CommandType {
+    // The Agent should restart. This request will be ignored if the Agent does not
+    // support restart.
+    CommandType_Restart = 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -509,39 +516,39 @@ message AgentDescription {
 
 enum AgentCapabilities {
     // The capabilities field is unspecified.
-    UnspecifiedAgentCapability = 0;
+    AgentCapabilities_Unspecified = 0;
     // The Agent can report status. This bit MUST be set, since all Agents MUST
     // report status.
-    ReportsStatus                  = 0x00000001;
+    AgentCapabilities_ReportsStatus                  = 0x00000001;
     // The Agent can accept remote configuration from the Server.
-    AcceptsRemoteConfig            = 0x00000002;
+    AgentCapabilities_AcceptsRemoteConfig            = 0x00000002;
     // The Agent will report EffectiveConfig in AgentToServer.
-    ReportsEffectiveConfig         = 0x00000004;
+    AgentCapabilities_ReportsEffectiveConfig         = 0x00000004;
     // The Agent can accept package offers.
-    AcceptsPackages                = 0x00000008;
+    AgentCapabilities_AcceptsPackages                = 0x00000008;
     // The Agent can report package status.
-    ReportsPackageStatuses         = 0x00000010;
+    AgentCapabilities_ReportsPackageStatuses         = 0x00000010;
     // The Agent can report own trace to the destination specified by
     // the Server via ConnectionSettingsOffers.own_traces field.
-    ReportsOwnTraces               = 0x00000020;
+    AgentCapabilities_ReportsOwnTraces               = 0x00000020;
     // The Agent can report own metrics to the destination specified by
     // the Server via ConnectionSettingsOffers.own_metrics field.
-    ReportsOwnMetrics              = 0x00000040;
+    AgentCapabilities_ReportsOwnMetrics              = 0x00000040;
     // The Agent can report own logs to the destination specified by
     // the Server via ConnectionSettingsOffers.own_logs field.
-    ReportsOwnLogs                 = 0x00000080;
+    AgentCapabilities_ReportsOwnLogs                 = 0x00000080;
     // The can accept connections settings for OpAMP via
     // ConnectionSettingsOffers.opamp field.
-    AcceptsOpAMPConnectionSettings = 0x00000100;
+    AgentCapabilities_AcceptsOpAMPConnectionSettings = 0x00000100;
     // The can accept connections settings for other destinations via
     // ConnectionSettingsOffers.other_connections field.
-    AcceptsOtherConnectionSettings = 0x00000200;
+    AgentCapabilities_AcceptsOtherConnectionSettings = 0x00000200;
     // The Agent can accept restart requests.
-    AcceptsRestartCommand          = 0x00000400;
+    AgentCapabilities_AcceptsRestartCommand          = 0x00000400;
     // The Agent will report Health via AgentToServer.health field.
-    ReportsHealth                  = 0x00000800;
+    AgentCapabilities_ReportsHealth                  = 0x00000800;
     // The Agent will report RemoteConfig status via AgentToServer.remote_config_status field.
-    ReportsRemoteConfig            = 0x00001000;
+    AgentCapabilities_ReportsRemoteConfig            = 0x00001000;
 
     // Add new capabilities here, continuing with the least significant unused bit.
 }
@@ -574,24 +581,25 @@ message RemoteConfigStatus {
     // the remote_config field in the response in the ServerToAgent message.
     bytes last_remote_config_hash = 1;
 
-    enum Status {
-        // The value of status field is not set.
-        UNSET = 0;
-
-        // Remote config was successfully applied by the Agent.
-        APPLIED = 1;
-
-        // Agent is currently applying the remote config that it received earlier.
-        APPLYING = 2;
-
-        // Agent tried to apply the config received earlier, but it failed.
-        // See error_message for more details.
-        FAILED = 3;
-    }
-    Status status = 2;
+    RemoteConfigStatuses status = 2;
 
     // Optional error message if status==FAILED.
     string error_message = 3;
+}
+
+enum RemoteConfigStatuses {
+    // The value of status field is not set.
+    RemoteConfigStatuses_UNSET = 0;
+
+    // Remote config was successfully applied by the Agent.
+    RemoteConfigStatuses_APPLIED = 1;
+
+    // Agent is currently applying the remote config that it received earlier.
+    RemoteConfigStatuses_APPLYING = 2;
+
+    // Agent tried to apply the config received earlier, but it failed.
+    // See error_message for more details.
+    RemoteConfigStatuses_FAILED = 3;
 }
 
 // The PackageStatuses message describes the status of all packages that the Agent
@@ -662,30 +670,31 @@ message PackageStatus {
     // Server offers a different version, but the Agent fails to install that version.
     bytes server_offered_hash = 5;
 
-    // The status of this package.
-    enum Status {
-        // Package is successfully installed by the Agent.
-        // The error_message field MUST NOT be set.
-        Installed = 0;
-
-        // Installation of this package has not yet started.
-        InstallPending = 1;
-
-        // Agent is currently downloading and installing the package.
-        // server_offered_hash field MUST be set to indicate the version that the
-        // Agent is installing. The error_message field MUST NOT be set.
-        Installing = 2;
-
-        // Agent tried to install the package but installation failed.
-        // server_offered_hash field MUST be set to indicate the version that the Agent
-        // tried to install. The error_message may also contain more details about
-        // the failure.
-        InstallFailed = 3;
-    }
-    Status status = 6;
+    PackageStatusEnum status = 6;
 
     // Error message if the status is erroneous.
     string error_message = 7;
+}
+
+// The status of this package.
+enum PackageStatusEnum {
+    // Package is successfully installed by the Agent.
+    // The error_message field MUST NOT be set.
+    PackageStatusEnum_Installed = 0;
+
+    // Installation of this package has not yet started.
+    PackageStatusEnum_InstallPending = 1;
+
+    // Agent is currently downloading and installing the package.
+    // server_offered_hash field MUST be set to indicate the version that the
+    // Agent is installing. The error_message field MUST NOT be set.
+    PackageStatusEnum_Installing = 2;
+
+    // Agent tried to install the package but installation failed.
+    // server_offered_hash field MUST be set to indicate the version that the Agent
+    // tried to install. The error_message may also contain more details about
+    // the failure.
+    PackageStatusEnum_InstallFailed = 3;
 }
 
 // Properties related to identification of the Agent, which can be overridden

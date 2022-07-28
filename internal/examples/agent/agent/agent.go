@@ -103,10 +103,10 @@ func (agent *Agent) start() error {
 			OnMessageFunc: agent.onMessage,
 		},
 		RemoteConfigStatus: agent.remoteConfigStatus,
-		Capabilities: protobufs.AgentCapabilities_AcceptsRemoteConfig |
-			protobufs.AgentCapabilities_ReportsRemoteConfig |
-			protobufs.AgentCapabilities_ReportsEffectiveConfig |
-			protobufs.AgentCapabilities_ReportsOwnMetrics,
+		Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
+			protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig |
+			protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
+			protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics,
 	}
 	err := agent.opampClient.SetAgentDescription(agent.agentDescription)
 	if err != nil {
@@ -324,13 +324,13 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 		if err != nil {
 			agent.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
 				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
-				Status:               protobufs.RemoteConfigStatus_FAILED,
+				Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
 				ErrorMessage:         err.Error(),
 			})
 		} else {
 			agent.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
 				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
-				Status:               protobufs.RemoteConfigStatus_APPLIED,
+				Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED,
 			})
 		}
 	}
