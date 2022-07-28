@@ -194,16 +194,34 @@ func (agent *Agent) updateEffectiveConfig(
 	}
 }
 
+func (agent *Agent) hasCapability(capability protobufs.AgentCapabilities) bool {
+	return agent.Status.Capabilities&capability != 0
+}
+
 func (agent *Agent) processStatusUpdate(
 	newStatus *protobufs.AgentToServer,
 	response *protobufs.ServerToAgent,
 ) {
-	if agent.Status != nil && agent.Status.SequenceNum+1 != newStatus.SequenceNum {
-		// We lost the previous status update. Request full status update from the agent.
-		response.Flags |= protobufs.ServerToAgent_ReportFullState
-	}
+	// We don't have any status for this Agent, or we lost the previous status update from the Agent, so our
+	// current status is not up-to-date.
+	lostPreviousUpdate := (agent.Status == nil) || (agent.Status != nil && agent.Status.SequenceNum+1 != newStatus.SequenceNum)
 
 	agentDescrChanged := agent.updateStatusField(newStatus)
+
+	// Check if any fields were omitted in the status report.
+	effectiveConfigOmitted := agent.hasCapability(protobufs.AgentCapabilities_ReportsEffectiveConfig) && newStatus.EffectiveConfig == nil
+	packageStatusesOmitted := agent.hasCapability(protobufs.AgentCapabilities_ReportsPackageStatuses) && newStatus.PackageStatuses == nil
+	remoteConfigStatusOmitted := agent.hasCapability(protobufs.AgentCapabilities_AcceptsRemoteConfig) && newStatus.RemoteConfigStatus == nil
+	healthOmitted := agent.hasCapability(protobufs.AgentCapabilities_ReportsHealth) && newStatus.Health == nil
+
+	// True if the status was not fully reported.
+	statusIsCompressed := effectiveConfigOmitted || packageStatusesOmitted || remoteConfigStatusOmitted || healthOmitted
+
+	if statusIsCompressed && lostPreviousUpdate {
+		// The status message is not fully set in the message that we received, but we lost the previous
+		// status update. Request full status update from the agent.
+		response.Flags |= protobufs.ServerToAgent_ReportFullState
+	}
 
 	configChanged := false
 	if agentDescrChanged {
@@ -219,8 +237,8 @@ func (agent *Agent) processStatusUpdate(
 	// If remote config is changed and different from what the Agent has then
 	// send the new remote config to the Agent.
 	if configChanged ||
-		(newStatus.RemoteConfigStatus != nil &&
-			bytes.Compare(newStatus.RemoteConfigStatus.LastRemoteConfigHash, agent.remoteConfig.ConfigHash) != 0) {
+		(agent.Status.RemoteConfigStatus != nil &&
+			bytes.Compare(agent.Status.RemoteConfigStatus.LastRemoteConfigHash, agent.remoteConfig.ConfigHash) != 0) {
 		// The new status resulted in a change in the config of the Agent or the Agent
 		// does not have this config (hash is different). Send the new config the Agent.
 		response.RemoteConfig = agent.remoteConfig
