@@ -121,7 +121,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 	var resp *http.Response
 	conn, resp, err := c.dialer.DialContext(ctx, c.url.String(), c.requestHeader)
 	if err != nil {
-		if c.common.Callbacks != nil {
+		if c.common.Callbacks != nil && !c.common.IsStopping() {
 			c.common.Callbacks.OnConnectFailed(err)
 		}
 		if resp != nil {
