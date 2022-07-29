@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -58,7 +59,7 @@ func (s *packagesSyncer) Sync(ctx context.Context) error {
 	}
 
 	// Now do the actual syncing in the background.
-	go s.doSync(ctx)
+	go s.doSync(ctx, &s.clientSyncedState.packageSyncMutex)
 
 	return nil
 }
@@ -98,7 +99,7 @@ func (s *packagesSyncer) initStatuses() error {
 }
 
 // doSync performs the actual syncing process.
-func (s *packagesSyncer) doSync(ctx context.Context) {
+func (s *packagesSyncer) doSync(ctx context.Context, mutex *sync.Mutex) {
 	hash, err := s.localState.AllPackagesHash()
 	if err != nil {
 		s.logger.Errorf("Package syncing failed: %V", err)
@@ -108,6 +109,9 @@ func (s *packagesSyncer) doSync(ctx context.Context) {
 		s.logger.Debugf("All packages are already up to date.")
 		return
 	}
+
+	(*mutex).Lock()
+	defer (*mutex).Unlock()
 
 	failed := false
 	if err := s.deleteUnneededLocalPackages(); err != nil {

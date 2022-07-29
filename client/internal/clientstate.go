@@ -32,6 +32,7 @@ var (
 // It is safe to call methods of this struct concurrently.
 type ClientSyncedState struct {
 	mutex sync.Mutex
+	packageSyncMutex sync.Mutex
 
 	agentDescription   *protobufs.AgentDescription
 	health             *protobufs.AgentHealth
