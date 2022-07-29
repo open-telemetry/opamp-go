@@ -28,15 +28,14 @@ type MockServer struct {
 	OnMessage   func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent
 	srv         *httptest.Server
 
-	expectedHandlers chan receivedMessageHandler
-	expectedComplete chan struct{}
-	isExpectMode     bool
+	expectedHandlers  chan receivedMessageHandler
+	expectedComplete  chan struct{}
+	isExpectMode      bool
+	enableCompression bool
 }
 
 const headerContentType = "Content-Type"
 const contentTypeProtobuf = "application/x-protobuf"
-
-var upgrader = websocket.Upgrader{}
 
 func StartMockServer(t *testing.T) *MockServer {
 	srv := &MockServer{
@@ -101,7 +100,15 @@ func (m *MockServer) handlePlainHttp(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (m *MockServer) EnableCompression() {
+	m.enableCompression = true
+}
+
 func (m *MockServer) handleWebSocket(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	var upgrader = websocket.Upgrader{
+		EnableCompression: m.enableCompression,
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return

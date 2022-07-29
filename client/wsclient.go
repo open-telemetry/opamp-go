@@ -65,6 +65,8 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 		return err
 	}
 
+	c.dialer.EnableCompression = settings.EnableCompression
+
 	if settings.TLSConfig != nil {
 		c.url.Scheme = "wss"
 	}
