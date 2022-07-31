@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"sync"
 
 	"github.com/stretchr/testify/assert"
 
@@ -74,7 +75,8 @@ func TestServerToAgentCommand(t *testing.T) {
 				remoteConfigStatus: &protobufs.RemoteConfigStatus{},
 			}
 			sender := WSSender{}
-			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, &sender, &clientSyncedState, nil, 0)
+			var mx sync.Mutex
+			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, &sender, &clientSyncedState, nil, 0, &mx)
 			receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 				Command: test.command,
 			})
@@ -97,7 +99,8 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 		},
 	}
 	clientSyncedState := ClientSyncedState{}
-	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, 0)
+	var mx sync.Mutex
+	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, 0, &mx)
 	receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 		Command: &protobufs.ServerToAgentCommand{
 			Type: protobufs.ServerToAgentCommand_Restart,

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sync/atomic"
 	"time"
+	"sync"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/open-telemetry/opamp-go/internal"
@@ -68,10 +69,11 @@ func (h *HTTPSender) Run(
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
+	packageSyncComplete *sync.Mutex,
 ) {
 	h.url = url
 	h.callbacks = callbacks
-	h.receiveProcessor = newReceivedProcessor(h.logger, callbacks, h, clientSyncedState, packagesStateProvider, capabilities)
+	h.receiveProcessor = newReceivedProcessor(h.logger, callbacks, h, clientSyncedState, packagesStateProvider, capabilities, packageSyncComplete)
 
 	for {
 		pollingTimer := time.NewTimer(time.Millisecond * time.Duration(atomic.LoadInt64(&h.pollingIntervalMs)))

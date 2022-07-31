@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -26,6 +27,9 @@ type receivedProcessor struct {
 
 	// Agent's capabilities defined at Start() time.
 	capabilities protobufs.AgentCapabilities
+
+	// Mutex for Package Syncing
+	packageSyncComplete *sync.Mutex
 }
 
 func newReceivedProcessor(
@@ -35,6 +39,7 @@ func newReceivedProcessor(
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
+	packageSyncComplete *sync.Mutex,
 ) receivedProcessor {
 	return receivedProcessor{
 		logger:                logger,
@@ -43,6 +48,7 @@ func newReceivedProcessor(
 		clientSyncedState:     clientSyncedState,
 		packagesStateProvider: packagesStateProvider,
 		capabilities:          capabilities,
+		packageSyncComplete:   packageSyncComplete,
 	}
 }
 
@@ -115,6 +121,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 					r.sender,
 					r.clientSyncedState,
 					r.packagesStateProvider,
+					r.packageSyncComplete,
 				)
 			} else {
 				r.logger.Debugf("Ignoring PackagesAvailable, agent does not have AcceptsPackages capability")

@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -30,13 +31,15 @@ func NewWSReceiver(
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
+	packageSyncComplete *sync.Mutex,
+
 ) *wsReceiver {
 	w := &wsReceiver{
 		conn:      conn,
 		logger:    logger,
 		sender:    sender,
 		callbacks: callbacks,
-		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider, capabilities),
+		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider, capabilities, packageSyncComplete),
 	}
 
 	return w
