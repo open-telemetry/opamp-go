@@ -54,6 +54,9 @@ type ClientCommon struct {
 
 	// Indicates that the Client is fully stopped.
 	stoppedSignal chan struct{}
+
+	// Mutex for Package Syncing
+	PackageSyncComplete sync.Mutex
 }
 
 // NewClientCommon creates a new ClientCommon.

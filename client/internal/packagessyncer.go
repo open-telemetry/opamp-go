@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"context"
+	"sync"
 	"errors"
 	"fmt"
 	"net/http"
@@ -21,6 +22,7 @@ type packagesSyncer struct {
 
 	statuses *protobufs.PackageStatuses
 	doneCh   chan struct{}
+	packageSyncComplete *sync.Mutex
 }
 
 // NewPackagesSyncer creates a new packages syncer.
@@ -30,6 +32,7 @@ func NewPackagesSyncer(
 	sender Sender,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
+	packageSyncComplete *sync.Mutex,
 ) *packagesSyncer {
 	return &packagesSyncer{
 		logger:            logger,
@@ -38,6 +41,7 @@ func NewPackagesSyncer(
 		clientSyncedState: clientSyncedState,
 		localState:        packagesStateProvider,
 		doneCh:            make(chan struct{}),
+		packageSyncComplete: packageSyncComplete,
 	}
 }
 
@@ -58,7 +62,7 @@ func (s *packagesSyncer) Sync(ctx context.Context) error {
 	}
 
 	// Now do the actual syncing in the background.
-	go s.doSync(ctx)
+	go s.doSync(ctx, s.packageSyncComplete)
 
 	return nil
 }
@@ -98,7 +102,10 @@ func (s *packagesSyncer) initStatuses() error {
 }
 
 // doSync performs the actual syncing process.
-func (s *packagesSyncer) doSync(ctx context.Context) {
+func (s *packagesSyncer) doSync(ctx context.Context, mutex *sync.Mutex) {
+
+	(*mutex).Lock()
+	defer (*mutex).Unlock()
 	hash, err := s.localState.AllPackagesHash()
 	if err != nil {
 		s.logger.Errorf("Package syncing failed: %V", err)
