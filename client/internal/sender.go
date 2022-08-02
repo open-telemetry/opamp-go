@@ -3,6 +3,7 @@ package internal
 import (
 	"errors"
 
+	"github.com/oklog/ulid/v2"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -67,6 +68,10 @@ func (h *SenderCommon) NextMessage() *NextMessage {
 func (h *SenderCommon) SetInstanceUid(instanceUid string) error {
 	if instanceUid == "" {
 		return errors.New("cannot set instance uid to empty value")
+	}
+
+	if _, err := ulid.ParseStrict(instanceUid); err != nil {
+		return err
 	}
 
 	h.nextMessage.Update(

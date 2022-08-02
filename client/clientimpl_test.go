@@ -117,6 +117,17 @@ func TestConnectNoServer(t *testing.T) {
 	})
 }
 
+func TestInvalidInstanceId(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		settings := createNoServerSettings()
+		prepareClient(t, &settings, client)
+		settings.InstanceUid = "invalidid"
+
+		err := client.Start(context.Background(), settings)
+		assert.Error(t, err)
+	})
+}
+
 func TestOnConnectFail(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		var connectErr atomic.Value
