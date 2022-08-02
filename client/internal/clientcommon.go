@@ -16,6 +16,7 @@ var (
 	ErrAgentDescriptionNoAttributes = errors.New("AgentDescription has no attributes defined")
 	ErrAgentHealthMissing           = errors.New("AgentHealth is nil")
 	ErrReportsEffectiveConfigNotSet = errors.New("ReportsEffectiveConfig capability is not set")
+	ErrReportsRemoteConfigNotSet    = errors.New("ReportsRemoteConfig capability is not set")
 	ErrPackagesStateProviderNotSet  = errors.New("PackagesStateProvider must be set")
 	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 
@@ -293,6 +294,10 @@ func (c *ClientCommon) UpdateEffectiveConfig(ctx context.Context) error {
 // It also remembers the new RemoteConfigStatus in the client state so that it can be
 // sent to the Server when the Server asks for it.
 func (c *ClientCommon) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) error {
+	if c.Capabilities&protobufs.AgentCapabilities_ReportsRemoteConfig == 0 {
+		return ErrReportsRemoteConfigNotSet
+	}
+
 	if status.LastRemoteConfigHash == nil {
 		return errLastRemoteConfigHashNil
 	}

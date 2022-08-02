@@ -211,7 +211,7 @@ func (agent *Agent) processStatusUpdate(
 	// Check if any fields were omitted in the status report.
 	effectiveConfigOmitted := agent.hasCapability(protobufs.AgentCapabilities_ReportsEffectiveConfig) && newStatus.EffectiveConfig == nil
 	packageStatusesOmitted := agent.hasCapability(protobufs.AgentCapabilities_ReportsPackageStatuses) && newStatus.PackageStatuses == nil
-	remoteConfigStatusOmitted := agent.hasCapability(protobufs.AgentCapabilities_AcceptsRemoteConfig) && newStatus.RemoteConfigStatus == nil
+	remoteConfigStatusOmitted := agent.hasCapability(protobufs.AgentCapabilities_ReportsRemoteConfig) && newStatus.RemoteConfigStatus == nil
 	healthOmitted := agent.hasCapability(protobufs.AgentCapabilities_ReportsHealth) && newStatus.Health == nil
 
 	// True if the status was not fully reported.
