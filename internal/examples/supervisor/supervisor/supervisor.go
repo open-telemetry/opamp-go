@@ -151,10 +151,10 @@ func (s *Supervisor) startOpAMP() error {
 			},
 			OnMessageFunc: s.onMessage,
 		},
-		Capabilities: protobufs.AgentCapabilities_AcceptsRemoteConfig |
-			protobufs.AgentCapabilities_ReportsEffectiveConfig |
-			protobufs.AgentCapabilities_ReportsOwnMetrics |
-			protobufs.AgentCapabilities_ReportsHealth,
+		Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
+			protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
+			protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
+			protobufs.AgentCapabilities_AgentCapabilities_ReportsHealth,
 	}
 	err := s.opampClient.SetAgentDescription(s.createAgentDescription())
 	if err != nil {
@@ -472,13 +472,13 @@ func (s *Supervisor) onMessage(ctx context.Context, msg *types.MessageData) {
 		if err != nil {
 			s.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
 				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
-				Status:               protobufs.RemoteConfigStatus_FAILED,
+				Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
 				ErrorMessage:         err.Error(),
 			})
 		} else {
 			s.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
 				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
-				Status:               protobufs.RemoteConfigStatus_APPLIED,
+				Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED,
 			})
 		}
 	}

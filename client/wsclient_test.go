@@ -103,8 +103,8 @@ func TestVerifyWSCompress(t *testing.T) {
 						}, nil
 					},
 				},
-				Capabilities: protobufs.AgentCapabilities_AcceptsRemoteConfig |
-					protobufs.AgentCapabilities_ReportsEffectiveConfig,
+				Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
+					protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig,
 			}
 			settings.OpAMPServerURL = "ws://" + proxy.IncomingEndpoint()
 

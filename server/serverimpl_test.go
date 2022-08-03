@@ -139,7 +139,7 @@ func TestServerReceiveSendMessage(t *testing.T) {
 			// Send a response.
 			response := protobufs.ServerToAgent{
 				InstanceUid:  message.InstanceUid,
-				Capabilities: protobufs.ServerCapabilities_AcceptsStatus,
+				Capabilities: protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus,
 			}
 			return &response
 		},
@@ -180,7 +180,7 @@ func TestServerReceiveSendMessage(t *testing.T) {
 
 	// Verify the response.
 	assert.EqualValues(t, sendMsg.InstanceUid, response.InstanceUid)
-	assert.EqualValues(t, protobufs.ServerCapabilities_AcceptsStatus, response.Capabilities)
+	assert.EqualValues(t, protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus, response.Capabilities)
 }
 
 func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
@@ -200,7 +200,7 @@ func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
 			// Send a response.
 			response := protobufs.ServerToAgent{
 				InstanceUid:  message.InstanceUid,
-				Capabilities: protobufs.ServerCapabilities_AcceptsStatus,
+				Capabilities: protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus,
 			}
 			return &response
 		},
@@ -244,7 +244,7 @@ func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
 
 	// Verify the response.
 	assert.EqualValues(t, sendMsg.InstanceUid, response.InstanceUid)
-	assert.EqualValues(t, protobufs.ServerCapabilities_AcceptsStatus, response.Capabilities)
+	assert.EqualValues(t, protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus, response.Capabilities)
 
 	eventually(t, func() bool { return atomic.LoadInt32(&onCloseCalled) == 1 })
 }

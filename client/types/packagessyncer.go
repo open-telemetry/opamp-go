@@ -29,7 +29,7 @@ type PackageState struct {
 	// must be ignored if this field is false.
 	Exists bool
 
-	Type    protobufs.PackageAvailable_PackageType
+	Type    protobufs.PackageType
 	Hash    []byte
 	Version string
 }
@@ -64,7 +64,7 @@ type PackagesStateProvider interface {
 
 	// CreatePackage creates the package locally. If the package existed must return an error.
 	// If the package did not exist its hash should be set to nil.
-	CreatePackage(packageName string, typ protobufs.PackageAvailable_PackageType) error
+	CreatePackage(packageName string, typ protobufs.PackageType) error
 
 	// FileContentHash returns the content hash of the package file that exists locally.
 	// Returns (nil,nil) if package or package file is not found.

@@ -65,7 +65,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 		msgData := &types.MessageData{}
 
 		if msg.RemoteConfig != nil {
-			if r.hasCapability(protobufs.AgentCapabilities_AcceptsRemoteConfig) {
+			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig) {
 				msgData.RemoteConfig = msg.RemoteConfig
 			} else {
 				r.logger.Debugf("Ignoring RemoteConfig, agent does not have AcceptsRemoteConfig capability")
@@ -74,7 +74,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 
 		if msg.ConnectionSettings != nil {
 			if msg.ConnectionSettings.OwnMetrics != nil {
-				if r.hasCapability(protobufs.AgentCapabilities_ReportsOwnMetrics) {
+				if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics) {
 					msgData.OwnMetricsConnSettings = msg.ConnectionSettings.OwnMetrics
 				} else {
 					r.logger.Debugf("Ignoring OwnMetrics, agent does not have ReportsOwnMetrics capability")
@@ -82,7 +82,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 			}
 
 			if msg.ConnectionSettings.OwnTraces != nil {
-				if r.hasCapability(protobufs.AgentCapabilities_ReportsOwnTraces) {
+				if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnTraces) {
 					msgData.OwnTracesConnSettings = msg.ConnectionSettings.OwnTraces
 				} else {
 					r.logger.Debugf("Ignoring OwnTraces, agent does not have ReportsOwnTraces capability")
@@ -90,7 +90,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 			}
 
 			if msg.ConnectionSettings.OwnLogs != nil {
-				if r.hasCapability(protobufs.AgentCapabilities_ReportsOwnLogs) {
+				if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnLogs) {
 					msgData.OwnLogsConnSettings = msg.ConnectionSettings.OwnLogs
 				} else {
 					r.logger.Debugf("Ignoring OwnLogs, agent does not have ReportsOwnLogs capability")
@@ -98,7 +98,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 			}
 
 			if msg.ConnectionSettings.OtherConnections != nil {
-				if r.hasCapability(protobufs.AgentCapabilities_AcceptsOtherConnectionSettings) {
+				if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOtherConnectionSettings) {
 					msgData.OtherConnSettings = msg.ConnectionSettings.OtherConnections
 				} else {
 					r.logger.Debugf("Ignoring OtherConnections, agent does not have AcceptsOtherConnectionSettings capability")
@@ -107,7 +107,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 		}
 
 		if msg.PackagesAvailable != nil {
-			if r.hasCapability(protobufs.AgentCapabilities_AcceptsPackages) {
+			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages) {
 				msgData.PackagesAvailable = msg.PackagesAvailable
 				msgData.PackageSyncer = NewPackagesSyncer(
 					r.logger,
@@ -149,12 +149,12 @@ func (r *receivedProcessor) hasCapability(capability protobufs.AgentCapabilities
 
 func (r *receivedProcessor) rcvFlags(
 	ctx context.Context,
-	flags protobufs.ServerToAgent_Flags,
+	flags protobufs.ServerToAgentFlags,
 ) (scheduleSend bool, err error) {
 	// If the Server asks to report data we fetch it from the client state storage and
 	// send to the Server.
 
-	if flags&protobufs.ServerToAgent_ReportFullState != 0 {
+	if flags&protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState != 0 {
 		cfg, err := r.callbacks.GetEffectiveConfig(ctx)
 		if err != nil {
 			r.logger.Errorf("Cannot GetEffectiveConfig: %v", err)
@@ -185,7 +185,7 @@ func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, sett
 		return
 	}
 
-	if r.hasCapability(protobufs.AgentCapabilities_AcceptsOpAMPConnectionSettings) {
+	if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings) {
 		err := r.callbacks.OnOpampConnectionSettings(ctx, settings.Opamp)
 		if err == nil {
 			// TODO: verify connection using new settings.
