@@ -444,16 +444,16 @@ enum ServerErrorResponseType {
     // Unknown error. Something went wrong, but it is not known what exactly.
     // The Agent SHOULD NOT retry the message.
     // The error_message field may contain a description of the problem.
-    ServerErrorResponse_Unknown = 0;
+    ServerErrorResponseType_Unknown = 0;
 
     // The AgentToServer message was malformed. The Agent SHOULD NOT retry
     // the message.
-    ServerErrorResponse_BadRequest = 1;
+    ServerErrorResponseType_BadRequest = 1;
 
     // The Server is overloaded and unable to process the request. The Agent
     // should retry the message later. retry_info field may be optionally
     // set with additional information about retrying.
-    ServerErrorResponse_Unavailable = 2;
+    ServerErrorResponseType_Unavailable = 2;
 }
 
 message RetryInfo {
