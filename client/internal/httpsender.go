@@ -157,8 +157,7 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 						h.callbacks.OnConnect()
 						return resp, nil
 
-					case http.StatusTooManyRequests:
-					case http.StatusServiceUnavailable:
+					case http.StatusTooManyRequests, http.StatusServiceUnavailable:
 						interval = recalculateInterval(interval, resp)
 						err = fmt.Errorf("server response code=%d", resp.StatusCode)
 
