@@ -2,7 +2,6 @@ package internal
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -82,7 +81,6 @@ func TestHTTPSenderRespectsRetryAfterHeader(t *testing.T) {
 			headers := testCase.tries[attempt].headers
 			code := testCase.tries[attempt].statusCode
 			body := testCase.tries[attempt].body
-			fmt.Println(headers, code, body)
 			for k, v := range headers {
 				w.Header().Set(k, v)
 			}
@@ -114,7 +112,6 @@ func TestHTTPSenderRespectsRetryAfterHeader(t *testing.T) {
 		resp, err := sender.sendRequestWithRetries(ctx)
 		assert.NoError(t, err)
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
-		fmt.Println(time.Since(start), testCase.duration)
 		assert.True(t, time.Since(start) > testCase.duration)
 		cancel()
 	}
