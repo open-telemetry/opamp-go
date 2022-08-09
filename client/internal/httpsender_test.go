@@ -37,6 +37,7 @@ func TestHTTPSenderRunsUntilContextCancelled(t *testing.T) {
 	sender.Run(
 		ctx, url, callbacks, &ClientSyncedState{}, NewInMemPackagesStore(), capabilities,
 	)
+	srv.Close()
 }
 
 func TestHTTPSenderRespectsRetryAfterHeader(t *testing.T) {
@@ -114,6 +115,7 @@ func TestHTTPSenderRespectsRetryAfterHeader(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.True(t, time.Since(start) > testCase.duration)
 		cancel()
+		srv.Close()
 	}
 }
 
@@ -173,6 +175,7 @@ func TestHTTPSenderSendsMessageToReceiveProcessorOnSuccess(t *testing.T) {
 	sender.makeOneRequestRoundtrip(ctx)
 	assert.Equal(t, atomic.LoadInt64(&msgReceived), int64(1))
 	cancel()
+	srv.Close()
 }
 
 func TestHTTPSenderReturnsWithoutRetryOnCancelledContext(t *testing.T) {
@@ -197,6 +200,7 @@ func TestHTTPSenderReturnsWithoutRetryOnCancelledContext(t *testing.T) {
 	cancel()
 	_, err := sender.sendRequestWithRetries(ctx)
 	assert.Error(t, err)
+	srv.Close()
 }
 
 func TestHTTPSenderReturnsNothingToSend(t *testing.T) {
@@ -211,4 +215,5 @@ func TestHTTPSenderReturnsNothingToSend(t *testing.T) {
 	assert.Nil(t, resp)
 	assert.Nil(t, err)
 	cancel()
+	srv.Close()
 }
