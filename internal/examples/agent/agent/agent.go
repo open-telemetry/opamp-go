@@ -104,6 +104,7 @@ func (agent *Agent) start() error {
 		},
 		RemoteConfigStatus: agent.remoteConfigStatus,
 		Capabilities: protobufs.AgentCapabilities_AcceptsRemoteConfig |
+			protobufs.AgentCapabilities_ReportsRemoteConfig |
 			protobufs.AgentCapabilities_ReportsEffectiveConfig |
 			protobufs.AgentCapabilities_ReportsOwnMetrics,
 	}
