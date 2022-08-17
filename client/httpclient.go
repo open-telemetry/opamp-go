@@ -42,10 +42,12 @@ func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) er
 
 	c.opAMPServerURL = settings.OpAMPServerURL
 
-	// TODO: implement compression based on settings.EnableCompression value.
-
 	// Prepare Server connection settings.
 	c.sender.SetRequestHeader(settings.Header)
+
+	if settings.EnableCompression {
+		c.sender.EnableCompression()
+	}
 
 	// Prepare the first message to send.
 	err := c.common.PrepareFirstMessage(ctx)

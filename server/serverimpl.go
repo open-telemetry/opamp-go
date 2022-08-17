@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"io"
@@ -21,6 +23,9 @@ var (
 
 const defaultOpAMPPath = "/v1/opamp"
 const headerContentType = "Content-Type"
+const headerContentEncoding = "Content-Encoding"
+const headerAcceptEncoding = "Accept-Encoding"
+const contentEncodingGzip = "gzip"
 const contentTypeProtobuf = "application/x-protobuf"
 
 type server struct {
@@ -228,8 +233,45 @@ func (s *server) handleWSConnection(wsConn *websocket.Conn) {
 	}
 }
 
+func decompressGzip(data []byte) ([]byte, error) {
+	r, err := gzip.NewReader(bytes.NewBuffer(data))
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return io.ReadAll(r)
+}
+
+func (s *server) readReqBody(req *http.Request) ([]byte, error) {
+	data, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	if req.Header.Get(headerContentEncoding) == contentEncodingGzip {
+		data, err = decompressGzip(data)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return data, nil
+}
+
+func compressGzip(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	w := gzip.NewWriter(&buf)
+	_, err := w.Write(data)
+	if err != nil {
+		return nil, err
+	}
+	err = w.Close()
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter) {
-	bytes, err := io.ReadAll(req.Body)
+	bytes, err := s.readReqBody(req)
 	if err != nil {
 		s.logger.Debugf("Cannot read HTTP body: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
@@ -280,6 +322,15 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 
 	// Send the response.
 	w.Header().Set(headerContentType, contentTypeProtobuf)
+	if req.Header.Get(headerAcceptEncoding) == contentEncodingGzip {
+		bytes, err = compressGzip(bytes)
+		if err != nil {
+			s.logger.Errorf("Cannot compress response: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set(headerContentEncoding, contentEncodingGzip)
+	}
 	_, err = w.Write(bytes)
 
 	if err != nil {

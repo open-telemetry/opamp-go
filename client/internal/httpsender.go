@@ -2,6 +2,7 @@ package internal
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -21,6 +22,9 @@ import (
 const OpAMPPlainHTTPMethod = "POST"
 const defaultPollingIntervalMs = 30 * 1000 // default interval is 30 seconds.
 
+const headerContentEncoding = "Content-Encoding"
+const encodingTypeGZip = "gzip"
+
 // HTTPSender allows scheduling messages to send. Once run, it will loop through
 // a request/response cycle for each message to send and will process all received
 // responses using a receivedProcessor. If there are no pending messages to send
@@ -28,11 +32,12 @@ const defaultPollingIntervalMs = 30 * 1000 // default interval is 30 seconds.
 type HTTPSender struct {
 	SenderCommon
 
-	url               string
-	logger            types.Logger
-	client            *http.Client
-	callbacks         types.Callbacks
-	pollingIntervalMs int64
+	url                string
+	logger             types.Logger
+	client             *http.Client
+	callbacks          types.Callbacks
+	pollingIntervalMs  int64
+	compressionEnabled bool
 
 	// Headers to send with all requests.
 	requestHeader http.Header
@@ -204,7 +209,23 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*http.Request, error) 
 		return nil, err
 	}
 
-	body := bytes.NewReader(data)
+	var body io.Reader
+
+	if h.compressionEnabled {
+		var buf bytes.Buffer
+		g := gzip.NewWriter(&buf)
+		if _, err = g.Write(data); err != nil {
+			h.logger.Errorf("Failed to compress message: %v", err)
+			return nil, err
+		}
+		if err = g.Close(); err != nil {
+			h.logger.Errorf("Failed to close the writer: %v", err)
+			return nil, err
+		}
+		body = &buf
+	} else {
+		body = bytes.NewReader(data)
+	}
 	req, err := http.NewRequestWithContext(ctx, OpAMPPlainHTTPMethod, h.url, body)
 	if err != nil {
 		return nil, err
@@ -236,4 +257,9 @@ func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
 // next polling cycle.
 func (h *HTTPSender) SetPollingInterval(duration time.Duration) {
 	atomic.StoreInt64(&h.pollingIntervalMs, duration.Milliseconds())
+}
+
+func (h *HTTPSender) EnableCompression() {
+	h.compressionEnabled = true
+	h.requestHeader.Set(headerContentEncoding, encodingTypeGZip)
 }
