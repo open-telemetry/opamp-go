@@ -31,11 +31,24 @@ const agentVersion = "1.0.0"
 // A Collector config that should be always applied.
 // Enables JSON log output for the Agent.
 const localOverrideAgentConfig = `
+exporters:
+  otlp:
+    endpoint: localhost:1111
+
+receivers:
+  otlp:
+    protocols:
+      grpc: {}
+      http: {}
+
 service:
   telemetry:
     logs:
       encoding: json
-`
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlp]`
 
 // Supervisor implements supervising of OpenTelemetry Collector and uses OpAMPClient
 // to work with an OpAMP Server.
@@ -411,8 +424,8 @@ func (s *Supervisor) runAgentProcess() {
 
 		case <-s.commander.Done():
 			errMsg := fmt.Sprintf(
-				"Agent process PID=%d exited unexpectedly, exit code=%d. Will restart in a bit...",
-				s.commander.Pid(), s.commander.ExitCode(),
+				"Agent process PID=%d exited unexpectedly, exit code=%d, effective configurations=\n%sWill restart in a bit...",
+				s.commander.Pid(), s.commander.ExitCode(), s.effectiveConfig.Load(),
 			)
 			s.logger.Debugf(errMsg)
 			s.opampClient.SetHealth(&protobufs.AgentHealth{Up: false, LastError: errMsg})

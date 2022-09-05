@@ -37,6 +37,11 @@ build-example-supervisor:
 build-example-server:
 	cd internal/examples && go build -o server/bin/server server/main.go
 
+run-examples-supervisor: build-examples
+	cd internal/examples/server && ./bin/server &
+	@echo Server UI is running at http://localhost:4321/
+	cd internal/examples/supervisor && ./bin/supervisor
+
 run-examples: build-examples
 	cd internal/examples/server && ./bin/server &
 	@echo Server UI is running at http://localhost:4321/
