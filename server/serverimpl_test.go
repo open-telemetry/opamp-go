@@ -51,6 +51,10 @@ func TestServerStartStop(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestServerStartCloseConnection(t *testing.T) {
+
+}
+
 func TestServerStartRejectConnection(t *testing.T) {
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
@@ -121,6 +125,36 @@ func TestServerStartAcceptConnection(t *testing.T) {
 
 	// Close the connection from client side.
 	conn.Close()
+
+	// Verify that the Server receives the closing notification.
+	eventually(t, func() bool { return atomic.LoadInt32(&connectionCloseCalled) == 1 })
+}
+
+func TestServerCloseConnection(t *testing.T) {
+	connectionCloseCalled := int32(0)
+	callback := CallbacksStruct{
+		OnConnectionCloseFunc: func(conn types.Connection) {
+			atomic.StoreInt32(&connectionCloseCalled, 1)
+		},
+	}
+
+	// Start a Server.
+	settings := &StartSettings{Settings: Settings{Callbacks: callback}}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	// Connect to the Server.
+	conn, _, err := dialClient(settings)
+
+	// Verify that the connection is successful.
+	assert.NoError(t, err)
+	assert.True(t, atomic.LoadInt32(&connectionCloseCalled) == 0)
+
+	// Close connection from server side
+	srvConn := wsConnection{wsConn: conn}
+	err = srvConn.Close()
+
+	assert.NoError(t, err)
 
 	// Verify that the Server receives the closing notification.
 	eventually(t, func() bool { return atomic.LoadInt32(&connectionCloseCalled) == 1 })
