@@ -30,3 +30,7 @@ func (c httpConnection) Send(_ context.Context, _ *protobufs.ServerToAgent) erro
 	// be sent after the onMessage callback returns.
 	return errInvalidHTTPConnection
 }
+
+func (c httpConnection) Close() error {
+	return c.conn.Close()
+}

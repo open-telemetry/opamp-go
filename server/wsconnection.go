@@ -29,3 +29,7 @@ func (c wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent) 
 	}
 	return c.wsConn.WriteMessage(websocket.BinaryMessage, bytes)
 }
+
+func (c wsConnection) Close() error {
+	return c.wsConn.Close()
+}
