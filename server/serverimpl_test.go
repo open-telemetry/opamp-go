@@ -51,10 +51,6 @@ func TestServerStartStop(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestServerStartCloseConnection(t *testing.T) {
-
-}
-
 func TestServerStartRejectConnection(t *testing.T) {
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
