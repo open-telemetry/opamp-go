@@ -126,7 +126,7 @@ func TestServerStartAcceptConnection(t *testing.T) {
 	eventually(t, func() bool { return atomic.LoadInt32(&connectionCloseCalled) == 1 })
 }
 
-func TestServerCloseConnection(t *testing.T) {
+func TestDisconnectWSConnection(t *testing.T) {
 	connectionCloseCalled := int32(0)
 	callback := CallbacksStruct{
 		OnConnectionCloseFunc: func(conn types.Connection) {
@@ -148,11 +148,15 @@ func TestServerCloseConnection(t *testing.T) {
 
 	// Close connection from server side
 	srvConn := wsConnection{wsConn: conn}
-	err = srvConn.Close()
-
+	err = srvConn.Disconnect()
 	assert.NoError(t, err)
 
-	// Verify that the Server receives the closing notification.
+	// Verify connection disconnected by re-close it
+	err = conn.Close()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "close tcp")
+
+	// Verify connection disconnected from server side
 	eventually(t, func() bool { return atomic.LoadInt32(&connectionCloseCalled) == 1 })
 }
 
