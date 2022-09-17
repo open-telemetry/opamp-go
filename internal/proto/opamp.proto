@@ -482,14 +482,17 @@ message ServerToAgentCommand {
 // the type is not recognized, the message MUST be ignored and a reply with CustomMessageResponse with Status IGNORED
 // MUST be sent.
 message CustomMessage {
+    // Hash of all fields of this message. Used to identify this message in the CustomMessageResponse.
+    bytes hash = 1;
+
     // The message type should a reverse FQDN that uniquely identifies the custom message type.
-    string type = 0;
+    string type = 2;
 
     // Optional string body of the message. The Agent and Server must agree on the format of the contents.
-    string body = 1;
+    string body = 3;
 
     // Optional string body of the message. The Agent and Server must agree on the format of the contents.
-    bytes data = 2;
+    bytes data = 4;
 }
 
 // CustomMessageResponse MUST be returned in response to a CustomMessage. It allows the sender of the CustomMessage to
@@ -515,7 +518,10 @@ message CustomMessageResponse {
     Status status = 1;
 
     // Error message in the string form, typically human readable.
-    string error_message = 1;
+    string error_message = 2;
+
+    // The hash of the CustomMessage that was last received in the CustomMessage.hash field.
+    bytes last_custom_message_hash = 3;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
