@@ -114,6 +114,12 @@ type Callbacks interface {
 
 	// OnCommand is called when the Server requests that the connected Agent perform a command.
 	OnCommand(command *protobufs.ServerToAgentCommand) error
+
+	// OnCustomMessage is called when either a CustomMessageResponse is sent from the server or a new CustomMessage
+	// message is sent from the server, or both. Either the response or the message will be non-nil. A
+	// CustomMessageResponse will be returned to the server based on the return values. To ignore an unsupported message,
+	// return false, nil.
+	OnCustomMessage(ctx context.Context, lastResponse *protobufs.CustomMessageResponse, message *protobufs.CustomMessage) (ok bool, err error)
 }
 
 type CallbacksStruct struct {
