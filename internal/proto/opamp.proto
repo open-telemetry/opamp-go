@@ -83,6 +83,12 @@ message AgentToServer {
     }
     // Bit flags as defined by AgentToServerFlags bit masks.
     AgentToServerFlags flags = 10;
+
+    // CustomMessage allows the OpAMP connection to be used to send messages that are not defined by the OpAMP protocol.
+    CustomMessage custom_message = 11;
+
+    // CustomMessageResponse MUST be sent in response to a CustomMessage in a ServerToAgent message.
+    CustomMessageResponse custom_message_response = 12;
 }
 
 // AgentDisconnect is the last message sent from the Agent to the Server. The Server
@@ -150,6 +156,12 @@ message ServerToAgent {
     // with fields other than instance_uid and capabilities. If specified, other fields will be ignored and the command
     // will be performed.
     ServerToAgentCommand command = 9;
+
+    // CustomMessage allows the OpAMP connection to be used to send messages that are not defined by the OpAMP protocol.
+    CustomMessage custom_message = 10;
+
+    // CustomMessageResponse MUST be sent in response to a CustomMessage in a AgentToServer message.
+    CustomMessageResponse custom_message_response = 11;
 }
 
 enum ServerCapabilities {
@@ -463,6 +475,47 @@ message ServerToAgentCommand {
         Restart = 0;
     }
     CommandType type = 1;
+}
+
+// CustomMessage allows for custom messages to be sent between the Agent and Server. It is supported on ServerToAgent
+// and AgentToServer. It requires that the agent and server both agree on the contents and encoding of the message. If
+// the type is not recognized, the message MUST be ignored and a reply with CustomMessageResponse with Status IGNORED
+// MUST be sent.
+message CustomMessage {
+    // The message type should a reverse FQDN that uniquely identifies the custom message type.
+    string type = 0;
+
+    // Optional string body of the message. The Agent and Server must agree on the format of the contents.
+    string body = 1;
+
+    // Optional string body of the message. The Agent and Server must agree on the format of the contents.
+    bytes data = 2;
+}
+
+// CustomMessageResponse MUST be returned in response to a CustomMessage. It allows the sender of the CustomMessage to
+// determine if the message was successfully handled.
+//
+// Handling a CustomMessage may result in another CustomMessage in response, e.g. a Server could request information
+// from an Agent and expect the Agent to reply with that information in a separate CustomMessage. The
+// CustomMessageResponse allows the sender to know if it should expect a reply or if the message was ignored or was an
+// error.
+message CustomMessageResponse {
+    enum Status {
+        // The CustomMessage was ignored because the message type was not recognized or supported. The error_message may
+        // contain additional information.
+        IGNORED = 0;
+
+        // The CustomMessage was handled successfully.
+        OK = 1;
+
+        // The CustomMessage was unable to be handled successfully. The error_message should contain additional
+        // information.
+        ERROR = 2;
+    }
+    Status status = 1;
+
+    // Error message in the string form, typically human readable.
+    string error_message = 1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
