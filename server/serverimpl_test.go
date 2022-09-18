@@ -126,6 +126,13 @@ func TestServerStartAcceptConnection(t *testing.T) {
 	eventually(t, func() bool { return atomic.LoadInt32(&connectionCloseCalled) == 1 })
 }
 
+func TestDisconnectHttpConnection(t *testing.T) {
+	// Verify Disconnect() results with Invalid HTTP Connection error
+	err := httpConnection{}.Disconnect()
+	assert.Error(t, err)
+	assert.Equal(t, errInvalidHTTPConnection, err)
+}
+
 func TestDisconnectWSConnection(t *testing.T) {
 	connectionCloseCalled := int32(0)
 	callback := CallbacksStruct{
@@ -151,13 +158,13 @@ func TestDisconnectWSConnection(t *testing.T) {
 	err = srvConn.Disconnect()
 	assert.NoError(t, err)
 
-	// Verify connection disconnected by re-close it
-	err = conn.Close()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "close tcp")
-
 	// Verify connection disconnected from server side
 	eventually(t, func() bool { return atomic.LoadInt32(&connectionCloseCalled) == 1 })
+	// Waiting for wsConnection to fail ReadMessage() over a Disconnected communication
+	eventually(t, func() bool {
+		_, _, err := conn.ReadMessage()
+		return err != nil
+	})
 }
 
 func TestServerReceiveSendMessage(t *testing.T) {
