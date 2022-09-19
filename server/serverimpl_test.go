@@ -78,6 +78,34 @@ func TestServerStartRejectConnection(t *testing.T) {
 	assert.EqualValues(t, "30", resp.Header.Get("Retry-After"))
 }
 
+func TestServerRejectConnectionTooManyRequests(t *testing.T) {
+	r := time.Now().Add(time.Second * 30).Format(time.RFC1123)
+	callbacks := CallbacksStruct{
+		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
+			// Reject the incoming HTTP connection.
+			return types.ConnectionResponse{
+				Accept:             false,
+				HTTPStatusCode:     429,
+				HTTPResponseHeader: map[string]string{"Retry-After": r},
+			}
+		},
+	}
+
+	// Start a Server.
+	settings := &StartSettings{Settings: Settings{Callbacks: callbacks}}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	// Try to connect to the Server.
+	conn, resp, err := dialClient(settings)
+
+	// Verify that the connection is rejected and rejection data is available to the client.
+	assert.Nil(t, conn)
+	assert.Error(t, err)
+	assert.EqualValues(t, 429, resp.StatusCode)
+	assert.EqualValues(t, r, resp.Header.Get("Retry-After"))
+}
+
 func eventually(t *testing.T, f func() bool) {
 	assert.Eventually(t, f, 5*time.Second, 10*time.Millisecond)
 }
