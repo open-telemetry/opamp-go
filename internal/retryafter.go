@@ -23,9 +23,17 @@ func ExtractRetryAfterHeader(resp *http.Response) OptionalDuration {
 		resp.StatusCode == http.StatusTooManyRequests {
 		retryAfter := strings.TrimSpace(resp.Header.Get(retryAfterHTTPHeader))
 		if retryAfter != "" {
+			// Try to parse retryAfterHTTPHeader as delay-seconds
 			retryIntervalSec, err := strconv.Atoi(retryAfter)
 			if err == nil {
 				retryInterval := time.Duration(retryIntervalSec) * time.Second
+				return OptionalDuration{Defined: true, Duration: retryInterval}
+			}
+			// Try to parse retryAfterHTTPHeader as HTTP-date
+			// See https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.3
+			t, err := time.Parse(time.RFC1123, retryAfter)
+			if err == nil {
+				retryInterval := time.Until(t) * time.Second
 				return OptionalDuration{Defined: true, Duration: retryInterval}
 			}
 		}
