@@ -172,7 +172,7 @@ func (s *packagesSyncer) syncPackage(
 			// Package is of wrong type. Need to re-create it. So, delete it.
 			if err := s.localState.DeletePackage(pkgName); err != nil {
 				err = fmt.Errorf("cannot delete existing version of package %s: %v", pkgName, err)
-				status.Status = protobufs.PackageStatus_InstallFailed
+				status.Status = protobufs.PackageStatusEnum_PackageStatusEnum_InstallFailed
 				status.ErrorMessage = err.Error()
 				return err
 			}
@@ -182,7 +182,7 @@ func (s *packagesSyncer) syncPackage(
 	}
 
 	// Report that we are beginning to install it.
-	status.Status = protobufs.PackageStatus_Installing
+	status.Status = protobufs.PackageStatusEnum_PackageStatusEnum_Installing
 	_ = s.reportStatuses(true)
 
 	if mustCreate {
@@ -190,7 +190,7 @@ func (s *packagesSyncer) syncPackage(
 		err = s.localState.CreatePackage(pkgName, pkgAvail.Type)
 		if err != nil {
 			err = fmt.Errorf("cannot create package %s: %v", pkgName, err)
-			status.Status = protobufs.PackageStatus_InstallFailed
+			status.Status = protobufs.PackageStatusEnum_PackageStatusEnum_InstallFailed
 			status.ErrorMessage = err.Error()
 			return err
 		}
@@ -203,14 +203,14 @@ func (s *packagesSyncer) syncPackage(
 		pkgLocal.Hash = pkgAvail.Hash
 		pkgLocal.Version = pkgAvail.Version
 		if err := s.localState.SetPackageState(pkgName, pkgLocal); err == nil {
-			status.Status = protobufs.PackageStatus_Installed
+			status.Status = protobufs.PackageStatusEnum_PackageStatusEnum_Installed
 			status.AgentHasHash = pkgAvail.Hash
 			status.AgentHasVersion = pkgAvail.Version
 		}
 	}
 
 	if err != nil {
-		status.Status = protobufs.PackageStatus_InstallFailed
+		status.Status = protobufs.PackageStatusEnum_PackageStatusEnum_InstallFailed
 		status.ErrorMessage = err.Error()
 	}
 	_ = s.reportStatuses(true)

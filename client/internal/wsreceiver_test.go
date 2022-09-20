@@ -41,7 +41,7 @@ func TestServerToAgentCommand(t *testing.T) {
 		},
 		{
 			command: &protobufs.ServerToAgentCommand{
-				Type: protobufs.ServerToAgentCommand_Restart,
+				Type: protobufs.CommandType_CommandType_Restart,
 			},
 			action:  restart,
 			message: "A Restart command should result in a restart",
@@ -62,7 +62,7 @@ func TestServerToAgentCommand(t *testing.T) {
 			callbacks := types.CallbacksStruct{
 				OnCommandFunc: func(command *protobufs.ServerToAgentCommand) error {
 					switch command.Type {
-					case protobufs.ServerToAgentCommand_Restart:
+					case protobufs.CommandType_CommandType_Restart:
 						action = restart
 					default:
 						action = unknown
@@ -100,7 +100,7 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, 0)
 	receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 		Command: &protobufs.ServerToAgentCommand{
-			Type: protobufs.ServerToAgentCommand_Restart,
+			Type: protobufs.CommandType_CommandType_Restart,
 		},
 		RemoteConfig: &protobufs.AgentRemoteConfig{},
 	})

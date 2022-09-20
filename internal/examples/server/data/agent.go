@@ -209,10 +209,17 @@ func (agent *Agent) processStatusUpdate(
 	agentDescrChanged := agent.updateStatusField(newStatus)
 
 	// Check if any fields were omitted in the status report.
-	effectiveConfigOmitted := agent.hasCapability(protobufs.AgentCapabilities_ReportsEffectiveConfig) && newStatus.EffectiveConfig == nil
-	packageStatusesOmitted := agent.hasCapability(protobufs.AgentCapabilities_ReportsPackageStatuses) && newStatus.PackageStatuses == nil
-	remoteConfigStatusOmitted := agent.hasCapability(protobufs.AgentCapabilities_ReportsRemoteConfig) && newStatus.RemoteConfigStatus == nil
-	healthOmitted := agent.hasCapability(protobufs.AgentCapabilities_ReportsHealth) && newStatus.Health == nil
+	effectiveConfigOmitted := newStatus.EffectiveConfig == nil &&
+		agent.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig)
+
+	packageStatusesOmitted := newStatus.PackageStatuses == nil &&
+		agent.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses)
+
+	remoteConfigStatusOmitted := newStatus.RemoteConfigStatus == nil &&
+		agent.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig)
+
+	healthOmitted := newStatus.Health == nil &&
+		agent.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsHealth)
 
 	// True if the status was not fully reported.
 	statusIsCompressed := effectiveConfigOmitted || packageStatusesOmitted || remoteConfigStatusOmitted || healthOmitted
@@ -220,7 +227,7 @@ func (agent *Agent) processStatusUpdate(
 	if statusIsCompressed && lostPreviousUpdate {
 		// The status message is not fully set in the message that we received, but we lost the previous
 		// status update. Request full status update from the agent.
-		response.Flags |= protobufs.ServerToAgent_ReportFullState
+		response.Flags |= protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState
 	}
 
 	configChanged := false

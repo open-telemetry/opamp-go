@@ -343,7 +343,7 @@ func TestFirstStatusReport(t *testing.T) {
 					atomic.AddInt64(&remoteConfigReceived, 1)
 				},
 			},
-			Capabilities: protobufs.AgentCapabilities_AcceptsRemoteConfig,
+			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig,
 		}
 		settings.OpAMPServerURL = "ws://" + srv.Endpoint
 		startClient(t, settings, client)
@@ -442,7 +442,7 @@ func TestSetEffectiveConfig(t *testing.T) {
 					return sendConfig, nil
 				},
 			},
-			Capabilities: protobufs.AgentCapabilities_ReportsEffectiveConfig,
+			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig,
 		}
 		settings.OpAMPServerURL = "ws://" + srv.Endpoint
 		prepareClient(t, &settings, client)
@@ -668,11 +668,11 @@ func TestConnectionSettings(t *testing.T) {
 					return nil
 				},
 			},
-			Capabilities: protobufs.AgentCapabilities_ReportsOwnTraces |
-				protobufs.AgentCapabilities_ReportsOwnMetrics |
-				protobufs.AgentCapabilities_ReportsOwnLogs |
-				protobufs.AgentCapabilities_AcceptsOtherConnectionSettings |
-				protobufs.AgentCapabilities_AcceptsOpAMPConnectionSettings,
+			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnTraces |
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnLogs |
+				protobufs.AgentCapabilities_AgentCapabilities_AcceptsOtherConnectionSettings |
+				protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings,
 		}
 		settings.OpAMPServerURL = "ws://" + srv.Endpoint
 		prepareClient(t, &settings, client)
@@ -703,7 +703,7 @@ func TestReportAgentDescription(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
-			Capabilities:   protobufs.AgentCapabilities_ReportsEffectiveConfig,
+			Capabilities:   protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig,
 		}
 		prepareClient(t, &settings, client)
 
@@ -732,7 +732,7 @@ func TestReportAgentDescription(t *testing.T) {
 			// Ask client for full AgentDescription.
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
-				Flags:       protobufs.ServerToAgent_ReportFullState,
+				Flags:       protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState,
 			}
 		})
 
@@ -766,7 +766,8 @@ func TestReportAgentHealth(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
-			Capabilities:   protobufs.AgentCapabilities_ReportsEffectiveConfig | protobufs.AgentCapabilities_ReportsHealth,
+			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsHealth,
 		}
 		prepareClient(t, &settings, client)
 
@@ -804,7 +805,7 @@ func TestReportAgentHealth(t *testing.T) {
 			// Ask client for full AgentDescription.
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
-				Flags:       protobufs.ServerToAgent_ReportFullState,
+				Flags:       protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState,
 			}
 		})
 
@@ -873,7 +874,7 @@ func TestReportEffectiveConfig(t *testing.T) {
 			// Ask client for full AgentDescription.
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
-				Flags:       protobufs.ServerToAgent_ReportFullState,
+				Flags:       protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState,
 			}
 		})
 
@@ -913,20 +914,21 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 							client.SetRemoteConfigStatus(
 								&protobufs.RemoteConfigStatus{
 									LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
-									Status:               protobufs.RemoteConfigStatus_APPLIED,
+									Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED,
 								})
 						} else {
 							client.SetRemoteConfigStatus(
 								&protobufs.RemoteConfigStatus{
 									LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
-									Status:               protobufs.RemoteConfigStatus_FAILED,
+									Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
 									ErrorMessage:         "cannot update remote config",
 								})
 						}
 					}
 				},
 			},
-			Capabilities: protobufs.AgentCapabilities_AcceptsRemoteConfig | protobufs.AgentCapabilities_ReportsRemoteConfig,
+			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig,
 		}
 		prepareClient(t, &settings, client)
 
@@ -977,7 +979,7 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
 				// Ask client to report full status.
-				Flags: protobufs.ServerToAgent_ReportFullState,
+				Flags: protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState,
 			}
 		})
 
@@ -1011,7 +1013,7 @@ func TestRemoteConfigUpdate(t *testing.T) {
 			name:    "success",
 			success: true,
 			expectedStatus: &protobufs.RemoteConfigStatus{
-				Status:       protobufs.RemoteConfigStatus_APPLIED,
+				Status:       protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED,
 				ErrorMessage: "",
 			},
 		},
@@ -1019,7 +1021,7 @@ func TestRemoteConfigUpdate(t *testing.T) {
 			name:    "fail",
 			success: false,
 			expectedStatus: &protobufs.RemoteConfigStatus{
-				Status:       protobufs.RemoteConfigStatus_FAILED,
+				Status:       protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
 				ErrorMessage: "cannot update remote config",
 			},
 		},
@@ -1077,7 +1079,8 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 				OnMessageFunc: onMessageFunc,
 			},
 			PackagesStateProvider: localPackageState,
-			Capabilities:          protobufs.AgentCapabilities_AcceptsPackages | protobufs.AgentCapabilities_ReportsPackageStatuses,
+			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages |
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
 		}
 		prepareClient(t, &settings, client)
 
@@ -1120,10 +1123,10 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 						continue
 					}
 					switch pkgStatus.Status {
-					case protobufs.PackageStatus_InstallFailed:
+					case protobufs.PackageStatusEnum_PackageStatusEnum_InstallFailed:
 						assert.Contains(t, pkgStatus.ErrorMessage, pkgExpected.ErrorMessage)
 
-					case protobufs.PackageStatus_Installed:
+					case protobufs.PackageStatusEnum_PackageStatusEnum_Installed:
 						assert.EqualValues(t, pkgExpected.AgentHasHash, pkgStatus.AgentHasHash)
 						assert.EqualValues(t, pkgExpected.AgentHasVersion, pkgStatus.AgentHasVersion)
 						assert.Empty(t, pkgStatus.ErrorMessage)
@@ -1166,7 +1169,7 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 
 				if compressedReceived {
 					// Ask for full report again.
-					response.Flags = protobufs.ServerToAgent_ReportFullState
+					response.Flags = protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState
 				} else {
 					// Keep triggering status report by setting AgentDescription
 					// until the compressed PackageStatuses arrives.
@@ -1218,7 +1221,7 @@ func createPackageTestCase(name string, downloadSrv *httptest.Server) packageTes
 		available: &protobufs.PackagesAvailable{
 			Packages: map[string]*protobufs.PackageAvailable{
 				"package1": {
-					Type:    protobufs.PackageAvailable_TopLevelPackage,
+					Type:    protobufs.PackageType_PackageType_TopLevel,
 					Version: "1.0.0",
 					File: &protobufs.DownloadableFile{
 						DownloadUrl: downloadSrv.URL + packageFileURL,
@@ -1238,7 +1241,7 @@ func createPackageTestCase(name string, downloadSrv *httptest.Server) packageTes
 					AgentHasHash:         []byte{1, 2, 3},
 					ServerOfferedVersion: "1.0.0",
 					ServerOfferedHash:    []byte{1, 2, 3},
-					Status:               protobufs.PackageStatus_Installed,
+					Status:               protobufs.PackageStatusEnum_PackageStatusEnum_Installed,
 					ErrorMessage:         "",
 				},
 			},
@@ -1263,7 +1266,7 @@ func TestUpdatePackages(t *testing.T) {
 	// A case when downloading the file fails because the URL is incorrect.
 	notFound := createPackageTestCase("downloadable file not found", downloadSrv)
 	notFound.available.Packages["package1"].File.DownloadUrl = downloadSrv.URL + "/notfound"
-	notFound.expectedStatus.Packages["package1"].Status = protobufs.PackageStatus_InstallFailed
+	notFound.expectedStatus.Packages["package1"].Status = protobufs.PackageStatusEnum_PackageStatusEnum_InstallFailed
 	notFound.expectedStatus.Packages["package1"].ErrorMessage = "cannot download"
 	tests = append(tests, notFound)
 
@@ -1359,8 +1362,9 @@ func TestMissingPackagesStateProvider(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a client.
 		settings := types.StartSettings{
-			Callbacks:    types.CallbacksStruct{},
-			Capabilities: protobufs.AgentCapabilities_AcceptsPackages | protobufs.AgentCapabilities_ReportsPackageStatuses,
+			Callbacks: types.CallbacksStruct{},
+			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages |
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
 		}
 		prepareClient(t, &settings, client)
 
@@ -1371,7 +1375,7 @@ func TestMissingPackagesStateProvider(t *testing.T) {
 		settings = types.StartSettings{
 			Callbacks:             types.CallbacksStruct{},
 			PackagesStateProvider: localPackageState,
-			Capabilities:          protobufs.AgentCapabilities_AcceptsPackages,
+			Capabilities:          protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages,
 		}
 		prepareClient(t, &settings, client)
 
@@ -1381,7 +1385,7 @@ func TestMissingPackagesStateProvider(t *testing.T) {
 		settings = types.StartSettings{
 			Callbacks:             types.CallbacksStruct{},
 			PackagesStateProvider: localPackageState,
-			Capabilities:          protobufs.AgentCapabilities_ReportsPackageStatuses,
+			Capabilities:          protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
 		}
 		prepareClient(t, &settings, client)
 
