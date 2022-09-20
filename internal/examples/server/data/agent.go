@@ -195,7 +195,7 @@ func (agent *Agent) updateEffectiveConfig(
 }
 
 func (agent *Agent) hasCapability(capability protobufs.AgentCapabilities) bool {
-	return agent.Status.Capabilities&capability != 0
+	return agent.Status.Capabilities&uint64(capability) != 0
 }
 
 func (agent *Agent) processStatusUpdate(
@@ -227,7 +227,7 @@ func (agent *Agent) processStatusUpdate(
 	if statusIsCompressed && lostPreviousUpdate {
 		// The status message is not fully set in the message that we received, but we lost the previous
 		// status update. Request full status update from the agent.
-		response.Flags |= protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState
+		response.Flags |= uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState)
 	}
 
 	configChanged := false

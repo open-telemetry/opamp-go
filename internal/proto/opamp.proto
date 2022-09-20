@@ -44,7 +44,7 @@ message AgentToServer {
     // in the future such that old Agents automatically report that they don't
     // support the new capability.
     // This field MUST be always set.
-    AgentCapabilities capabilities = 4;
+    uint64 capabilities = 4;
 
     // The current health of the Agent.
     // May be omitted if nothing changed since last AgentToServer message.
@@ -74,7 +74,7 @@ message AgentToServer {
     AgentDisconnect agent_disconnect = 9;
 
     // Bit flags as defined by AgentToServerFlags bit masks.
-    AgentToServerFlags flags = 10;
+    uint64 flags = 10;
 }
 
 enum AgentToServerFlags {
@@ -118,8 +118,8 @@ message ServerToAgent {
     // This field is set when the Server has packages to offer to the Agent.
     PackagesAvailable packages_available = 5;
 
-    // Bit flags as defined by Flags bit masks.
-    ServerToAgentFlags flags = 6;
+    // Bit flags as defined by ServerToAgentFlags bit masks.
+    uint64 flags = 6;
 
     // Bitmask of flags defined by ServerCapabilities enum.
     // All bits that are not defined in ServerCapabilities enum MUST be set to 0
@@ -129,7 +129,7 @@ message ServerToAgent {
     // This field MUST be set in the first ServerToAgent sent by the Server and MAY
     // be omitted in subsequent ServerToAgent messages by setting it to
     // UnspecifiedServerCapability value.
-    ServerCapabilities capabilities = 7;
+    uint64 capabilities = 7;
 
     // Properties related to identification of the Agent, which can be overridden
     // by the Server if needed.

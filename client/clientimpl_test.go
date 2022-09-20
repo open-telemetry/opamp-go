@@ -732,7 +732,7 @@ func TestReportAgentDescription(t *testing.T) {
 			// Ask client for full AgentDescription.
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
-				Flags:       protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState,
+				Flags:       uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState),
 			}
 		})
 
@@ -805,7 +805,7 @@ func TestReportAgentHealth(t *testing.T) {
 			// Ask client for full AgentDescription.
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
-				Flags:       protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState,
+				Flags:       uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState),
 			}
 		})
 
@@ -874,7 +874,7 @@ func TestReportEffectiveConfig(t *testing.T) {
 			// Ask client for full AgentDescription.
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
-				Flags:       protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState,
+				Flags:       uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState),
 			}
 		})
 
@@ -979,7 +979,7 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
 				// Ask client to report full status.
-				Flags: protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState,
+				Flags: uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState),
 			}
 		})
 
@@ -1169,7 +1169,7 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 
 				if compressedReceived {
 					// Ask for full report again.
-					response.Flags = protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState
+					response.Flags = uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState)
 				} else {
 					// Keep triggering status report by setting AgentDescription
 					// until the compressed PackageStatuses arrives.
