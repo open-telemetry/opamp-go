@@ -29,11 +29,11 @@ func ExtractRetryAfterHeader(resp *http.Response) OptionalDuration {
 				retryInterval := time.Duration(retryIntervalSec) * time.Second
 				return OptionalDuration{Defined: true, Duration: retryInterval}
 			}
-			// Try to parse retryAfterHTTPHeader as HTTP-date
+			// Try parse retryAfterHTTPHeader as HTTP-date
 			// See https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.3
-			t, err := time.Parse(time.RFC1123, retryAfter)
+			t, err := http.ParseTime(retryAfter)
 			if err == nil {
-				retryInterval := time.Until(t) * time.Second
+				retryInterval := time.Until(t)
 				return OptionalDuration{Defined: true, Duration: retryInterval}
 			}
 		}
