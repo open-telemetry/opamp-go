@@ -9,7 +9,11 @@ import (
 	"github.com/open-telemetry/opamp-go/server/types"
 )
 
-var errInvalidHTTPConnection = errors.New("cannot operate over HTTP connection")
+// ErrInvalidHTTPConnection represents an event of misuse function for plain HTTP
+// connection, such as httpConnection.Send() or httpConnection.Disconnect().
+// Usage will not result with change but return this error to indicate current state
+// might not be as expected.
+var ErrInvalidHTTPConnection = errors.New("cannot operate over HTTP connection")
 
 // httpConnection represents an OpAMP connection over a plain HTTP connection.
 // Only one response is possible to send when using plain HTTP connection
@@ -28,10 +32,10 @@ var _ types.Connection = (*httpConnection)(nil)
 func (c httpConnection) Send(_ context.Context, _ *protobufs.ServerToAgent) error {
 	// Send() should not be called for plain HTTP connection. Instead, the response will
 	// be sent after the onMessage callback returns.
-	return errInvalidHTTPConnection
+	return ErrInvalidHTTPConnection
 }
 
 func (c httpConnection) Disconnect() error {
 	// Disconnect() should not be called for plain HTTP connection.
-	return errInvalidHTTPConnection
+	return ErrInvalidHTTPConnection
 }

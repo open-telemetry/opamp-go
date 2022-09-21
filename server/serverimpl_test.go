@@ -130,7 +130,7 @@ func TestDisconnectHttpConnection(t *testing.T) {
 	// Verify Disconnect() results with Invalid HTTP Connection error
 	err := httpConnection{}.Disconnect()
 	assert.Error(t, err)
-	assert.Equal(t, errInvalidHTTPConnection, err)
+	assert.Equal(t, ErrInvalidHTTPConnection, err)
 }
 
 func TestDisconnectWSConnection(t *testing.T) {
