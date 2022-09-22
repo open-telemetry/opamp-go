@@ -8,7 +8,7 @@ endef
 TOOLS_MOD_DIR := ./internal/tools
 
 # Find all .proto files.
-BASELINE_PROTO_FILES := $(wildcard internal/proto/*.proto)
+BASELINE_PROTO_FILES := $(wildcard internal/opamp-spec/proto/*.proto)
 
 all: test build-examples
 
@@ -42,11 +42,14 @@ run-examples: build-examples
 	@echo Server UI is running at http://localhost:4321/
 	cd internal/examples/agent && ./bin/agent
 
+OTEL_DOCKER_PROTOBUF ?= otel/build-protobuf:0.14.0
+
 # Generate Protobuf Go files.
 .PHONY: gen-proto
 gen-proto:
+	mkdir -p ${PWD}/internal/proto/
 	$(foreach file,$(BASELINE_PROTO_FILES),$(call exec-command,docker run --rm -v${PWD}:${PWD} \
-        -w${PWD} otel/build-protobuf:latest --proto_path=${PWD}/internal/proto/ \
+        -w${PWD} $(OTEL_DOCKER_PROTOBUF) --proto_path=${PWD}/internal/opamp-spec/proto/ \
         --go_out=${PWD}/internal/proto/ -I${PWD}/internal/proto/ ${PWD}/$(file)))
 
 	cp -R internal/proto/github.com/open-telemetry/opamp-go/protobufs/* protobufs/
