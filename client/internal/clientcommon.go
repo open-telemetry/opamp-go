@@ -214,7 +214,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.EffectiveConfig = cfg
 			msg.RemoteConfigStatus = c.ClientSyncedState.RemoteConfigStatus()
 			msg.PackageStatuses = c.ClientSyncedState.PackageStatuses()
-			msg.Capabilities = c.Capabilities
+			msg.Capabilities = uint64(c.Capabilities)
 		},
 	)
 	return nil

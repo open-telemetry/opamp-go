@@ -57,7 +57,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 			return
 		}
 
-		scheduled, err := r.rcvFlags(ctx, msg.Flags)
+		scheduled, err := r.rcvFlags(ctx, protobufs.ServerToAgentFlags(msg.Flags))
 		if err != nil {
 			r.logger.Errorf("cannot processed received flags:%v", err)
 		}

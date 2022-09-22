@@ -139,7 +139,7 @@ func TestServerReceiveSendMessage(t *testing.T) {
 			// Send a response.
 			response := protobufs.ServerToAgent{
 				InstanceUid:  message.InstanceUid,
-				Capabilities: protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus,
+				Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
 			}
 			return &response
 		},
@@ -200,7 +200,7 @@ func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
 			// Send a response.
 			response := protobufs.ServerToAgent{
 				InstanceUid:  message.InstanceUid,
-				Capabilities: protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus,
+				Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
 			}
 			return &response
 		},
@@ -315,7 +315,7 @@ func TestServerHonoursClientRequestContentEncoding(t *testing.T) {
 			// Send a response.
 			response := protobufs.ServerToAgent{
 				InstanceUid:  message.InstanceUid,
-				Capabilities: protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus,
+				Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
 			}
 			return &response
 		},
@@ -391,7 +391,7 @@ func TestServerHonoursAcceptEncoding(t *testing.T) {
 			// Send a response.
 			response := protobufs.ServerToAgent{
 				InstanceUid:  message.InstanceUid,
-				Capabilities: protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus,
+				Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
 			}
 			return &response
 		},
