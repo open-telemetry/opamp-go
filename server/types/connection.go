@@ -19,4 +19,8 @@ type Connection interface {
 	// Blocks until the message is sent.
 	// Should return as soon as possible if the ctx is cancelled.
 	Send(ctx context.Context, message *protobufs.ServerToAgent) error
+
+	// Disconnect closes the network connection.
+	// Any blocked Read or Write operations will be unblocked and return errors.
+	Disconnect() error
 }

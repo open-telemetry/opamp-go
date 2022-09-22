@@ -126,6 +126,47 @@ func TestServerStartAcceptConnection(t *testing.T) {
 	eventually(t, func() bool { return atomic.LoadInt32(&connectionCloseCalled) == 1 })
 }
 
+func TestDisconnectHttpConnection(t *testing.T) {
+	// Verify Disconnect() results with Invalid HTTP Connection error
+	err := httpConnection{}.Disconnect()
+	assert.Error(t, err)
+	assert.Equal(t, ErrInvalidHTTPConnection, err)
+}
+
+func TestDisconnectWSConnection(t *testing.T) {
+	connectionCloseCalled := int32(0)
+	callback := CallbacksStruct{
+		OnConnectionCloseFunc: func(conn types.Connection) {
+			atomic.StoreInt32(&connectionCloseCalled, 1)
+		},
+	}
+
+	// Start a Server.
+	settings := &StartSettings{Settings: Settings{Callbacks: callback}}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	// Connect to the Server.
+	conn, _, err := dialClient(settings)
+
+	// Verify that the connection is successful.
+	assert.NoError(t, err)
+	assert.True(t, atomic.LoadInt32(&connectionCloseCalled) == 0)
+
+	// Close connection from server side
+	srvConn := wsConnection{wsConn: conn}
+	err = srvConn.Disconnect()
+	assert.NoError(t, err)
+
+	// Verify connection disconnected from server side
+	eventually(t, func() bool { return atomic.LoadInt32(&connectionCloseCalled) == 1 })
+	// Waiting for wsConnection to fail ReadMessage() over a Disconnected communication
+	eventually(t, func() bool {
+		_, _, err := conn.ReadMessage()
+		return err != nil
+	})
+}
+
 func TestServerReceiveSendMessage(t *testing.T) {
 	var rcvMsg atomic.Value
 	callbacks := CallbacksStruct{
