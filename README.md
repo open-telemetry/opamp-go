@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="https://pkg.go.dev/github.com/open-telemetry/opamp-go">
+    <img alt="Go Docs" height="28" src="https://godoc.org/github.com/open-telemetry/opamp-go?status.svg"></a>
+  <a href="https://github.com/open-telemetry/opamp-go/actions/workflows/build-and-test.yml?query=branch%3Amain">
+    <img alt="Build Status" src="https://img.shields.io/github/workflow/status/open-telemetry/opamp-go/build-and-test/main?style=for-the-badge"></a>
   <a href="https://goreportcard.com/report/github.com/open-telemetry/opamp-go">
     <img alt="Go Report Card" src="https://goreportcard.com/badge/github.com/open-telemetry/opamp-go?style=for-the-badge"></a>
   <a href="https://codecov.io/gh/open-telemetry/opamp-go/branch/main/">
