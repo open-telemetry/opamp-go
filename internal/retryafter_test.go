@@ -16,6 +16,20 @@ func response503() *http.Response {
 	}
 }
 
+func assertUndefinedDuration(t *testing.T, d OptionalDuration) {
+	assert.NotNil(t, d)
+	assert.Equal(t, false, d.Defined)
+	assert.Equal(t, time.Duration(0), d.Duration)
+}
+
+func assertDuration(t *testing.T, duration OptionalDuration, expected time.Duration) {
+	assert.NotNil(t, duration)
+	assert.Equal(t, true, duration.Defined)
+
+	// LessOrEqual to consider the time passes during the tests (actual duration would decrease in HTTP-date tests)
+	assert.LessOrEqual(t, duration.Duration, expected)
+}
+
 func TestExtractRetryAfterHeaderDelaySeconds(t *testing.T) {
 	// Generate random n > 0 int
 	rand.Seed(time.Now().UnixNano())
@@ -25,76 +39,50 @@ func TestExtractRetryAfterHeaderDelaySeconds(t *testing.T) {
 	resp := response503()
 	resp.Header.Add(retryAfterHTTPHeader, strconv.Itoa(retryIntervalSec))
 
-	expectedDuration := OptionalDuration{
-		Defined:  true,
-		Duration: time.Second * time.Duration(retryIntervalSec),
-	}
-	assert.Equal(t, expectedDuration, ExtractRetryAfterHeader(resp))
-}
+	expectedDuration := time.Second * time.Duration(retryIntervalSec)
+	assertDuration(t, ExtractRetryAfterHeader(resp), expectedDuration)
 
-func TestExtractRetryAfterHeader429StatusCode(t *testing.T) {
-	// Generate random n > 0 int
-	rand.Seed(time.Now().UnixNano())
-	retryIntervalSec := rand.Intn(9999)
-
-	// Generate a 429 status code response with Retry-After = n header
-	resp := response503()
+	// Verify status code 429
 	resp.StatusCode = http.StatusTooManyRequests
-	resp.Header.Add(retryAfterHTTPHeader, strconv.Itoa(retryIntervalSec))
+	assertDuration(t, ExtractRetryAfterHeader(resp), expectedDuration)
 
-	expectedDuration := OptionalDuration{
-		Defined:  true,
-		Duration: time.Second * time.Duration(retryIntervalSec),
-	}
-	assert.Equal(t, expectedDuration, ExtractRetryAfterHeader(resp))
-}
+	// Verify different status code than {429, 503}
+	resp.StatusCode = http.StatusBadGateway
+	assertUndefinedDuration(t, ExtractRetryAfterHeader(resp))
 
-func TestExtractRetryAfterHeaderInvalidFormat(t *testing.T) {
-	// Generate a random n > 0 int
-	now := time.Now()
-	//rand.Seed(now.UnixNano())
-	retryIntervalSec := rand.Intn(9999)
-
-	// Set a response with Retry-After header = random n > 0 int
-	resp := response503()
-	ra := now.Add(time.Second * time.Duration(retryIntervalSec)).UTC()
-
-	// Verify non HTTP-date RFC1123 format isn't being parsed
-	resp.Header.Set(retryAfterHTTPHeader, ra.Format(time.RFC1123))
-	d := ExtractRetryAfterHeader(resp)
-	assert.NotNil(t, d)
-	assert.Equal(t, false, d.Defined)
-	assert.Equal(t, time.Duration(0), d.Duration)
+	// Verify no duration is created for n < 0
+	resp.Header.Set(retryAfterHTTPHeader, strconv.Itoa(-1))
+	assertUndefinedDuration(t, ExtractRetryAfterHeader(resp))
 }
 
 func TestExtractRetryAfterHeaderHttpDate(t *testing.T) {
-	// Generate a random n > 0 int
+	// Generate a random n > 0 second duration
 	now := time.Now()
-	//rand.Seed(now.UnixNano())
+	rand.Seed(now.UnixNano())
 	retryIntervalSec := rand.Intn(9999)
+	expectedDuration := time.Second * time.Duration(retryIntervalSec)
 
 	// Set a response with Retry-After header = random n > 0 int
 	resp := response503()
-	ra := now.Add(time.Second * time.Duration(retryIntervalSec)).UTC()
+	retryAfter := now.Add(time.Second * time.Duration(retryIntervalSec)).UTC()
 
 	// Verify HTTP-date TimeFormat format is being parsed correctly
-	resp.Header.Set(retryAfterHTTPHeader, ra.Format(http.TimeFormat))
-	d := ExtractRetryAfterHeader(resp)
-	assert.NotNil(t, d)
-	assert.Equal(t, true, d.Defined)
-	assert.Less(t, d.Duration, time.Second*time.Duration(retryIntervalSec))
+	resp.Header.Set(retryAfterHTTPHeader, retryAfter.Format(http.TimeFormat))
+	assertDuration(t, ExtractRetryAfterHeader(resp), expectedDuration)
 
 	// Verify ANSI time format
-	resp.Header.Set(retryAfterHTTPHeader, ra.Format(time.ANSIC))
-	d = ExtractRetryAfterHeader(resp)
-	assert.NotNil(t, d)
-	assert.Equal(t, true, d.Defined)
-	assert.Less(t, d.Duration, time.Second*time.Duration(retryIntervalSec))
+	resp.Header.Set(retryAfterHTTPHeader, retryAfter.Format(time.ANSIC))
+	assertDuration(t, ExtractRetryAfterHeader(resp), expectedDuration)
 
 	// Verify RFC850 time format
-	resp.Header.Set(retryAfterHTTPHeader, ra.Format(time.RFC850))
-	d = ExtractRetryAfterHeader(resp)
-	assert.NotNil(t, d)
-	assert.Equal(t, true, d.Defined)
-	assert.Less(t, d.Duration, time.Second*time.Duration(retryIntervalSec))
+	resp.Header.Set(retryAfterHTTPHeader, retryAfter.Format(time.RFC850))
+	assertDuration(t, ExtractRetryAfterHeader(resp), expectedDuration)
+
+	// Verify non HTTP-date RFC1123 format isn't being parsed
+	resp.Header.Set(retryAfterHTTPHeader, retryAfter.Format(time.RFC1123))
+	assertUndefinedDuration(t, ExtractRetryAfterHeader(resp))
+
+	// Verify no duration is created for n < 0
+	resp.Header.Set(retryAfterHTTPHeader, now.Add(-1*time.Second).UTC().Format(http.TimeFormat))
+	assertUndefinedDuration(t, ExtractRetryAfterHeader(resp))
 }

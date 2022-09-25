@@ -1,18 +1,43 @@
 package internal
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 )
 
 const retryAfterHTTPHeader = "Retry-After"
 
+var errCouldNotParseRetryAfterHeader = errors.New("could not parse" + retryAfterHTTPHeader + "header")
+
 type OptionalDuration struct {
 	Duration time.Duration
 	// true if duration field is defined.
 	Defined bool
+}
+
+func parseDelaySeconds(s string) (time.Duration, error) {
+	n, err := strconv.Atoi(s)
+
+	// Verify duration parsed properly and bigger than 0
+	if err == nil && n > 0 {
+		duration := time.Duration(n) * time.Second
+		return duration, nil
+	}
+	return 0, errCouldNotParseRetryAfterHeader
+}
+
+func parseHTTPDate(s string) (time.Duration, error) {
+	t, err := http.ParseTime(s)
+
+	// Verify duration parsed properly and bigger than 0
+	if err == nil {
+		if duration := time.Until(t); duration > 0 {
+			return duration, nil
+		}
+	}
+	return 0, errCouldNotParseRetryAfterHeader
 }
 
 // ExtractRetryAfterHeader extracts Retry-After response header if the status
@@ -21,19 +46,16 @@ type OptionalDuration struct {
 func ExtractRetryAfterHeader(resp *http.Response) OptionalDuration {
 	if resp.StatusCode == http.StatusServiceUnavailable ||
 		resp.StatusCode == http.StatusTooManyRequests {
-		retryAfter := strings.TrimSpace(resp.Header.Get(retryAfterHTTPHeader))
+		retryAfter := resp.Header.Get(retryAfterHTTPHeader)
 		if retryAfter != "" {
-			// Try to parse retryAfterHTTPHeader as delay-seconds
-			retryIntervalSec, err := strconv.Atoi(retryAfter)
+			// Parse delay-seconds https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.3
+			retryInterval, err := parseDelaySeconds(retryAfter)
 			if err == nil {
-				retryInterval := time.Duration(retryIntervalSec) * time.Second
 				return OptionalDuration{Defined: true, Duration: retryInterval}
 			}
-			// Try parse retryAfterHTTPHeader as HTTP-date
-			// See https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.3
-			t, err := http.ParseTime(retryAfter)
+			// Parse HTTP-date https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.3
+			retryInterval, err = parseHTTPDate(retryAfter)
 			if err == nil {
-				retryInterval := time.Until(t)
 				return OptionalDuration{Defined: true, Duration: retryInterval}
 			}
 		}
