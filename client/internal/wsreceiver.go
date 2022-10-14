@@ -5,9 +5,8 @@ import (
 	"fmt"
 
 	"github.com/gorilla/websocket"
-	"google.golang.org/protobuf/proto"
-
 	"github.com/open-telemetry/opamp-go/client/types"
+	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -67,7 +66,7 @@ func (r *wsReceiver) receiveMessage(msg *protobufs.ServerToAgent) error {
 	if err != nil {
 		return err
 	}
-	err = proto.Unmarshal(bytes, msg)
+	err = internal.DecodeWSMessage(bytes, msg)
 	if err != nil {
 		return fmt.Errorf("cannot decode received message: %w", err)
 	}

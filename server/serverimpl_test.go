@@ -220,8 +220,12 @@ func TestServerReceiveSendMessage(t *testing.T) {
 	require.EqualValues(t, websocket.BinaryMessage, mt)
 
 	// Decode the response.
+
+	// Must start with a zero byte header until the end of grace period that ends Feb 1, 2023.
+	require.EqualValues(t, 0, bytes[0])
+
 	var response protobufs.ServerToAgent
-	err = proto.Unmarshal(bytes, &response)
+	err = sharedinternal.DecodeWSMessage(bytes, &response)
 	require.NoError(t, err)
 
 	// Verify the response.
@@ -303,8 +307,12 @@ func TestServerReceiveSendMessageWithCompression(t *testing.T) {
 			require.EqualValues(t, websocket.BinaryMessage, mt)
 
 			// Decode the response.
+
+			// Must start with a zero byte header until the end of grace period that ends Feb 1, 2023.
+			require.EqualValues(t, 0, bytes[0])
+
 			var response protobufs.ServerToAgent
-			err = proto.Unmarshal(bytes, &response)
+			err = sharedinternal.DecodeWSMessage(bytes, &response)
 			require.NoError(t, err)
 
 			fmt.Printf("sent %d, received %d\n", proxy.ClientToServerBytes(), proxy.ServerToClientBytes())
@@ -587,4 +595,37 @@ func TestServerHonoursAcceptEncoding(t *testing.T) {
 	assert.EqualValues(t, protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus, response.Capabilities)
 
 	eventually(t, func() bool { return atomic.LoadInt32(&onCloseCalled) == 1 })
+}
+
+func TestDecodeMessage(t *testing.T) {
+	msgsToTest := []*protobufs.AgentToServer{
+		{}, // Empty message
+		{
+			InstanceUid: "abcd",
+			SequenceNum: 123,
+		},
+	}
+
+	// Try with and without header byte. This is only necessary until the
+	// end of grace period that ends Feb 1, 2023. After that the header is
+	// no longer optional.
+	withHeaderTests := []bool{false, true}
+
+	for _, msg := range msgsToTest {
+		for _, withHeader := range withHeaderTests {
+			bytes, err := proto.Marshal(msg)
+			require.NoError(t, err)
+
+			if withHeader {
+				// Prepend zero header byte.
+				bytes = append([]byte{0}, bytes...)
+			}
+
+			var decoded protobufs.AgentToServer
+			err = sharedinternal.DecodeWSMessage(bytes, &decoded)
+			require.NoError(t, err)
+
+			assert.True(t, proto.Equal(msg, &decoded))
+		}
+	}
 }

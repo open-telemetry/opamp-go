@@ -124,10 +124,19 @@ func (m *MockServer) handleWebSocket(t *testing.T, w http.ResponseWriter, r *htt
 		}
 		assert.EqualValues(t, websocket.BinaryMessage, messageType)
 
+		if len(msgBytes) > 0 && msgBytes[0] == 0 {
+			// New message format. The Protobuf message is preceded by a zero byte header.
+			// Skip the zero byte.
+			msgBytes = msgBytes[1:]
+		}
+
 		// We use alwaysRespond=false here because WebSocket requests must only have
 		// a response when a response is provided by the user-defined handler.
 		msgBytes = m.handleReceivedBytes(msgBytes, false)
 		if msgBytes != nil {
+			// Prepend zero-byte header.
+			msgBytes = append([]byte{0}, msgBytes...)
+
 			err = conn.WriteMessage(websocket.BinaryMessage, msgBytes)
 			if err != nil {
 				log.Fatal("cannot send:", err)
