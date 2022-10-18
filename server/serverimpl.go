@@ -42,6 +42,7 @@ type server struct {
 
 var _ OpAMPServer = (*server)(nil)
 
+// New creates a new OpAMP Server.
 func New(logger types.Logger) *server {
 	if logger == nil {
 		logger = &internal.NopLogger{}
@@ -50,6 +51,7 @@ func New(logger types.Logger) *server {
 	return &server{logger: logger}
 }
 
+// Attach implements OpAMPServer.Attach.
 func (s *server) Attach(settings Settings) (HTTPHandlerFunc, error) {
 	s.settings = settings
 	// TODO: Add support for compression using Upgrader.EnableCompression field.
@@ -57,6 +59,7 @@ func (s *server) Attach(settings Settings) (HTTPHandlerFunc, error) {
 	return s.httpHandler, nil
 }
 
+// Start implements OpAMPServer.Start.
 func (s *server) Start(settings StartSettings) error {
 	if s.httpServer != nil {
 		return errAlreadyStarted
@@ -129,6 +132,7 @@ func (s *server) startHttpServer(listenAddr string, serveFunc func(l net.Listene
 	return nil
 }
 
+// Stop implements OpAMPServer.Stop.
 func (s *server) Stop(ctx context.Context) error {
 	if s.httpServer != nil {
 		defer func() { s.httpServer = nil }()

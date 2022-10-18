@@ -51,6 +51,7 @@ func NewWebSocket(logger types.Logger) *wsClient {
 	return w
 }
 
+// Start implements OpAMPClient.Start.
 func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) error {
 	if err := c.common.PrepareStart(ctx, settings); err != nil {
 		return err
@@ -79,6 +80,7 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 	return nil
 }
 
+// Stop implements OpAMPClient.Stop.
 func (c *wsClient) Stop(ctx context.Context) error {
 	// Close connection if any.
 	c.connMutex.RLock()
@@ -92,26 +94,32 @@ func (c *wsClient) Stop(ctx context.Context) error {
 	return c.common.Stop(ctx)
 }
 
+// AgentDescription implements OpAMPClient.AgentDescription.
 func (c *wsClient) AgentDescription() *protobufs.AgentDescription {
 	return c.common.AgentDescription()
 }
 
+// SetAgentDescription implements OpAMPClient.SetAgentDescription.
 func (c *wsClient) SetAgentDescription(descr *protobufs.AgentDescription) error {
 	return c.common.SetAgentDescription(descr)
 }
 
+// SetHealth implements OpAMPClient.SetHealth.
 func (c *wsClient) SetHealth(health *protobufs.AgentHealth) error {
 	return c.common.SetHealth(health)
 }
 
+// UpdateEffectiveConfig implements OpAMPClient.UpdateEffectiveConfig.
 func (c *wsClient) UpdateEffectiveConfig(ctx context.Context) error {
 	return c.common.UpdateEffectiveConfig(ctx)
 }
 
+// SetRemoteConfigStatus implements OpAMPClient.SetRemoteConfigStatus.
 func (c *wsClient) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) error {
 	return c.common.SetRemoteConfigStatus(status)
 }
 
+// SetPackageStatuses implements OpAMPClient.SetPackageStatuses.
 func (c *wsClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) error {
 	return c.common.SetPackageStatuses(statuses)
 }
