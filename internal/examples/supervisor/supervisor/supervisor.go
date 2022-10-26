@@ -28,15 +28,6 @@ const agentType = "io.opentelemetry.collector"
 // TODO: fetch agent version from Collector executable or by some other means.
 const agentVersion = "1.0.0"
 
-// A Collector config that should be always applied.
-// Enables JSON log output for the Agent.
-const localOverrideAgentConfig = `
-service:
-  telemetry:
-    logs:
-      encoding: json
-`
-
 // Supervisor implements supervising of OpenTelemetry Collector and uses OpAMPClient
 // to work with an OpAMP Server.
 type Supervisor struct {
@@ -212,6 +203,27 @@ func (s *Supervisor) createAgentDescription() *protobufs.AgentDescription {
 	}
 }
 
+func (s *Supervisor) composeExtraLocalConfig() string {
+
+	return fmt.Sprintf(`
+service:
+  telemetry:
+    logs:
+      # Enables JSON log output for the Agent.
+      encoding: json
+    resource:
+      # Set resource attributes required by OpAMP spec.
+      # See https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#agentdescriptionidentifying_attributes
+      service.name: %s
+      service.version: %s
+      service.instance.id: %s
+`,
+		agentType,
+		s.agentVersion,
+		s.instanceId.String(),
+	)
+}
+
 func (s *Supervisor) loadAgentEffectiveConfig() error {
 	var effectiveConfigBytes []byte
 
@@ -221,7 +233,7 @@ func (s *Supervisor) loadAgentEffectiveConfig() error {
 		effectiveConfigBytes = effFromFile
 	} else {
 		// No effective config file, just use the initial config.
-		effectiveConfigBytes = []byte(localOverrideAgentConfig)
+		effectiveConfigBytes = []byte(s.composeExtraLocalConfig())
 	}
 
 	s.effectiveConfig.Store(string(effectiveConfigBytes))
@@ -271,7 +283,7 @@ receivers:
             - targets: ['0.0.0.0:8888']  
 exporters:
   otlphttp/own_metrics:
-    endpoint: %s
+    metrics_endpoint: %s
 
 service:
   pipelines:
@@ -342,7 +354,7 @@ func (s *Supervisor) composeEffectiveConfig(config *protobufs.AgentRemoteConfig)
 	}
 
 	// Merge local config last since it has the highest precedence.
-	if err := k.Load(rawbytes.Provider([]byte(localOverrideAgentConfig)), yaml.Parser()); err != nil {
+	if err := k.Load(rawbytes.Provider([]byte(s.composeExtraLocalConfig())), yaml.Parser()); err != nil {
 		return false, err
 	}
 
