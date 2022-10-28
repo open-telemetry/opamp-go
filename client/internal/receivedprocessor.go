@@ -19,6 +19,10 @@ type receivedProcessor struct {
 	// what will be sent later.
 	sender Sender
 
+	// SenderCommon is a partial Sender implementation that is common between WebSocket and plain
+	//// HTTP transports.
+	senderCommon *SenderCommon
+
 	// Client state storage. This is needed if the Server asks to report the state.
 	clientSyncedState *ClientSyncedState
 
@@ -32,6 +36,7 @@ func newReceivedProcessor(
 	logger types.Logger,
 	callbacks types.Callbacks,
 	sender Sender,
+	senderCommon *SenderCommon,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
@@ -40,6 +45,7 @@ func newReceivedProcessor(
 		logger:                logger,
 		callbacks:             callbacks,
 		sender:                sender,
+		senderCommon:          senderCommon,
 		clientSyncedState:     clientSyncedState,
 		packagesStateProvider: packagesStateProvider,
 		capabilities:          capabilities,
@@ -128,10 +134,8 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 			}
 		}
 
-		r.callbacks.OnMessage(ctx, msgData)
-
+		r.onMessage(ctx, msgData)
 		r.rcvOpampConnectionSettings(ctx, msg.ConnectionSettings)
-
 		if scheduled {
 			r.sender.ScheduleSend()
 		}
@@ -141,6 +145,12 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 	if err != nil {
 		r.processErrorResponse(err)
 	}
+}
+
+func (r *receivedProcessor) onMessage(ctx context.Context, msgData *types.MessageData) {
+	r.senderCommon.DisableScheduleSend()
+	r.callbacks.OnMessage(ctx, msgData)
+	r.senderCommon.EnableScheduleSend()
 }
 
 func (r *receivedProcessor) hasCapability(capability protobufs.AgentCapabilities) bool {

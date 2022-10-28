@@ -13,6 +13,21 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestDelayScheduleSender(t *testing.T) {
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	c := sender.hasPendingMessage
+
+	// Verify ScheduleSend() doesn't write messages to channel when disables
+	sender.DisableScheduleSend()
+	sender.ScheduleSend()
+	assert.Equal(t, 0, len(c))
+
+	// Verify ScheduleSend() works properly otherwise
+	sender.EnableScheduleSend()
+	sender.ScheduleSend()
+	assert.Equal(t, 1, len(c))
+}
+
 func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
 
 	var connectionAttempts int64

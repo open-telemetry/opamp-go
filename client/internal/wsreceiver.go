@@ -36,7 +36,7 @@ func NewWSReceiver(
 		logger:    logger,
 		sender:    sender,
 		callbacks: callbacks,
-		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider, capabilities),
+		processor: newReceivedProcessor(logger, callbacks, sender, &sender.SenderCommon, clientSyncedState, packagesStateProvider, capabilities),
 	}
 
 	return w

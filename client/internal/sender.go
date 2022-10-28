@@ -31,6 +31,11 @@ type SenderCommon struct {
 	// Indicates that there is a pending message to send.
 	hasPendingMessage chan struct{}
 
+	onMessageDone chan struct{}
+
+	// Indicates onMessage occurring
+	delayScheduleSend bool
+
 	// The next message to send.
 	nextMessage NextMessage
 }
@@ -40,7 +45,9 @@ type SenderCommon struct {
 func NewSenderCommon() SenderCommon {
 	return SenderCommon{
 		hasPendingMessage: make(chan struct{}, 1),
+		onMessageDone:     make(chan struct{}, 1),
 		nextMessage:       NewNextMessage(),
+		delayScheduleSend: false,
 	}
 }
 
@@ -48,18 +55,43 @@ func NewSenderCommon() SenderCommon {
 // is now ready to be sent. If there is no pending message (e.g. the NextMessage was
 // already sent and "pending" flag is reset) then no message will be sent.
 func (h *SenderCommon) ScheduleSend() {
-	// Set pending flag. Don't block on writing to channel.
+	if h.delayScheduleSend {
+		go func() {
+			<-h.onMessageDone
+			h.ScheduleSend()
+		}()
+		return
+	}
 	select {
+	// Set pending flag. Don't block on writing to channel.
 	case h.hasPendingMessage <- struct{}{}:
 	default:
 		break
 	}
+
 }
 
 // NextMessage gives access to the next message that will be sent by this looper.
 // Can be called concurrently with any other method.
 func (h *SenderCommon) NextMessage() *NextMessage {
 	return &h.nextMessage
+}
+
+// DisableScheduleSend stops ScheduleSend() from adding new messages.
+// It is used whenever OnMessage callback is taking place
+func (h *SenderCommon) DisableScheduleSend() {
+	h.delayScheduleSend = true
+}
+
+// EnableScheduleSend enables ScheduleSend() to add new messages.
+// It is used after OnMessage callback is done processing a msg
+func (h *SenderCommon) EnableScheduleSend() {
+	h.delayScheduleSend = false
+	select {
+	case h.onMessageDone <- struct{}{}:
+	default:
+		break
+	}
 }
 
 // SetInstanceUid sets a new instanceUid to be used for all subsequent messages to be sent.
