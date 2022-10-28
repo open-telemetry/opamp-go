@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -17,13 +16,12 @@ import (
 // Commander can start/stop/restat the Agent executable and also watch for a signal
 // for the Agent process to finish.
 type Commander struct {
-	logger  types.Logger
-	cfg     *config.Agent
-	args    []string
-	cmd     *exec.Cmd
-	doneCh  chan struct{}
-	waitCh  chan struct{}
-	running int64
+	logger types.Logger
+	cfg    *config.Agent
+	args   []string
+	cmd    *exec.Cmd
+	doneCh chan struct{}
+	waitCh chan struct{}
 }
 
 func NewCommander(logger types.Logger, cfg *config.Agent, args ...string) (*Commander, error) {
@@ -63,7 +61,6 @@ func (c *Commander) Start(ctx context.Context) error {
 	}
 
 	c.logger.Debugf("Agent process started, PID=%d", c.cmd.Process.Pid)
-	atomic.StoreInt64(&c.running, 1)
 
 	go c.watch()
 
@@ -83,7 +80,6 @@ func (c *Commander) Restart(ctx context.Context) error {
 func (c *Commander) watch() {
 	c.cmd.Wait()
 	c.doneCh <- struct{}{}
-	atomic.StoreInt64(&c.running, 0)
 	close(c.waitCh)
 }
 
@@ -106,10 +102,6 @@ func (c *Commander) ExitCode() int {
 		return 0
 	}
 	return c.cmd.ProcessState.ExitCode()
-}
-
-func (c *Commander) IsRunning() bool {
-	return atomic.LoadInt64(&c.running) != 0
 }
 
 // Stop the Agent process. Sends SIGTERM to the process and wait for up 10 seconds
@@ -143,7 +135,6 @@ func (c *Commander) Stop(ctx context.Context) error {
 			break
 		case <-finished:
 			// Process is successfully finished.
-			atomic.StoreInt64(&c.running, 0)
 			c.logger.Debugf("Agent process PID=%v successfully stopped.", c.cmd.Process.Pid)
 			return
 		}
@@ -159,8 +150,6 @@ func (c *Commander) Stop(ctx context.Context) error {
 
 	// Wait for process to terminate
 	<-c.waitCh
-
-	atomic.StoreInt64(&c.running, 0)
 
 	// Let goroutine know process is finished.
 	close(finished)
