@@ -2,7 +2,6 @@ package supervisor
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -11,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
@@ -21,7 +19,6 @@ import (
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/internal/examples/supervisor/supervisor/commander"
 	"github.com/open-telemetry/opamp-go/internal/examples/supervisor/supervisor/config"
-	"github.com/open-telemetry/opamp-go/internal/examples/supervisor/supervisor/healthchecker"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -40,10 +37,6 @@ type Supervisor struct {
 	commander *commander.Commander
 
 	startedAt time.Time
-
-	healthCheckTicker  *backoff.Ticker
-	healthChecker      *healthchecker.HttpHealthChecker
-	lastHealthCheckErr error
 
 	// Supervisor's own config.
 	config config.Supervisor
@@ -224,13 +217,6 @@ service:
       service.name: %s
       service.version: %s
       service.instance.id: %s
-
-  # Enable extension to allow the Supervisor to check health.
-  extensions: [health_check]
-
-extensions:
-  health_check:
-    # TODO: choose the endpoint dynamically.
 `,
 		agentType,
 		s.agentVersion,
@@ -412,57 +398,12 @@ func (s *Supervisor) startAgent() {
 		return
 	}
 	s.startedAt = time.Now()
-
-	// Prepare health checker
-	healthCheckBackoff := backoff.NewExponentialBackOff()
-	healthCheckBackoff.MaxInterval = 60 * time.Second
-	healthCheckBackoff.MaxElapsedTime = 0 // Never stop
-	if s.healthCheckTicker != nil {
-		s.healthCheckTicker.Stop()
-	}
-	s.healthCheckTicker = backoff.NewTicker(healthCheckBackoff)
-
-	// TODO: choose the port dynamically.
-	healthEndpoint := "http://localhost:13133"
-	s.healthChecker = healthchecker.NewHttpHealthChecker(healthEndpoint)
-}
-
-func (s *Supervisor) healthCheck() {
-	if !s.commander.IsRunning() {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-
-	err := s.healthChecker.Check(ctx)
-	cancel()
-
-	if errors.Is(err, s.lastHealthCheckErr) {
-		// No difference from last check. Nothing new to report.
-		return
-	}
-
-	// Prepare OpAMP health report.
-	health := &protobufs.AgentHealth{
-		StartTimeUnixNano: uint64(s.startedAt.UnixNano()),
-	}
-
-	if err != nil {
-		health.Up = false
-		health.LastError = err.Error()
-		s.logger.Errorf("Agent is not healthy: %s", health.LastError)
-	} else {
-		health.Up = true
-		s.logger.Debugf("Agent is healthy.")
-	}
-
-	// Report via OpAMP.
-	if err2 := s.opampClient.SetHealth(health); err2 != nil {
-		s.logger.Errorf("Could not report health. SetHealth returned: %v", err2)
-		return
-	}
-
-	s.lastHealthCheckErr = err
+	s.opampClient.SetHealth(
+		&protobufs.AgentHealth{
+			Up:                true,
+			StartTimeUnixNano: uint64(s.startedAt.UnixNano()),
+		},
+	)
 }
 
 func (s *Supervisor) runAgentProcess() {
@@ -478,8 +419,7 @@ func (s *Supervisor) runAgentProcess() {
 		select {
 		case <-s.hasNewConfig:
 			restartTimer.Stop()
-			s.stopAgentApplyConfig()
-			s.startAgent()
+			s.applyConfigWithAgentRestart()
 
 		case <-s.commander.Done():
 			errMsg := fmt.Sprintf(
@@ -497,18 +437,16 @@ func (s *Supervisor) runAgentProcess() {
 
 		case <-restartTimer.C:
 			s.startAgent()
-
-		case <-s.healthCheckTicker.C:
-			s.healthCheck()
 		}
 	}
 }
 
-func (s *Supervisor) stopAgentApplyConfig() {
-	s.logger.Debugf("Stopping the agent to apply new config.")
+func (s *Supervisor) applyConfigWithAgentRestart() {
+	s.logger.Debugf("Restarting the agent with the new config.")
 	cfg := s.effectiveConfig.Load().(string)
 	s.commander.Stop(context.Background())
 	s.writeEffectiveConfigToFile(cfg, s.effectiveConfigFilePath)
+	s.startAgent()
 }
 
 func (s *Supervisor) writeEffectiveConfigToFile(cfg string, filePath string) {
