@@ -11,6 +11,7 @@ type ConnectionResponse struct {
 	Accept             bool
 	HTTPStatusCode     int
 	HTTPResponseHeader map[string]string
+	State              interface{}
 }
 
 type Callbacks interface {

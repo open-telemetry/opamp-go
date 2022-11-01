@@ -23,4 +23,7 @@ type Connection interface {
 	// Disconnect closes the network connection.
 	// Any blocked Read or Write operations will be unblocked and return errors.
 	Disconnect() error
+
+	// State will return the state provided in the ConnectResponse.
+	State() interface{}
 }

@@ -20,7 +20,8 @@ var ErrInvalidHTTPConnection = errors.New("cannot operate over HTTP connection")
 // and that response will be sent by OpAMP Server's HTTP request handler after the
 // onMessage callback returns.
 type httpConnection struct {
-	conn net.Conn
+	conn  net.Conn
+	state interface{}
 }
 
 func (c httpConnection) RemoteAddr() net.Addr {
@@ -38,4 +39,8 @@ func (c httpConnection) Send(_ context.Context, _ *protobufs.ServerToAgent) erro
 func (c httpConnection) Disconnect() error {
 	// Disconnect() should not be called for plain HTTP connection.
 	return ErrInvalidHTTPConnection
+}
+
+func (c httpConnection) State() interface{} {
+	return c.state
 }

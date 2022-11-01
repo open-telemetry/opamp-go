@@ -140,6 +140,7 @@ func (s *server) Stop(ctx context.Context) error {
 }
 
 func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
+	var state interface{}
 	if s.settings.Callbacks != nil {
 		resp := s.settings.Callbacks.OnConnecting(req)
 		if !resp.Accept {
@@ -151,13 +152,14 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 			w.WriteHeader(resp.HTTPStatusCode)
 			return
 		}
+		state = resp.State
 	}
 
 	// HTTP connection is accepted. Check if it is a plain HTTP request.
 
 	if req.Header.Get(headerContentType) == contentTypeProtobuf {
 		// Yes, a plain HTTP request.
-		s.handlePlainHTTPRequest(req, w)
+		s.handlePlainHTTPRequest(state, req, w)
 		return
 	}
 
@@ -170,11 +172,11 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 
 	// Return from this func to reduce memory usage.
 	// Handle the connection on a separate goroutine.
-	go s.handleWSConnection(conn)
+	go s.handleWSConnection(state, conn)
 }
 
-func (s *server) handleWSConnection(wsConn *websocket.Conn) {
-	agentConn := wsConnection{wsConn: wsConn}
+func (s *server) handleWSConnection(state interface{}, wsConn *websocket.Conn) {
+	agentConn := wsConnection{state: state, wsConn: wsConn}
 
 	defer func() {
 		// Close the connection when all is done.
@@ -270,7 +272,7 @@ func compressGzip(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter) {
+func (s *server) handlePlainHTTPRequest(state interface{}, req *http.Request, w http.ResponseWriter) {
 	bytes, err := s.readReqBody(req)
 	if err != nil {
 		s.logger.Debugf("Cannot read HTTP body: %v", err)
@@ -288,7 +290,8 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	}
 
 	agentConn := httpConnection{
-		conn: connFromRequest(req),
+		state: state,
+		conn:  connFromRequest(req),
 	}
 
 	if s.settings.Callbacks == nil {

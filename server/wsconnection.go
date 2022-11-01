@@ -14,6 +14,7 @@ import (
 // wsConnection represents a persistent OpAMP connection over a WebSocket.
 type wsConnection struct {
 	wsConn *websocket.Conn
+	state  interface{}
 }
 
 var _ types.Connection = (*wsConnection)(nil)
@@ -32,4 +33,8 @@ func (c wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent) 
 
 func (c wsConnection) Disconnect() error {
 	return c.wsConn.Close()
+}
+
+func (c wsConnection) State() interface{} {
+	return c.state
 }

@@ -82,21 +82,32 @@ func eventually(t *testing.T, f func() bool) {
 	assert.Eventually(t, f, 5*time.Second, 10*time.Millisecond)
 }
 
+type testState struct {
+	value string
+}
+
 func TestServerStartAcceptConnection(t *testing.T) {
 	connectedCalled := int32(0)
 	connectionCloseCalled := int32(0)
 	var srvConn types.Connection
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true}
+			return types.ConnectionResponse{Accept: true, State: &testState{value: "A"}}
 		},
 		OnConnectedFunc: func(conn types.Connection) {
 			srvConn = conn
 			atomic.StoreInt32(&connectedCalled, 1)
+			state, ok := conn.State().(*testState)
+			assert.True(t, ok)
+			assert.EqualValues(t, "A", state.value)
+			state.value = "B"
 		},
 		OnConnectionCloseFunc: func(conn types.Connection) {
 			atomic.StoreInt32(&connectionCloseCalled, 1)
 			assert.EqualValues(t, srvConn, conn)
+			state, ok := conn.State().(*testState)
+			assert.True(t, ok)
+			assert.EqualValues(t, "B", state.value)
 		},
 	}
 
