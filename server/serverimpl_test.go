@@ -3,21 +3,24 @@ package server
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
+
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/testhelpers"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server/types"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 )
 
 func startServer(t *testing.T, settings *StartSettings) *server {
@@ -38,6 +41,8 @@ func startServer(t *testing.T, settings *StartSettings) *server {
 
 func dialClient(serverSettings *StartSettings) (*websocket.Conn, *http.Response, error) {
 	srvUrl := "ws://" + serverSettings.ListenEndpoint + serverSettings.ListenPath
+	dailer := websocket.DefaultDialer
+	dailer.EnableCompression = serverSettings.EnableCompression
 	return websocket.DefaultDialer.Dial(srvUrl, nil)
 }
 
@@ -222,6 +227,103 @@ func TestServerReceiveSendMessage(t *testing.T) {
 	// Verify the response.
 	assert.EqualValues(t, sendMsg.InstanceUid, response.InstanceUid)
 	assert.EqualValues(t, protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus, response.Capabilities)
+}
+
+func TestServerReceiveSendMessageWithCompression(t *testing.T) {
+	// Use highly compressible config body.
+	uncompressedCfg := []byte(strings.Repeat("test", 10000))
+	tests := []bool{false, true}
+	for _, withCompression := range tests {
+		t.Run(fmt.Sprintf("%v", withCompression), func(t *testing.T) {
+			var rcvMsg atomic.Value
+			callbacks := CallbacksStruct{
+				OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
+					return types.ConnectionResponse{Accept: true}
+				},
+				OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					// Remember received message.
+					rcvMsg.Store(message)
+
+					// Send a response.
+					response := protobufs.ServerToAgent{
+						InstanceUid:  message.InstanceUid,
+						Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
+						RemoteConfig: &protobufs.AgentRemoteConfig{
+							Config: &protobufs.AgentConfigMap{
+								ConfigMap: map[string]*protobufs.AgentConfigFile{
+									"": {Body: uncompressedCfg},
+								},
+							},
+						},
+					}
+					return &response
+				},
+			}
+
+			// Start a Server.
+			settings := &StartSettings{Settings: Settings{Callbacks: callbacks, EnableCompression: withCompression}}
+			srv := startServer(t, settings)
+			defer srv.Stop(context.Background())
+
+			// We use a transparent TCP proxy to be able to count the actual bytes transferred so that
+			// we can test the number of actual bytes vs number of expected bytes with and without compression.
+			proxy := testhelpers.NewProxy(settings.ListenEndpoint)
+			assert.NoError(t, proxy.Start())
+
+			clientSettings := *settings
+			clientSettings.ListenEndpoint = proxy.IncomingEndpoint()
+			// Connect using a WebSocket client.
+			conn, _, _ := dialClient(&clientSettings)
+			require.NotNil(t, conn)
+			defer conn.Close()
+
+			// Send a message to the Server.
+			sendMsg := protobufs.AgentToServer{
+				InstanceUid: "10000000",
+				EffectiveConfig: &protobufs.EffectiveConfig{
+					ConfigMap: &protobufs.AgentConfigMap{
+						ConfigMap: map[string]*protobufs.AgentConfigFile{
+							"": {Body: uncompressedCfg},
+						},
+					},
+				},
+			}
+			bytes, err := proto.Marshal(&sendMsg)
+			require.NoError(t, err)
+			err = conn.WriteMessage(websocket.BinaryMessage, bytes)
+			require.NoError(t, err)
+
+			// Wait until Server receives the message.
+			eventually(t, func() bool { return rcvMsg.Load() != nil })
+			assert.True(t, proto.Equal(rcvMsg.Load().(proto.Message), &sendMsg))
+
+			// Read Server's response.
+			mt, bytes, err := conn.ReadMessage()
+			require.NoError(t, err)
+			require.EqualValues(t, websocket.BinaryMessage, mt)
+
+			// Decode the response.
+			var response protobufs.ServerToAgent
+			err = proto.Unmarshal(bytes, &response)
+			require.NoError(t, err)
+
+			fmt.Printf("sent %d, received %d\n", proxy.ClientToServerBytes(), proxy.ServerToClientBytes())
+
+			// Verify the response.
+			assert.EqualValues(t, sendMsg.InstanceUid, response.InstanceUid)
+			assert.EqualValues(t, protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus, response.Capabilities)
+			if withCompression {
+				// With compression the entire bytes exchanged should be less than the config body.
+				// This is only possible if there is any compression happening.
+				assert.Less(t, proxy.ClientToServerBytes(), len(uncompressedCfg))
+				assert.Less(t, proxy.ServerToClientBytes(), len(uncompressedCfg))
+			} else {
+				// Without compression the entire bytes exchanged should be more than the config body.
+				assert.Greater(t, proxy.ClientToServerBytes(), len(uncompressedCfg))
+				assert.Greater(t, proxy.ServerToClientBytes(), len(uncompressedCfg))
+			}
+		})
+	}
 }
 
 func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {

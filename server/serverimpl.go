@@ -52,8 +52,9 @@ func New(logger types.Logger) *server {
 
 func (s *server) Attach(settings Settings) (HTTPHandlerFunc, error) {
 	s.settings = settings
-	// TODO: Add support for compression using Upgrader.EnableCompression field.
-	s.wsUpgrader = websocket.Upgrader{}
+	s.wsUpgrader = websocket.Upgrader{
+		EnableCompression: settings.EnableCompression,
+	}
 	return s.httpHandler, nil
 }
 
