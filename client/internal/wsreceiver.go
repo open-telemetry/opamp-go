@@ -27,6 +27,7 @@ func NewWSReceiver(
 	callbacks types.Callbacks,
 	conn *websocket.Conn,
 	sender *WSSender,
+	senderCommon *SenderCommon,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
@@ -36,7 +37,7 @@ func NewWSReceiver(
 		logger:    logger,
 		sender:    sender,
 		callbacks: callbacks,
-		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider, capabilities),
+		processor: newReceivedProcessor(logger, callbacks, sender, senderCommon, clientSyncedState, packagesStateProvider, capabilities),
 	}
 
 	return w

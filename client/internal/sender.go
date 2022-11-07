@@ -31,6 +31,12 @@ type SenderCommon struct {
 	// Indicates that there is a pending message to send.
 	hasPendingMessage chan struct{}
 
+	// Indicates onMessage callback is running
+	onMessageRunning bool
+
+	// Indicates ScheduleSend() was called during onMessage callback run
+	registerScheduleSend chan struct{}
+
 	// The next message to send.
 	nextMessage NextMessage
 }
@@ -39,8 +45,9 @@ type SenderCommon struct {
 // the WebSocket and HTTP Sender implementations.
 func NewSenderCommon() SenderCommon {
 	return SenderCommon{
-		hasPendingMessage: make(chan struct{}, 1),
-		nextMessage:       NewNextMessage(),
+		hasPendingMessage:    make(chan struct{}, 1),
+		registerScheduleSend: make(chan struct{}, 1),
+		nextMessage:          NewNextMessage(),
 	}
 }
 
@@ -48,6 +55,16 @@ func NewSenderCommon() SenderCommon {
 // is now ready to be sent. If there is no pending message (e.g. the NextMessage was
 // already sent and "pending" flag is reset) then no message will be sent.
 func (h *SenderCommon) ScheduleSend() {
+	if h.onMessageRunning {
+		// onMessage callback is running, ScheduleSend() will rerun after it is done
+		select {
+		case h.registerScheduleSend <- struct{}{}:
+		default:
+			break
+		}
+		return
+	}
+
 	// Set pending flag. Don't block on writing to channel.
 	select {
 	case h.hasPendingMessage <- struct{}{}:
@@ -60,6 +77,22 @@ func (h *SenderCommon) ScheduleSend() {
 // Can be called concurrently with any other method.
 func (h *SenderCommon) NextMessage() *NextMessage {
 	return &h.nextMessage
+}
+
+// DisableScheduleSend temporary preventing ScheduleSend from writing to channel
+func (h *SenderCommon) DisableScheduleSend() {
+	h.onMessageRunning = true
+}
+
+// EnableScheduleSend re-enables ScheduleSend and checks if it was called during onMessage callback
+func (h *SenderCommon) EnableScheduleSend() {
+	h.onMessageRunning = false
+	select {
+	case <-h.registerScheduleSend:
+		h.ScheduleSend()
+	default:
+		break
+	}
 }
 
 // SetInstanceUid sets a new instanceUid to be used for all subsequent messages to be sent.

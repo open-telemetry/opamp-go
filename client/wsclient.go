@@ -236,6 +236,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		c.common.Callbacks,
 		c.conn,
 		c.sender,
+		&c.sender.SenderCommon,
 		&c.common.ClientSyncedState,
 		c.common.PackagesStateProvider,
 		c.common.Capabilities,

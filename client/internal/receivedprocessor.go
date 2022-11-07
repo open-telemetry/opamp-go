@@ -19,6 +19,9 @@ type receivedProcessor struct {
 	// what will be sent later.
 	sender Sender
 
+	// A senderCommon to handle the scheduling of sending.
+	senderCommon *SenderCommon
+
 	// Client state storage. This is needed if the Server asks to report the state.
 	clientSyncedState *ClientSyncedState
 
@@ -32,6 +35,7 @@ func newReceivedProcessor(
 	logger types.Logger,
 	callbacks types.Callbacks,
 	sender Sender,
+	senderCommon *SenderCommon,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
@@ -40,6 +44,7 @@ func newReceivedProcessor(
 		logger:                logger,
 		callbacks:             callbacks,
 		sender:                sender,
+		senderCommon:          senderCommon,
 		clientSyncedState:     clientSyncedState,
 		packagesStateProvider: packagesStateProvider,
 		capabilities:          capabilities,
@@ -127,7 +132,6 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 				msgData.AgentIdentification = msg.AgentIdentification
 			}
 		}
-
 		r.callbacks.OnMessage(ctx, msgData)
 
 		r.rcvOpampConnectionSettings(ctx, msg.ConnectionSettings)
@@ -143,6 +147,11 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 	}
 }
 
+func (r *receivedProcessor) onMessage(ctx context.Context, msgData *types.MessageData) {
+	r.senderCommon.DisableScheduleSend()
+	r.callbacks.OnMessage(ctx, msgData)
+	r.senderCommon.EnableScheduleSend()
+}
 func (r *receivedProcessor) hasCapability(capability protobufs.AgentCapabilities) bool {
 	return r.capabilities&capability != 0
 }
