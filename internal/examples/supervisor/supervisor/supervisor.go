@@ -160,7 +160,7 @@ func (s *Supervisor) startOpAMP() error {
 		return err
 	}
 
-	err = s.opampClient.SetHealth(&protobufs.AgentHealth{Up: false})
+	err = s.opampClient.SetHealth(&protobufs.AgentHealth{Healthy: false})
 	if err != nil {
 		return err
 	}
@@ -408,7 +408,7 @@ func (s *Supervisor) startAgent() {
 	if err != nil {
 		errMsg := fmt.Sprintf("Cannot start the agent: %v", err)
 		s.logger.Errorf(errMsg)
-		s.opampClient.SetHealth(&protobufs.AgentHealth{Up: false, LastError: errMsg})
+		s.opampClient.SetHealth(&protobufs.AgentHealth{Healthy: false, LastError: errMsg})
 		return
 	}
 	s.startedAt = time.Now()
@@ -448,13 +448,11 @@ func (s *Supervisor) healthCheck() {
 	}
 
 	if err != nil {
-		// TODO: the Up field's usage may need to change once this issue is clarfied:
-		// https://github.com/open-telemetry/opamp-spec/issues/136
-		health.Up = false
+		health.Healthy = false
 		health.LastError = err.Error()
 		s.logger.Errorf("Agent is not healthy: %s", health.LastError)
 	} else {
-		health.Up = true
+		health.Healthy = true
 		s.logger.Debugf("Agent is healthy.")
 	}
 
@@ -489,7 +487,7 @@ func (s *Supervisor) runAgentProcess() {
 				s.commander.Pid(), s.commander.ExitCode(),
 			)
 			s.logger.Debugf(errMsg)
-			s.opampClient.SetHealth(&protobufs.AgentHealth{Up: false, LastError: errMsg})
+			s.opampClient.SetHealth(&protobufs.AgentHealth{Healthy: false, LastError: errMsg})
 
 			// TODO: decide why the agent stopped. If it was due to bad config, report it to server.
 
@@ -531,7 +529,7 @@ func (s *Supervisor) Shutdown() {
 	if s.opampClient != nil {
 		s.opampClient.SetHealth(
 			&protobufs.AgentHealth{
-				Up: false, LastError: "Supervisor is shutdown",
+				Healthy: false, LastError: "Supervisor is shutdown",
 			},
 		)
 		_ = s.opampClient.Stop(context.Background())
