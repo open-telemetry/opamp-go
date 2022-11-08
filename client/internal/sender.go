@@ -2,6 +2,7 @@ package internal
 
 import (
 	"errors"
+	"sync/atomic"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -32,7 +33,7 @@ type SenderCommon struct {
 	hasPendingMessage chan struct{}
 
 	// Indicates onMessage callback is running
-	onMessageRunning bool
+	onMessageRunning int32
 
 	// Indicates ScheduleSend() was called during onMessage callback run
 	registerScheduleSend chan struct{}
@@ -48,6 +49,7 @@ func NewSenderCommon() SenderCommon {
 		hasPendingMessage:    make(chan struct{}, 1),
 		registerScheduleSend: make(chan struct{}, 1),
 		nextMessage:          NewNextMessage(),
+		onMessageRunning:     0,
 	}
 }
 
@@ -55,7 +57,7 @@ func NewSenderCommon() SenderCommon {
 // is now ready to be sent. If there is no pending message (e.g. the NextMessage was
 // already sent and "pending" flag is reset) then no message will be sent.
 func (h *SenderCommon) ScheduleSend() {
-	if h.onMessageRunning {
+	if h.IsOnMessageRunning() {
 		// onMessage callback is running, ScheduleSend() will rerun after it is done
 		select {
 		case h.registerScheduleSend <- struct{}{}:
@@ -79,14 +81,19 @@ func (h *SenderCommon) NextMessage() *NextMessage {
 	return &h.nextMessage
 }
 
+// IsOnMessageRunning returns true if onMessage callback is running
+func (h *SenderCommon) IsOnMessageRunning() bool {
+	return atomic.LoadInt32(&h.onMessageRunning) != 0
+}
+
 // DisableScheduleSend temporary preventing ScheduleSend from writing to channel
 func (h *SenderCommon) DisableScheduleSend() {
-	h.onMessageRunning = true
+	atomic.StoreInt32(&h.onMessageRunning, 1)
 }
 
 // EnableScheduleSend re-enables ScheduleSend and checks if it was called during onMessage callback
 func (h *SenderCommon) EnableScheduleSend() {
-	h.onMessageRunning = false
+	atomic.StoreInt32(&h.onMessageRunning, 0)
 	select {
 	case <-h.registerScheduleSend:
 		h.ScheduleSend()

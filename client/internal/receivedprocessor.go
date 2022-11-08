@@ -132,7 +132,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 				msgData.AgentIdentification = msg.AgentIdentification
 			}
 		}
-		r.callbacks.OnMessage(ctx, msgData)
+		r.onMessage(ctx, msgData)
 
 		r.rcvOpampConnectionSettings(ctx, msg.ConnectionSettings)
 
