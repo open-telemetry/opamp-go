@@ -270,10 +270,10 @@ func TestServerReceiveSendMessageWithCompression(t *testing.T) {
 			proxy := testhelpers.NewProxy(settings.ListenEndpoint)
 			assert.NoError(t, proxy.Start())
 
-			clientSettings := *settings
-			clientSettings.ListenEndpoint = proxy.IncomingEndpoint()
+			serverSettings := *settings
+			serverSettings.ListenEndpoint = proxy.IncomingEndpoint()
 			// Connect using a WebSocket client.
-			conn, _, _ := dialClient(&clientSettings)
+			conn, _, _ := dialClient(&serverSettings)
 			require.NotNil(t, conn)
 			defer conn.Close()
 
