@@ -11,6 +11,7 @@ type ConnectionResponse struct {
 	Accept             bool
 	HTTPStatusCode     int
 	HTTPResponseHeader map[string]string
+	ConnectionHandler  ConnectionCallbacks
 }
 
 type Callbacks interface {
@@ -29,6 +30,13 @@ type Callbacks interface {
 	//   HTTPResponseHeader may be optionally set (e.g. "Retry-After: 30").
 	OnConnecting(request *http.Request) ConnectionResponse
 
+	// ConnectionCallbacks provides a connection handling implementation to be used if the ConnectionHandler field on
+	// ConnectionResponse is nil. This provides compatibility with existing implementations that use a single handler for
+	// all connections.
+	ConnectionCallbacks
+}
+
+type ConnectionCallbacks interface {
 	// OnConnected is called when and incoming OpAMP connection is successfully
 	// established after OnConnecting() returns.
 	OnConnected(conn Connection)

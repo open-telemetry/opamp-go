@@ -15,6 +15,7 @@ import (
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
+	serverTypes "github.com/open-telemetry/opamp-go/server/types"
 )
 
 var (
@@ -140,6 +141,7 @@ func (s *server) Stop(ctx context.Context) error {
 }
 
 func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
+	var connectionHandler serverTypes.ConnectionCallbacks
 	if s.settings.Callbacks != nil {
 		resp := s.settings.Callbacks.OnConnecting(req)
 		if !resp.Accept {
@@ -151,13 +153,20 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 			w.WriteHeader(resp.HTTPStatusCode)
 			return
 		}
+		if resp.ConnectionHandler != nil {
+			// use connection-specific handler provided by ConnectionResponse
+			connectionHandler = resp.ConnectionHandler
+		} else {
+			// use shared connection handler provided by settings Callbacks
+			connectionHandler = s.settings.Callbacks
+		}
 	}
 
 	// HTTP connection is accepted. Check if it is a plain HTTP request.
 
 	if req.Header.Get(headerContentType) == contentTypeProtobuf {
 		// Yes, a plain HTTP request.
-		s.handlePlainHTTPRequest(req, w)
+		s.handlePlainHTTPRequest(req, w, connectionHandler)
 		return
 	}
 
@@ -170,10 +179,10 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 
 	// Return from this func to reduce memory usage.
 	// Handle the connection on a separate goroutine.
-	go s.handleWSConnection(conn)
+	go s.handleWSConnection(conn, connectionHandler)
 }
 
-func (s *server) handleWSConnection(wsConn *websocket.Conn) {
+func (s *server) handleWSConnection(wsConn *websocket.Conn, connectionHandler serverTypes.ConnectionCallbacks) {
 	agentConn := wsConnection{wsConn: wsConn}
 
 	defer func() {
@@ -185,13 +194,13 @@ func (s *server) handleWSConnection(wsConn *websocket.Conn) {
 			}
 		}()
 
-		if s.settings.Callbacks != nil {
-			s.settings.Callbacks.OnConnectionClose(agentConn)
+		if connectionHandler != nil {
+			connectionHandler.OnConnectionClose(agentConn)
 		}
 	}()
 
-	if s.settings.Callbacks != nil {
-		s.settings.Callbacks.OnConnected(agentConn)
+	if connectionHandler != nil {
+		connectionHandler.OnConnected(agentConn)
 	}
 
 	// Loop until fail to read from the WebSocket connection.
@@ -220,8 +229,8 @@ func (s *server) handleWSConnection(wsConn *websocket.Conn) {
 			continue
 		}
 
-		if s.settings.Callbacks != nil {
-			response := s.settings.Callbacks.OnMessage(agentConn, &request)
+		if connectionHandler != nil {
+			response := connectionHandler.OnMessage(agentConn, &request)
 			if response.InstanceUid == "" {
 				response.InstanceUid = request.InstanceUid
 			}
@@ -270,7 +279,7 @@ func compressGzip(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter) {
+func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter, connectionHandler serverTypes.ConnectionCallbacks) {
 	bytes, err := s.readReqBody(req)
 	if err != nil {
 		s.logger.Debugf("Cannot read HTTP body: %v", err)
@@ -291,22 +300,22 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 		conn: connFromRequest(req),
 	}
 
-	if s.settings.Callbacks == nil {
+	if connectionHandler == nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	s.settings.Callbacks.OnConnected(agentConn)
+	connectionHandler.OnConnected(agentConn)
 
 	defer func() {
 		// Indicate via the callback that the OpAMP Connection is closed. From OpAMP
 		// perspective the connection represented by this http request
 		// is closed. It is not possible to send or receive more OpAMP messages
 		// via this agentConn.
-		s.settings.Callbacks.OnConnectionClose(agentConn)
+		connectionHandler.OnConnectionClose(agentConn)
 	}()
 
-	response := s.settings.Callbacks.OnMessage(agentConn, &request)
+	response := connectionHandler.OnMessage(agentConn, &request)
 
 	// Set the InstanceUid if it is not set by the callback.
 	if response.InstanceUid == "" {

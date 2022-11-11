@@ -15,6 +15,7 @@ type CallbacksStruct struct {
 }
 
 var _ types.Callbacks = (*CallbacksStruct)(nil)
+var _ types.ConnectionCallbacks = (*CallbacksStruct)(nil)
 
 func (c CallbacksStruct) OnConnecting(request *http.Request) types.ConnectionResponse {
 	if c.OnConnectingFunc != nil {
