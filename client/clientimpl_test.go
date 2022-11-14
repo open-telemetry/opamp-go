@@ -774,7 +774,7 @@ func TestReportAgentHealth(t *testing.T) {
 		assert.Error(t, client.SetHealth(nil))
 
 		sendHealth := &protobufs.AgentHealth{
-			Up:                true,
+			Healthy:           true,
 			StartTimeUnixNano: 123,
 			LastError:         "bad error",
 		}

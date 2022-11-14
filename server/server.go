@@ -11,6 +11,11 @@ import (
 type Settings struct {
 	// Callbacks that the Server will call after successful Attach/Start.
 	Callbacks types.Callbacks
+
+	// EnableCompression can be set to true to enable the compression. Note that for WebSocket transport
+	// the compression is only effectively enabled if the client also supports compression.
+	// The data will be compressed in both directions.
+	EnableCompression bool
 }
 
 type StartSettings struct {
