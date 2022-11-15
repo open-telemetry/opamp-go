@@ -55,6 +55,16 @@ func newReceivedProcessor(
 // the received message and performs any processing necessary based on what fields are set.
 // This function will call any relevant callbacks.
 func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
+	if r.senderCommon != nil {
+		r.senderCommon.DisableScheduleSend()
+	}
+
+	defer func() {
+		if r.senderCommon != nil {
+			r.senderCommon.EnableScheduleSend()
+		}
+	}()
+
 	if r.callbacks != nil {
 		if msg.Command != nil {
 			r.rcvCommand(msg.Command)
@@ -132,7 +142,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 				msgData.AgentIdentification = msg.AgentIdentification
 			}
 		}
-		r.onMessage(ctx, msgData)
+		r.callbacks.OnMessage(ctx, msgData)
 
 		r.rcvOpampConnectionSettings(ctx, msg.ConnectionSettings)
 
@@ -147,11 +157,6 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 	}
 }
 
-func (r *receivedProcessor) onMessage(ctx context.Context, msgData *types.MessageData) {
-	r.senderCommon.DisableScheduleSend()
-	r.callbacks.OnMessage(ctx, msgData)
-	r.senderCommon.EnableScheduleSend()
-}
 func (r *receivedProcessor) hasCapability(capability protobufs.AgentCapabilities) bool {
 	return r.capabilities&capability != 0
 }
