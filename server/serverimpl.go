@@ -215,7 +215,7 @@ func (s *server) handleWSConnection(wsConn *websocket.Conn) {
 
 		// Decode WebSocket message as a Protobuf message.
 		var request protobufs.AgentToServer
-		err = proto.Unmarshal(bytes, &request)
+		err = internal.DecodeWSMessage(bytes, &request)
 		if err != nil {
 			s.logger.Errorf("Cannot decode message from WebSocket: %v", err)
 			continue

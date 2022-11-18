@@ -6,8 +6,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/types"
+	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -106,4 +109,36 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 	})
 	assert.Equal(t, true, calledCommand, "OnCommand should be called when a Command is specified")
 	assert.Equal(t, false, calledOnMessageConfig, "OnMessage should not be called when a Command is specified")
+}
+
+func TestDecodeMessage(t *testing.T) {
+	msgsToTest := []*protobufs.ServerToAgent{
+		{}, // Empty message
+		{
+			InstanceUid: "abcd",
+		},
+	}
+
+	// Try with and without header byte. This is only necessary until the
+	// end of grace period that ends Feb 1, 2023. After that the header is
+	// no longer optional.
+	withHeaderTests := []bool{false, true}
+
+	for _, msg := range msgsToTest {
+		for _, withHeader := range withHeaderTests {
+			bytes, err := proto.Marshal(msg)
+			require.NoError(t, err)
+
+			if withHeader {
+				// Prepend zero header byte.
+				bytes = append([]byte{0}, bytes...)
+			}
+
+			var decoded protobufs.ServerToAgent
+			err = internal.DecodeWSMessage(bytes, &decoded)
+			require.NoError(t, err)
+
+			assert.True(t, proto.Equal(msg, &decoded))
+		}
+	}
 }

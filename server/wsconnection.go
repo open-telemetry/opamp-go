@@ -5,8 +5,8 @@ import (
 	"net"
 
 	"github.com/gorilla/websocket"
-	"google.golang.org/protobuf/proto"
 
+	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server/types"
 )
@@ -22,12 +22,11 @@ func (c wsConnection) RemoteAddr() net.Addr {
 	return c.wsConn.RemoteAddr()
 }
 
+// Message header is currently uint64 zero value.
+const wsMsgHeader = uint64(0)
+
 func (c wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent) error {
-	bytes, err := proto.Marshal(message)
-	if err != nil {
-		return err
-	}
-	return c.wsConn.WriteMessage(websocket.BinaryMessage, bytes)
+	return internal.WriteWSMessage(c.wsConn, message)
 }
 
 func (c wsConnection) Disconnect() error {
