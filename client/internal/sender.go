@@ -21,6 +21,12 @@ type Sender interface {
 	// "pending" flag is reset) then no message will be sent.
 	ScheduleSend()
 
+	// DisableScheduleSend temporary preventing ScheduleSend from writing to channel
+	DisableScheduleSend()
+
+	// EnableScheduleSend re-enables ScheduleSend and checks if it was called during onMessage callback
+	EnableScheduleSend()
+
 	// SetInstanceUid sets a new instanceUid to be used for all subsequent messages to be sent.
 	SetInstanceUid(instanceUid string) error
 }

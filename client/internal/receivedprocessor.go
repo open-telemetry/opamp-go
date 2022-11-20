@@ -35,7 +35,6 @@ func newReceivedProcessor(
 	logger types.Logger,
 	callbacks types.Callbacks,
 	sender Sender,
-	senderCommon *SenderCommon,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
@@ -44,7 +43,6 @@ func newReceivedProcessor(
 		logger:                logger,
 		callbacks:             callbacks,
 		sender:                sender,
-		senderCommon:          senderCommon,
 		clientSyncedState:     clientSyncedState,
 		packagesStateProvider: packagesStateProvider,
 		capabilities:          capabilities,
@@ -55,16 +53,15 @@ func newReceivedProcessor(
 // the received message and performs any processing necessary based on what fields are set.
 // This function will call any relevant callbacks.
 func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
-	if r.senderCommon != nil {
-		r.senderCommon.DisableScheduleSend()
+	if r.sender != nil {
+		r.sender.DisableScheduleSend()
 	}
 
 	defer func() {
-		if r.senderCommon != nil {
-			r.senderCommon.EnableScheduleSend()
+		if r.sender != nil {
+			r.sender.EnableScheduleSend()
 		}
 	}()
-
 	if r.callbacks != nil {
 		if msg.Command != nil {
 			r.rcvCommand(msg.Command)
