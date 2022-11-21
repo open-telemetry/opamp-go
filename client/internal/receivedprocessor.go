@@ -19,9 +19,6 @@ type receivedProcessor struct {
 	// what will be sent later.
 	sender Sender
 
-	// A senderCommon to handle the scheduling of sending.
-	senderCommon *SenderCommon
-
 	// Client state storage. This is needed if the Server asks to report the state.
 	clientSyncedState *ClientSyncedState
 
@@ -53,15 +50,9 @@ func newReceivedProcessor(
 // the received message and performs any processing necessary based on what fields are set.
 // This function will call any relevant callbacks.
 func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
-	if r.sender != nil {
-		r.sender.DisableScheduleSend()
-	}
+	r.sender.DisableScheduleSend()
+	defer r.sender.EnableScheduleSend()
 
-	defer func() {
-		if r.sender != nil {
-			r.sender.EnableScheduleSend()
-		}
-	}()
 	if r.callbacks != nil {
 		if msg.Command != nil {
 			r.rcvCommand(msg.Command)
@@ -141,6 +132,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 		}
 		r.callbacks.OnMessage(ctx, msgData)
 
+		r.sender.EnableScheduleSend()
 		r.rcvOpampConnectionSettings(ctx, msg.ConnectionSettings)
 
 		if scheduled {
