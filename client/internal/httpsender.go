@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -262,4 +263,12 @@ func (h *HTTPSender) SetPollingInterval(duration time.Duration) {
 func (h *HTTPSender) EnableCompression() {
 	h.compressionEnabled = true
 	h.requestHeader.Set(headerContentEncoding, encodingTypeGZip)
+}
+
+func (h *HTTPSender) AddTLSConfig(config *tls.Config) {
+	if config != nil {
+		h.client.Transport = &http.Transport{
+			TLSClientConfig: config,
+		}
+	}
 }
