@@ -51,6 +51,8 @@ func newReceivedProcessor(
 // This function will call any relevant callbacks.
 func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
 	r.sender.DisableScheduleSend()
+
+	// Verify message sending is enabled. Can be called several times since process is non-blocking
 	defer r.sender.EnableScheduleSend()
 
 	if r.callbacks != nil {

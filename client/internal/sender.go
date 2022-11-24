@@ -38,10 +38,10 @@ type SenderCommon struct {
 	// Indicates that there is a pending message to send.
 	hasPendingMessage chan struct{}
 
-	// Indicates onMessage callback is running
+	// When set to non-zero indicates message sending is disabled
 	isSendingDisabled int32
 
-	// Indicates ScheduleSend() was called during onMessage callback run
+	// Indicates ScheduleSend() was called when message sending was disabled
 	registerScheduleSend chan struct{}
 
 	// The next message to send.
@@ -64,7 +64,7 @@ func NewSenderCommon() SenderCommon {
 // already sent and "pending" flag is reset) then no message will be sent.
 func (h *SenderCommon) ScheduleSend() {
 	if h.IsSendingDisabled() {
-		// onMessage callback is running, ScheduleSend() will rerun after it is done
+		// Register message sending to when message sending is enabled, won't block on writing to channel.
 		select {
 		case h.registerScheduleSend <- struct{}{}:
 		default:
@@ -98,7 +98,7 @@ func (h *SenderCommon) DisableScheduleSend() {
 	atomic.StoreInt32(&h.isSendingDisabled, 1)
 }
 
-// EnableScheduleSend re-enables ScheduleSend and checks if it was called during onMessage callback
+// EnableScheduleSend re-enables message sending, won't block on reading from channel.
 func (h *SenderCommon) EnableScheduleSend() {
 	atomic.StoreInt32(&h.isSendingDisabled, 0)
 	select {
