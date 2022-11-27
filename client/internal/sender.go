@@ -2,10 +2,10 @@ package internal
 
 import (
 	"errors"
-	"sync/atomic"
-
 	"github.com/oklog/ulid/v2"
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"sync/atomic"
+	"time"
 )
 
 // Sender is an interface of the sending portion of OpAMP protocol that stores
@@ -104,6 +104,8 @@ func (h *SenderCommon) EnableScheduleSend() {
 	select {
 	case <-h.registerScheduleSend:
 		h.ScheduleSend()
+	case <-time.Tick(100 * time.Millisecond):
+		break
 	default:
 		break
 	}
