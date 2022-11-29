@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"net"
 	"net/http"
 
 	"github.com/open-telemetry/opamp-go/server/types"
@@ -34,18 +35,20 @@ type StartSettings struct {
 
 type HTTPHandlerFunc func(http.ResponseWriter, *http.Request)
 
+type ConnContext func(ctx context.Context, c net.Conn) context.Context
+
 type OpAMPServer interface {
 	// Attach prepares the OpAMP Server to begin handling requests from an existing
-	// http.Server. The returned HTTPHandlerFunc should be added as a handler to the
-	// desired http.Server by the caller and the http.Server should be started by
-	// the caller after that.
+	// http.Server. The returned HTTPHandlerFunc & ConnContext should be added as a
+	// handler & ConnContext respectively to the desired http.Server by the caller
+	//and the http.Server should be started by the caller after that.
 	// For example:
 	//   handler, _ := Server.Attach()
 	//   mux := http.NewServeMux()
 	//   mux.HandleFunc("/opamp", handler)
-	//   httpSrv := &http.Server{Handler:mux,Addr:"127.0.0.1:4320"}
+	//   httpSrv := &http.Server{Handler:mux,Addr:"127.0.0.1:4320", ConnContext: ConnContext}
 	//   httpSrv.ListenAndServe()
-	Attach(settings Settings) (HTTPHandlerFunc, error)
+	Attach(settings Settings) (HTTPHandlerFunc, ConnContext, error)
 
 	// Start an OpAMP Server and begin accepting connections. Starts its own http.Server
 	// using provided settings. This should block until the http.Server is ready to
