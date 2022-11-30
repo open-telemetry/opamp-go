@@ -41,7 +41,8 @@ type OpAMPServer interface {
 	// Attach prepares the OpAMP Server to begin handling requests from an existing
 	// http.Server. The returned HTTPHandlerFunc and ConnContext should be added as a
 	// handler and ConnContext respectively to the desired http.Server by the caller
-	// and the http.Server should be started by the caller after that.
+	// and the http.Server should be started by the caller after that. The ConnContext
+	// is only used for plain http connections.
 	// For example:
 	//   handler, connContext, _ := Server.Attach()
 	//   mux := http.NewServeMux()
