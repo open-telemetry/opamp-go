@@ -45,6 +45,9 @@ func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) er
 	// Prepare Server connection settings.
 	c.sender.SetRequestHeader(settings.Header)
 
+	// Add TLS configuration into httpClient
+	c.sender.AddTLSConfig(settings.TLSConfig)
+
 	if settings.EnableCompression {
 		c.sender.EnableCompression()
 	}
