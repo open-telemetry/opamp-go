@@ -43,7 +43,7 @@ type OpAMPServer interface {
 	// handler and ConnContext respectively to the desired http.Server by the caller
 	// and the http.Server should be started by the caller after that.
 	// For example:
-	//   handler, _ := Server.Attach()
+	//   handler, ConnContext, _ := Server.Attach()
 	//   mux := http.NewServeMux()
 	//   mux.HandleFunc("/opamp", handler)
 	//   httpSrv := &http.Server{Handler:mux,Addr:"127.0.0.1:4320", ConnContext: ConnContext}
