@@ -220,8 +220,12 @@ func TestServerReceiveSendMessage(t *testing.T) {
 	require.EqualValues(t, websocket.BinaryMessage, mt)
 
 	// Decode the response.
+
+	// Must start with a zero byte header until the end of grace period that ends Feb 1, 2023.
+	require.EqualValues(t, 0, bytes[0])
+
 	var response protobufs.ServerToAgent
-	err = proto.Unmarshal(bytes, &response)
+	err = sharedinternal.DecodeWSMessage(bytes, &response)
 	require.NoError(t, err)
 
 	// Verify the response.
@@ -303,8 +307,12 @@ func TestServerReceiveSendMessageWithCompression(t *testing.T) {
 			require.EqualValues(t, websocket.BinaryMessage, mt)
 
 			// Decode the response.
+
+			// Must start with a zero byte header until the end of grace period that ends Feb 1, 2023.
+			require.EqualValues(t, 0, bytes[0])
+
 			var response protobufs.ServerToAgent
-			err = proto.Unmarshal(bytes, &response)
+			err = sharedinternal.DecodeWSMessage(bytes, &response)
 			require.NoError(t, err)
 
 			fmt.Printf("sent %d, received %d\n", proxy.ClientToServerBytes(), proxy.ServerToClientBytes())
@@ -414,7 +422,7 @@ func TestServerAttachAcceptConnection(t *testing.T) {
 	settings := Settings{Callbacks: callbacks}
 	srv := New(&sharedinternal.NopLogger{})
 	require.NotNil(t, srv)
-	handlerFunc, err := srv.Attach(settings)
+	handlerFunc, _, err := srv.Attach(settings)
 	require.NoError(t, err)
 
 	// Create an HTTP Server and make it handle OpAMP connections.
@@ -436,6 +444,88 @@ func TestServerAttachAcceptConnection(t *testing.T) {
 	assert.True(t, atomic.LoadInt32(&connectionCloseCalled) == 0)
 
 	conn.Close()
+	eventually(t, func() bool { return atomic.LoadInt32(&connectionCloseCalled) == 1 })
+}
+
+func TestServerAttachSendMessagePlainHTTP(t *testing.T) {
+	connectedCalled := int32(0)
+	connectionCloseCalled := int32(0)
+	var rcvMsg atomic.Value
+
+	var srvConn types.Connection
+	callbacks := CallbacksStruct{
+		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true}
+		},
+		OnConnectedFunc: func(conn types.Connection) {
+			atomic.StoreInt32(&connectedCalled, 1)
+			srvConn = conn
+		},
+		OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// Remember received message.
+			rcvMsg.Store(message)
+
+			// Send a response.
+			response := protobufs.ServerToAgent{
+				InstanceUid:  message.InstanceUid,
+				Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
+			}
+			return &response
+		},
+		OnConnectionCloseFunc: func(conn types.Connection) {
+			atomic.StoreInt32(&connectionCloseCalled, 1)
+			assert.EqualValues(t, srvConn, conn)
+		},
+	}
+
+	// Prepare to attach OpAMP Server to an HTTP Server created separately.
+	settings := Settings{Callbacks: callbacks}
+	srv := New(&sharedinternal.NopLogger{})
+	require.NotNil(t, srv)
+	handlerFunc, ContextWithConn, err := srv.Attach(settings)
+	require.NoError(t, err)
+
+	// Create an HTTP Server and make it handle OpAMP connections.
+	mux := http.NewServeMux()
+	path := "/opamppath"
+	mux.HandleFunc(path, handlerFunc)
+	hs := httptest.NewUnstartedServer(mux)
+	hs.Config.ConnContext = ContextWithConn
+	hs.Start()
+	defer hs.Close()
+
+	// Send a message to the Server.
+	sendMsg := protobufs.AgentToServer{
+		InstanceUid: "12345678",
+	}
+	b, err := proto.Marshal(&sendMsg)
+	require.NoError(t, err)
+	resp, err := http.Post("http://"+hs.Listener.Addr().String()+path, contentTypeProtobuf, bytes.NewReader(b))
+	require.NoError(t, err)
+
+	// Wait until Server receives the message.
+	eventually(t, func() bool { return rcvMsg.Load() != nil })
+	assert.True(t, atomic.LoadInt32(&connectedCalled) == 1)
+
+	// Verify the received message is what was sent.
+	assert.True(t, proto.Equal(rcvMsg.Load().(proto.Message), &sendMsg))
+
+	// Read Server's response.
+	b, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	assert.EqualValues(t, http.StatusOK, resp.StatusCode)
+	assert.EqualValues(t, contentTypeProtobuf, resp.Header.Get(headerContentType))
+
+	// Decode the response.
+	var response protobufs.ServerToAgent
+	err = proto.Unmarshal(b, &response)
+	require.NoError(t, err)
+
+	// Verify the response.
+	assert.EqualValues(t, sendMsg.InstanceUid, response.InstanceUid)
+	assert.EqualValues(t, protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus, response.Capabilities)
+
 	eventually(t, func() bool { return atomic.LoadInt32(&connectionCloseCalled) == 1 })
 }
 
@@ -587,4 +677,37 @@ func TestServerHonoursAcceptEncoding(t *testing.T) {
 	assert.EqualValues(t, protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus, response.Capabilities)
 
 	eventually(t, func() bool { return atomic.LoadInt32(&onCloseCalled) == 1 })
+}
+
+func TestDecodeMessage(t *testing.T) {
+	msgsToTest := []*protobufs.AgentToServer{
+		{}, // Empty message
+		{
+			InstanceUid: "abcd",
+			SequenceNum: 123,
+		},
+	}
+
+	// Try with and without header byte. This is only necessary until the
+	// end of grace period that ends Feb 1, 2023. After that the header is
+	// no longer optional.
+	withHeaderTests := []bool{false, true}
+
+	for _, msg := range msgsToTest {
+		for _, withHeader := range withHeaderTests {
+			bytes, err := proto.Marshal(msg)
+			require.NoError(t, err)
+
+			if withHeader {
+				// Prepend zero header byte.
+				bytes = append([]byte{0}, bytes...)
+			}
+
+			var decoded protobufs.AgentToServer
+			err = sharedinternal.DecodeWSMessage(bytes, &decoded)
+			require.NoError(t, err)
+
+			assert.True(t, proto.Equal(msg, &decoded))
+		}
+	}
 }

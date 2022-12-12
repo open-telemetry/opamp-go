@@ -7,6 +7,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/types"
+	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -72,15 +73,10 @@ func (s *WSSender) sendNextMessage() error {
 }
 
 func (s *WSSender) sendMessage(msg *protobufs.AgentToServer) error {
-	data, err := proto.Marshal(msg)
-	if err != nil {
-		s.logger.Errorf("Cannot marshal data: %v", err)
+	if err := internal.WriteWSMessage(s.conn, msg); err != nil {
+		s.logger.Errorf("Cannot write WS message: %v", err)
+		// TODO: check if it is a connection error then propagate error back to Client and reconnect.
 		return err
 	}
-	err = s.conn.WriteMessage(websocket.BinaryMessage, data)
-	if err != nil {
-		s.logger.Errorf("Cannot send: %v", err)
-		// TODO: propagate error back to Client and reconnect.
-	}
-	return err
+	return nil
 }
