@@ -132,10 +132,8 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 			}
 		}
 		r.callbacks.OnMessage(ctx, msgData)
-		//time.Sleep(time.Microsecond * 100)
 
 		r.sender.EnableScheduleSend()
-		//time.Sleep(time.Microsecond * 100)
 
 		r.rcvOpampConnectionSettings(ctx, msg.ConnectionSettings)
 
