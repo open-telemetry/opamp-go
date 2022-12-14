@@ -67,8 +67,9 @@ func (h *SenderCommon) ScheduleSend() {
 		select {
 		case h.registerScheduleSend <- struct{}{}:
 		default:
-			return
+			break
 		}
+		return
 	}
 
 	// Set pending flag. Don't block on writing to channel.
@@ -85,7 +86,7 @@ func (h *SenderCommon) NextMessage() *NextMessage {
 	return &h.nextMessage
 }
 
-// IsSendingDisabled returns true when onMessage callback is running
+// IsSendingDisabled returns true when isSendingDisabled is set to non-zero value.
 func (h *SenderCommon) IsSendingDisabled() bool {
 	return atomic.LoadInt32(&h.isSendingDisabled) != 0
 }
