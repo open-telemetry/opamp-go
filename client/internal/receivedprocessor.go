@@ -5,7 +5,6 @@ import (
 	"errors"
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
-	"time"
 )
 
 // receivedProcessor handles the processing of messages received from the Server.
@@ -136,7 +135,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 		//time.Sleep(time.Microsecond * 100)
 
 		r.sender.EnableScheduleSend()
-		time.Sleep(time.Microsecond * 100)
+		//time.Sleep(time.Microsecond * 100)
 
 		r.rcvOpampConnectionSettings(ctx, msg.ConnectionSettings)
 
