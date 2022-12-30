@@ -93,15 +93,16 @@ func TestServerStartAcceptConnection(t *testing.T) {
 	var srvConn types.Connection
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true}
-		},
-		OnConnectedFunc: func(conn types.Connection) {
-			srvConn = conn
-			atomic.StoreInt32(&connectedCalled, 1)
-		},
-		OnConnectionCloseFunc: func(conn types.Connection) {
-			atomic.StoreInt32(&connectionCloseCalled, 1)
-			assert.EqualValues(t, srvConn, conn)
+			return types.ConnectionResponse{Accept: true, ConnectionHandler: ConnectionCallbacksStruct{
+				OnConnectedFunc: func(conn types.Connection) {
+					srvConn = conn
+					atomic.StoreInt32(&connectedCalled, 1)
+				},
+				OnConnectionCloseFunc: func(conn types.Connection) {
+					atomic.StoreInt32(&connectionCloseCalled, 1)
+					assert.EqualValues(t, srvConn, conn)
+				},
+			}}
 		},
 	}
 
@@ -141,8 +142,12 @@ func TestDisconnectHttpConnection(t *testing.T) {
 func TestDisconnectWSConnection(t *testing.T) {
 	connectionCloseCalled := int32(0)
 	callback := CallbacksStruct{
-		OnConnectionCloseFunc: func(conn types.Connection) {
-			atomic.StoreInt32(&connectionCloseCalled, 1)
+		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionHandler: ConnectionCallbacksStruct{
+				OnConnectionCloseFunc: func(conn types.Connection) {
+					atomic.StoreInt32(&connectionCloseCalled, 1)
+				},
+			}}
 		},
 	}
 
@@ -176,18 +181,19 @@ func TestServerReceiveSendMessage(t *testing.T) {
 	var rcvMsg atomic.Value
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true}
-		},
-		OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			// Remember received message.
-			rcvMsg.Store(message)
+			return types.ConnectionResponse{Accept: true, ConnectionHandler: ConnectionCallbacksStruct{
+				OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					// Remember received message.
+					rcvMsg.Store(message)
 
-			// Send a response.
-			response := protobufs.ServerToAgent{
-				InstanceUid:  message.InstanceUid,
-				Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
-			}
-			return &response
+					// Send a response.
+					response := protobufs.ServerToAgent{
+						InstanceUid:  message.InstanceUid,
+						Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
+					}
+					return &response
+				},
+			}}
 		},
 	}
 
@@ -242,25 +248,26 @@ func TestServerReceiveSendMessageWithCompression(t *testing.T) {
 			var rcvMsg atomic.Value
 			callbacks := CallbacksStruct{
 				OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-					return types.ConnectionResponse{Accept: true}
-				},
-				OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
-					// Remember received message.
-					rcvMsg.Store(message)
+					return types.ConnectionResponse{Accept: true, ConnectionHandler: ConnectionCallbacksStruct{
+						OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+							// Remember received message.
+							rcvMsg.Store(message)
 
-					// Send a response.
-					response := protobufs.ServerToAgent{
-						InstanceUid:  message.InstanceUid,
-						Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
-						RemoteConfig: &protobufs.AgentRemoteConfig{
-							Config: &protobufs.AgentConfigMap{
-								ConfigMap: map[string]*protobufs.AgentConfigFile{
-									"": {Body: uncompressedCfg},
+							// Send a response.
+							response := protobufs.ServerToAgent{
+								InstanceUid:  message.InstanceUid,
+								Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
+								RemoteConfig: &protobufs.AgentRemoteConfig{
+									Config: &protobufs.AgentConfigMap{
+										ConfigMap: map[string]*protobufs.AgentConfigFile{
+											"": {Body: uncompressedCfg},
+										},
+									},
 								},
-							},
+							}
+							return &response
 						},
-					}
-					return &response
+					}}
 				},
 			}
 
@@ -339,24 +346,25 @@ func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
 	var onConnectedCalled, onCloseCalled int32
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true}
-		},
-		OnConnectedFunc: func(conn types.Connection) {
-			atomic.StoreInt32(&onConnectedCalled, 1)
-		},
-		OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			// Remember received message.
-			rcvMsg.Store(message)
+			return types.ConnectionResponse{Accept: true, ConnectionHandler: ConnectionCallbacksStruct{
+				OnConnectedFunc: func(conn types.Connection) {
+					atomic.StoreInt32(&onConnectedCalled, 1)
+				},
+				OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					// Remember received message.
+					rcvMsg.Store(message)
 
-			// Send a response.
-			response := protobufs.ServerToAgent{
-				InstanceUid:  message.InstanceUid,
-				Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
-			}
-			return &response
-		},
-		OnConnectionCloseFunc: func(conn types.Connection) {
-			atomic.StoreInt32(&onCloseCalled, 1)
+					// Send a response.
+					response := protobufs.ServerToAgent{
+						InstanceUid:  message.InstanceUid,
+						Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
+					}
+					return &response
+				},
+				OnConnectionCloseFunc: func(conn types.Connection) {
+					atomic.StoreInt32(&onCloseCalled, 1)
+				},
+			}}
 		},
 	}
 
@@ -406,15 +414,16 @@ func TestServerAttachAcceptConnection(t *testing.T) {
 	var srvConn types.Connection
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true}
-		},
-		OnConnectedFunc: func(conn types.Connection) {
-			atomic.StoreInt32(&connectedCalled, 1)
-			srvConn = conn
-		},
-		OnConnectionCloseFunc: func(conn types.Connection) {
-			atomic.StoreInt32(&connectionCloseCalled, 1)
-			assert.EqualValues(t, srvConn, conn)
+			return types.ConnectionResponse{Accept: true, ConnectionHandler: ConnectionCallbacksStruct{
+				OnConnectedFunc: func(conn types.Connection) {
+					atomic.StoreInt32(&connectedCalled, 1)
+					srvConn = conn
+				},
+				OnConnectionCloseFunc: func(conn types.Connection) {
+					atomic.StoreInt32(&connectionCloseCalled, 1)
+					assert.EqualValues(t, srvConn, conn)
+				},
+			}}
 		},
 	}
 
@@ -455,26 +464,27 @@ func TestServerAttachSendMessagePlainHTTP(t *testing.T) {
 	var srvConn types.Connection
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true}
-		},
-		OnConnectedFunc: func(conn types.Connection) {
-			atomic.StoreInt32(&connectedCalled, 1)
-			srvConn = conn
-		},
-		OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			// Remember received message.
-			rcvMsg.Store(message)
+			return types.ConnectionResponse{Accept: true, ConnectionHandler: ConnectionCallbacksStruct{
+				OnConnectedFunc: func(conn types.Connection) {
+					atomic.StoreInt32(&connectedCalled, 1)
+					srvConn = conn
+				},
+				OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					// Remember received message.
+					rcvMsg.Store(message)
 
-			// Send a response.
-			response := protobufs.ServerToAgent{
-				InstanceUid:  message.InstanceUid,
-				Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
-			}
-			return &response
-		},
-		OnConnectionCloseFunc: func(conn types.Connection) {
-			atomic.StoreInt32(&connectionCloseCalled, 1)
-			assert.EqualValues(t, srvConn, conn)
+					// Send a response.
+					response := protobufs.ServerToAgent{
+						InstanceUid:  message.InstanceUid,
+						Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
+					}
+					return &response
+				},
+				OnConnectionCloseFunc: func(conn types.Connection) {
+					atomic.StoreInt32(&connectionCloseCalled, 1)
+					assert.EqualValues(t, srvConn, conn)
+				},
+			}}
 		},
 	}
 
@@ -536,24 +546,25 @@ func TestServerHonoursClientRequestContentEncoding(t *testing.T) {
 	var onConnectedCalled, onCloseCalled int32
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true}
-		},
-		OnConnectedFunc: func(conn types.Connection) {
-			atomic.StoreInt32(&onConnectedCalled, 1)
-		},
-		OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			// Remember received message.
-			rcvMsg.Store(message)
+			return types.ConnectionResponse{Accept: true, ConnectionHandler: ConnectionCallbacksStruct{
+				OnConnectedFunc: func(conn types.Connection) {
+					atomic.StoreInt32(&onConnectedCalled, 1)
+				},
+				OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					// Remember received message.
+					rcvMsg.Store(message)
 
-			// Send a response.
-			response := protobufs.ServerToAgent{
-				InstanceUid:  message.InstanceUid,
-				Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
-			}
-			return &response
-		},
-		OnConnectionCloseFunc: func(conn types.Connection) {
-			atomic.StoreInt32(&onCloseCalled, 1)
+					// Send a response.
+					response := protobufs.ServerToAgent{
+						InstanceUid:  message.InstanceUid,
+						Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
+					}
+					return &response
+				},
+				OnConnectionCloseFunc: func(conn types.Connection) {
+					atomic.StoreInt32(&onCloseCalled, 1)
+				},
+			}}
 		},
 	}
 
@@ -612,24 +623,25 @@ func TestServerHonoursAcceptEncoding(t *testing.T) {
 	var onConnectedCalled, onCloseCalled int32
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true}
-		},
-		OnConnectedFunc: func(conn types.Connection) {
-			atomic.StoreInt32(&onConnectedCalled, 1)
-		},
-		OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			// Remember received message.
-			rcvMsg.Store(message)
+			return types.ConnectionResponse{Accept: true, ConnectionHandler: ConnectionCallbacksStruct{
+				OnConnectedFunc: func(conn types.Connection) {
+					atomic.StoreInt32(&onConnectedCalled, 1)
+				},
+				OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					// Remember received message.
+					rcvMsg.Store(message)
 
-			// Send a response.
-			response := protobufs.ServerToAgent{
-				InstanceUid:  message.InstanceUid,
-				Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
-			}
-			return &response
-		},
-		OnConnectionCloseFunc: func(conn types.Connection) {
-			atomic.StoreInt32(&onCloseCalled, 1)
+					// Send a response.
+					response := protobufs.ServerToAgent{
+						InstanceUid:  message.InstanceUid,
+						Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
+					}
+					return &response
+				},
+				OnConnectionCloseFunc: func(conn types.Connection) {
+					atomic.StoreInt32(&onCloseCalled, 1)
+				},
+			}}
 		},
 	}
 

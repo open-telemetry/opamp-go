@@ -15,9 +15,6 @@ type ConnectionResponse struct {
 }
 
 type Callbacks interface {
-	// The following callbacks will never be called concurrently for the same
-	// connection. They may be called concurrently for different connections.
-
 	// OnConnecting is called when there is a new incoming connection.
 	// The handler can examine the request and either accept or reject the connection.
 	// To accept:
@@ -29,14 +26,12 @@ type Callbacks interface {
 	//   non-zero value to indicate the rejection reason (typically 401, 429 or 503).
 	//   HTTPResponseHeader may be optionally set (e.g. "Retry-After: 30").
 	OnConnecting(request *http.Request) ConnectionResponse
-
-	// ConnectionCallbacks provides a connection handling implementation to be used if the ConnectionHandler field on
-	// ConnectionResponse is nil. This provides compatibility with existing implementations that use a single handler for
-	// all connections.
-	ConnectionCallbacks
 }
 
 type ConnectionCallbacks interface {
+	// The following callbacks will never be called concurrently for the same
+	// connection. They may be called concurrently for different connections.
+
 	// OnConnected is called when and incoming OpAMP connection is successfully
 	// established after OnConnecting() returns.
 	OnConnected(conn Connection)

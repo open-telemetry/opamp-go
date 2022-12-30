@@ -8,14 +8,10 @@ import (
 )
 
 type CallbacksStruct struct {
-	OnConnectingFunc      func(request *http.Request) types.ConnectionResponse
-	OnConnectedFunc       func(conn types.Connection)
-	OnMessageFunc         func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent
-	OnConnectionCloseFunc func(conn types.Connection)
+	OnConnectingFunc func(request *http.Request) types.ConnectionResponse
 }
 
 var _ types.Callbacks = (*CallbacksStruct)(nil)
-var _ types.ConnectionCallbacks = (*CallbacksStruct)(nil)
 
 func (c CallbacksStruct) OnConnecting(request *http.Request) types.ConnectionResponse {
 	if c.OnConnectingFunc != nil {
@@ -24,13 +20,21 @@ func (c CallbacksStruct) OnConnecting(request *http.Request) types.ConnectionRes
 	return types.ConnectionResponse{Accept: true}
 }
 
-func (c CallbacksStruct) OnConnected(conn types.Connection) {
+type ConnectionCallbacksStruct struct {
+	OnConnectedFunc       func(conn types.Connection)
+	OnMessageFunc         func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent
+	OnConnectionCloseFunc func(conn types.Connection)
+}
+
+var _ types.ConnectionCallbacks = (*ConnectionCallbacksStruct)(nil)
+
+func (c ConnectionCallbacksStruct) OnConnected(conn types.Connection) {
 	if c.OnConnectedFunc != nil {
 		c.OnConnectedFunc(conn)
 	}
 }
 
-func (c CallbacksStruct) OnMessage(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+func (c ConnectionCallbacksStruct) OnMessage(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 	if c.OnMessageFunc != nil {
 		return c.OnMessageFunc(conn, message)
 	} else {
@@ -41,7 +45,7 @@ func (c CallbacksStruct) OnMessage(conn types.Connection, message *protobufs.Age
 	}
 }
 
-func (c CallbacksStruct) OnConnectionClose(conn types.Connection) {
+func (c ConnectionCallbacksStruct) OnConnectionClose(conn types.Connection) {
 	if c.OnConnectionCloseFunc != nil {
 		c.OnConnectionCloseFunc(conn)
 	}

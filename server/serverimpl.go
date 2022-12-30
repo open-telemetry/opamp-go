@@ -154,13 +154,8 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 			w.WriteHeader(resp.HTTPStatusCode)
 			return
 		}
-		if resp.ConnectionHandler != nil {
-			// use connection-specific handler provided by ConnectionResponse
-			connectionHandler = resp.ConnectionHandler
-		} else {
-			// use shared connection handler provided by settings Callbacks
-			connectionHandler = s.settings.Callbacks
-		}
+		// use connection-specific handler provided by ConnectionResponse
+		connectionHandler = resp.ConnectionHandler
 	}
 
 	// HTTP connection is accepted. Check if it is a plain HTTP request.
