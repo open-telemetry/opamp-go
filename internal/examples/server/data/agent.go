@@ -147,7 +147,7 @@ func (agent *Agent) updateHealth(newStatus *protobufs.AgentToServer) {
 
 	agent.Status.Health = newStatus.Health
 
-	if agent.Status != nil && agent.Status.Health != nil && agent.Status.Health.Up {
+	if agent.Status != nil && agent.Status.Health != nil && agent.Status.Health.Healthy {
 		agent.StartedAt = time.Unix(0, int64(agent.Status.Health.StartTimeUnixNano)).UTC()
 	}
 }

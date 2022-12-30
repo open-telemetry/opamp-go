@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -83,9 +85,17 @@ func prepareSettings(t *testing.T, settings *types.StartSettings, c OpAMPClient)
 	require.NoError(t, err)
 	switch c.(type) {
 	case *httpClient:
-		u.Scheme = "http"
+		if settings.TLSConfig != nil {
+			u.Scheme = "https"
+		} else {
+			u.Scheme = "http"
+		}
 	case *wsClient:
-		u.Scheme = "ws"
+		if settings.TLSConfig != nil {
+			u.Scheme = "wss"
+		} else {
+			u.Scheme = "ws"
+		}
 	}
 	settings.OpAMPServerURL = u.String()
 }
@@ -303,6 +313,50 @@ func TestConnectWithHeader(t *testing.T) {
 		srv.Close()
 		_ = client.Stop(context.Background())
 	})
+}
+
+func TestConnectWithTLS(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a server.
+		srv := internal.StartTLSMockServer(t)
+		var conn atomic.Value
+		srv.OnConnect = func(r *http.Request) {
+			conn.Store(true)
+		}
+
+		certs := rootCAs(t, srv.GetHTTPTestServer())
+
+		// Start a client.
+		settings := types.StartSettings{
+			OpAMPServerURL: "wss://" + srv.Endpoint,
+			TLSConfig: &tls.Config{
+				RootCAs: certs,
+			},
+		}
+
+		startClient(t, settings, client)
+
+		// Wait for connection to be established.
+		eventually(t, func() bool { return conn.Load() != nil })
+
+		// Shutdown the Server and the client.
+		srv.Close()
+		_ = client.Stop(context.Background())
+	})
+}
+
+func rootCAs(t *testing.T, s *httptest.Server) *x509.CertPool {
+	certs := x509.NewCertPool()
+	for _, c := range s.TLS.Certificates {
+		roots, err := x509.ParseCertificates(c.Certificate[len(c.Certificate)-1])
+		if err != nil {
+			t.Fatalf("error parsing server's root cert: %v", err)
+		}
+		for _, root := range roots {
+			certs.AddCert(root)
+		}
+	}
+	return certs
 }
 
 func createRemoteConfig() *protobufs.AgentRemoteConfig {
@@ -774,7 +828,7 @@ func TestReportAgentHealth(t *testing.T) {
 		assert.Error(t, client.SetHealth(nil))
 
 		sendHealth := &protobufs.AgentHealth{
-			Up:                true,
+			Healthy:           true,
 			StartTimeUnixNano: 123,
 			LastError:         "bad error",
 		}

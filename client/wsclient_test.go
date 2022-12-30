@@ -8,11 +8,13 @@ import (
 	"testing"
 
 	"github.com/gorilla/websocket"
-	"github.com/open-telemetry/opamp-go/client/internal"
-	"github.com/open-telemetry/opamp-go/client/types"
-	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/open-telemetry/opamp-go/client/internal"
+	"github.com/open-telemetry/opamp-go/client/types"
+	"github.com/open-telemetry/opamp-go/internal/testhelpers"
+	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
 func TestDisconnectWSByServer(t *testing.T) {
@@ -72,7 +74,7 @@ func TestVerifyWSCompress(t *testing.T) {
 
 			// We use a transparent TCP proxy to be able to count the actual bytes transferred so that
 			// we can test the number of actual bytes vs number of expected bytes with and without compression.
-			proxy := internal.NewProxy(srv.Endpoint)
+			proxy := testhelpers.NewProxy(srv.Endpoint)
 			assert.NoError(t, proxy.Start())
 
 			// Start an OpAMP/WebSocket client.

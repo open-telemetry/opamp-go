@@ -37,7 +37,7 @@ type MockServer struct {
 const headerContentType = "Content-Type"
 const contentTypeProtobuf = "application/x-protobuf"
 
-func StartMockServer(t *testing.T) *MockServer {
+func newMockServer(t *testing.T) (*MockServer, *http.ServeMux) {
 	srv := &MockServer{
 		t:                t,
 		expectedHandlers: make(chan receivedMessageHandler, 0),
@@ -65,6 +65,12 @@ func StartMockServer(t *testing.T) *MockServer {
 		},
 	)
 
+	return srv, m
+}
+
+func StartMockServer(t *testing.T) *MockServer {
+	srv, m := newMockServer(t)
+
 	srv.srv = httptest.NewServer(m)
 
 	u, err := url.Parse(srv.srv.URL)
@@ -76,6 +82,26 @@ func StartMockServer(t *testing.T) *MockServer {
 	testhelpers.WaitForEndpoint(srv.Endpoint)
 
 	return srv
+}
+
+func StartTLSMockServer(t *testing.T) *MockServer {
+	srv, m := newMockServer(t)
+
+	srv.srv = httptest.NewTLSServer(m)
+
+	u, err := url.Parse(srv.srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Endpoint = u.Host
+
+	testhelpers.WaitForEndpoint(srv.Endpoint)
+
+	return srv
+}
+
+func (m *MockServer) GetHTTPTestServer() *httptest.Server {
+	return m.srv
 }
 
 // EnableExpectMode enables the expect mode that allows using Expect() method
@@ -124,10 +150,19 @@ func (m *MockServer) handleWebSocket(t *testing.T, w http.ResponseWriter, r *htt
 		}
 		assert.EqualValues(t, websocket.BinaryMessage, messageType)
 
+		if len(msgBytes) > 0 && msgBytes[0] == 0 {
+			// New message format. The Protobuf message is preceded by a zero byte header.
+			// Skip the zero byte.
+			msgBytes = msgBytes[1:]
+		}
+
 		// We use alwaysRespond=false here because WebSocket requests must only have
 		// a response when a response is provided by the user-defined handler.
 		msgBytes = m.handleReceivedBytes(msgBytes, false)
 		if msgBytes != nil {
+			// Prepend zero-byte header.
+			msgBytes = append([]byte{0}, msgBytes...)
+
 			err = conn.WriteMessage(websocket.BinaryMessage, msgBytes)
 			if err != nil {
 				log.Fatal("cannot send:", err)

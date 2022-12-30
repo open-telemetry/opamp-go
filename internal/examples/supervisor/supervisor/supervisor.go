@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
@@ -19,6 +21,7 @@ import (
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/internal/examples/supervisor/supervisor/commander"
 	"github.com/open-telemetry/opamp-go/internal/examples/supervisor/supervisor/config"
+	"github.com/open-telemetry/opamp-go/internal/examples/supervisor/supervisor/healthchecker"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -27,15 +30,6 @@ const agentType = "io.opentelemetry.collector"
 
 // TODO: fetch agent version from Collector executable or by some other means.
 const agentVersion = "1.0.0"
-
-// A Collector config that should be always applied.
-// Enables JSON log output for the Agent.
-const localOverrideAgentConfig = `
-service:
-  telemetry:
-    logs:
-      encoding: json
-`
 
 // Supervisor implements supervising of OpenTelemetry Collector and uses OpAMPClient
 // to work with an OpAMP Server.
@@ -46,6 +40,10 @@ type Supervisor struct {
 	commander *commander.Commander
 
 	startedAt time.Time
+
+	healthCheckTicker  *backoff.Ticker
+	healthChecker      *healthchecker.HttpHealthChecker
+	lastHealthCheckErr error
 
 	// Supervisor's own config.
 	config config.Supervisor
@@ -162,7 +160,7 @@ func (s *Supervisor) startOpAMP() error {
 		return err
 	}
 
-	err = s.opampClient.SetHealth(&protobufs.AgentHealth{Up: false})
+	err = s.opampClient.SetHealth(&protobufs.AgentHealth{Healthy: false})
 	if err != nil {
 		return err
 	}
@@ -212,6 +210,34 @@ func (s *Supervisor) createAgentDescription() *protobufs.AgentDescription {
 	}
 }
 
+func (s *Supervisor) composeExtraLocalConfig() string {
+
+	return fmt.Sprintf(`
+service:
+  telemetry:
+    logs:
+      # Enables JSON log output for the Agent.
+      encoding: json
+    resource:
+      # Set resource attributes required by OpAMP spec.
+      # See https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#agentdescriptionidentifying_attributes
+      service.name: %s
+      service.version: %s
+      service.instance.id: %s
+
+  # Enable extension to allow the Supervisor to check health.
+  extensions: [health_check]
+
+extensions:
+  health_check:
+    # TODO: choose the endpoint dynamically.
+`,
+		agentType,
+		s.agentVersion,
+		s.instanceId.String(),
+	)
+}
+
 func (s *Supervisor) loadAgentEffectiveConfig() error {
 	var effectiveConfigBytes []byte
 
@@ -221,7 +247,7 @@ func (s *Supervisor) loadAgentEffectiveConfig() error {
 		effectiveConfigBytes = effFromFile
 	} else {
 		// No effective config file, just use the initial config.
-		effectiveConfigBytes = []byte(localOverrideAgentConfig)
+		effectiveConfigBytes = []byte(s.composeExtraLocalConfig())
 	}
 
 	s.effectiveConfig.Store(string(effectiveConfigBytes))
@@ -271,7 +297,7 @@ receivers:
             - targets: ['0.0.0.0:8888']  
 exporters:
   otlphttp/own_metrics:
-    endpoint: %s
+    metrics_endpoint: %s
 
 service:
   pipelines:
@@ -342,7 +368,7 @@ func (s *Supervisor) composeEffectiveConfig(config *protobufs.AgentRemoteConfig)
 	}
 
 	// Merge local config last since it has the highest precedence.
-	if err := k.Load(rawbytes.Provider([]byte(localOverrideAgentConfig)), yaml.Parser()); err != nil {
+	if err := k.Load(rawbytes.Provider([]byte(s.composeExtraLocalConfig())), yaml.Parser()); err != nil {
 		return false, err
 	}
 
@@ -382,16 +408,61 @@ func (s *Supervisor) startAgent() {
 	if err != nil {
 		errMsg := fmt.Sprintf("Cannot start the agent: %v", err)
 		s.logger.Errorf(errMsg)
-		s.opampClient.SetHealth(&protobufs.AgentHealth{Up: false, LastError: errMsg})
+		s.opampClient.SetHealth(&protobufs.AgentHealth{Healthy: false, LastError: errMsg})
 		return
 	}
 	s.startedAt = time.Now()
-	s.opampClient.SetHealth(
-		&protobufs.AgentHealth{
-			Up:                true,
-			StartTimeUnixNano: uint64(s.startedAt.UnixNano()),
-		},
-	)
+
+	// Prepare health checker
+	healthCheckBackoff := backoff.NewExponentialBackOff()
+	healthCheckBackoff.MaxInterval = 60 * time.Second
+	healthCheckBackoff.MaxElapsedTime = 0 // Never stop
+	if s.healthCheckTicker != nil {
+		s.healthCheckTicker.Stop()
+	}
+	s.healthCheckTicker = backoff.NewTicker(healthCheckBackoff)
+
+	// TODO: choose the port dynamically.
+	healthEndpoint := "http://localhost:13133"
+	s.healthChecker = healthchecker.NewHttpHealthChecker(healthEndpoint)
+}
+
+func (s *Supervisor) healthCheck() {
+	if !s.commander.IsRunning() {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+
+	err := s.healthChecker.Check(ctx)
+	cancel()
+
+	if errors.Is(err, s.lastHealthCheckErr) {
+		// No difference from last check. Nothing new to report.
+		return
+	}
+
+	// Prepare OpAMP health report.
+	health := &protobufs.AgentHealth{
+		StartTimeUnixNano: uint64(s.startedAt.UnixNano()),
+	}
+
+	if err != nil {
+		health.Healthy = false
+		health.LastError = err.Error()
+		s.logger.Errorf("Agent is not healthy: %s", health.LastError)
+	} else {
+		health.Healthy = true
+		s.logger.Debugf("Agent is healthy.")
+	}
+
+	// Report via OpAMP.
+	if err2 := s.opampClient.SetHealth(health); err2 != nil {
+		s.logger.Errorf("Could not report health. SetHealth returned: %v", err2)
+		return
+	}
+
+	s.lastHealthCheckErr = err
 }
 
 func (s *Supervisor) runAgentProcess() {
@@ -407,7 +478,8 @@ func (s *Supervisor) runAgentProcess() {
 		select {
 		case <-s.hasNewConfig:
 			restartTimer.Stop()
-			s.applyConfigWithAgentRestart()
+			s.stopAgentApplyConfig()
+			s.startAgent()
 
 		case <-s.commander.Done():
 			errMsg := fmt.Sprintf(
@@ -415,7 +487,7 @@ func (s *Supervisor) runAgentProcess() {
 				s.commander.Pid(), s.commander.ExitCode(),
 			)
 			s.logger.Debugf(errMsg)
-			s.opampClient.SetHealth(&protobufs.AgentHealth{Up: false, LastError: errMsg})
+			s.opampClient.SetHealth(&protobufs.AgentHealth{Healthy: false, LastError: errMsg})
 
 			// TODO: decide why the agent stopped. If it was due to bad config, report it to server.
 
@@ -425,16 +497,18 @@ func (s *Supervisor) runAgentProcess() {
 
 		case <-restartTimer.C:
 			s.startAgent()
+
+		case <-s.healthCheckTicker.C:
+			s.healthCheck()
 		}
 	}
 }
 
-func (s *Supervisor) applyConfigWithAgentRestart() {
-	s.logger.Debugf("Restarting the agent with the new config.")
+func (s *Supervisor) stopAgentApplyConfig() {
+	s.logger.Debugf("Stopping the agent to apply new config.")
 	cfg := s.effectiveConfig.Load().(string)
 	s.commander.Stop(context.Background())
 	s.writeEffectiveConfigToFile(cfg, s.effectiveConfigFilePath)
-	s.startAgent()
 }
 
 func (s *Supervisor) writeEffectiveConfigToFile(cfg string, filePath string) {
@@ -455,7 +529,7 @@ func (s *Supervisor) Shutdown() {
 	if s.opampClient != nil {
 		s.opampClient.SetHealth(
 			&protobufs.AgentHealth{
-				Up: false, LastError: "Supervisor is shutdown",
+				Healthy: false, LastError: "Supervisor is shutdown",
 			},
 		)
 		_ = s.opampClient.Stop(context.Background())

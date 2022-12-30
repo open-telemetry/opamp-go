@@ -51,11 +51,12 @@ func New(logger types.Logger) *server {
 	return &server{logger: logger}
 }
 
-func (s *server) Attach(settings Settings) (HTTPHandlerFunc, error) {
+func (s *server) Attach(settings Settings) (HTTPHandlerFunc, ConnContext, error) {
 	s.settings = settings
-	// TODO: Add support for compression using Upgrader.EnableCompression field.
-	s.wsUpgrader = websocket.Upgrader{}
-	return s.httpHandler, nil
+	s.wsUpgrader = websocket.Upgrader{
+		EnableCompression: settings.EnableCompression,
+	}
+	return s.httpHandler, contextWithConn, nil
 }
 
 func (s *server) Start(settings StartSettings) error {
@@ -63,7 +64,7 @@ func (s *server) Start(settings StartSettings) error {
 		return errAlreadyStarted
 	}
 
-	_, err := s.Attach(settings.Settings)
+	_, _, err := s.Attach(settings.Settings)
 	if err != nil {
 		return err
 	}
@@ -223,7 +224,7 @@ func (s *server) handleWSConnection(wsConn *websocket.Conn, connectionHandler se
 
 		// Decode WebSocket message as a Protobuf message.
 		var request protobufs.AgentToServer
-		err = proto.Unmarshal(bytes, &request)
+		err = internal.DecodeWSMessage(bytes, &request)
 		if err != nil {
 			s.logger.Errorf("Cannot decode message from WebSocket: %v", err)
 			continue
