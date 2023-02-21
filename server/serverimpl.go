@@ -142,7 +142,7 @@ func (s *server) Stop(ctx context.Context) error {
 }
 
 func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
-	var connectionHandler serverTypes.ConnectionCallbacks
+	var connectionCallbacks serverTypes.ConnectionCallbacks
 	if s.settings.Callbacks != nil {
 		resp := s.settings.Callbacks.OnConnecting(req)
 		if !resp.Accept {
@@ -155,14 +155,14 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		// use connection-specific handler provided by ConnectionResponse
-		connectionHandler = resp.ConnectionHandler
+		connectionCallbacks = resp.ConnectionCallbacks
 	}
 
 	// HTTP connection is accepted. Check if it is a plain HTTP request.
 
 	if req.Header.Get(headerContentType) == contentTypeProtobuf {
 		// Yes, a plain HTTP request.
-		s.handlePlainHTTPRequest(req, w, connectionHandler)
+		s.handlePlainHTTPRequest(req, w, connectionCallbacks)
 		return
 	}
 
@@ -175,10 +175,10 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 
 	// Return from this func to reduce memory usage.
 	// Handle the connection on a separate goroutine.
-	go s.handleWSConnection(conn, connectionHandler)
+	go s.handleWSConnection(conn, connectionCallbacks)
 }
 
-func (s *server) handleWSConnection(wsConn *websocket.Conn, connectionHandler serverTypes.ConnectionCallbacks) {
+func (s *server) handleWSConnection(wsConn *websocket.Conn, connectionCallbacks serverTypes.ConnectionCallbacks) {
 	agentConn := wsConnection{wsConn: wsConn}
 
 	defer func() {
@@ -190,13 +190,13 @@ func (s *server) handleWSConnection(wsConn *websocket.Conn, connectionHandler se
 			}
 		}()
 
-		if connectionHandler != nil {
-			connectionHandler.OnConnectionClose(agentConn)
+		if connectionCallbacks != nil {
+			connectionCallbacks.OnConnectionClose(agentConn)
 		}
 	}()
 
-	if connectionHandler != nil {
-		connectionHandler.OnConnected(agentConn)
+	if connectionCallbacks != nil {
+		connectionCallbacks.OnConnected(agentConn)
 	}
 
 	// Loop until fail to read from the WebSocket connection.
@@ -225,8 +225,8 @@ func (s *server) handleWSConnection(wsConn *websocket.Conn, connectionHandler se
 			continue
 		}
 
-		if connectionHandler != nil {
-			response := connectionHandler.OnMessage(agentConn, &request)
+		if connectionCallbacks != nil {
+			response := connectionCallbacks.OnMessage(agentConn, &request)
 			if response.InstanceUid == "" {
 				response.InstanceUid = request.InstanceUid
 			}
@@ -275,7 +275,7 @@ func compressGzip(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter, connectionHandler serverTypes.ConnectionCallbacks) {
+func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter, connectionCallbacks serverTypes.ConnectionCallbacks) {
 	bytes, err := s.readReqBody(req)
 	if err != nil {
 		s.logger.Debugf("Cannot read HTTP body: %v", err)
@@ -296,22 +296,22 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 		conn: connFromRequest(req),
 	}
 
-	if connectionHandler == nil {
+	if connectionCallbacks == nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	connectionHandler.OnConnected(agentConn)
+	connectionCallbacks.OnConnected(agentConn)
 
 	defer func() {
 		// Indicate via the callback that the OpAMP Connection is closed. From OpAMP
 		// perspective the connection represented by this http request
 		// is closed. It is not possible to send or receive more OpAMP messages
 		// via this agentConn.
-		connectionHandler.OnConnectionClose(agentConn)
+		connectionCallbacks.OnConnectionClose(agentConn)
 	}()
 
-	response := connectionHandler.OnMessage(agentConn, &request)
+	response := connectionCallbacks.OnMessage(agentConn, &request)
 
 	// Set the InstanceUid if it is not set by the callback.
 	if response.InstanceUid == "" {

@@ -37,7 +37,7 @@ func (srv *Server) Start() {
 		Settings: server.Settings{
 			Callbacks: server.CallbacksStruct{
 				OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-					return types.ConnectionResponse{Accept: true, ConnectionHandler: server.ConnectionCallbacksStruct{
+					return types.ConnectionResponse{Accept: true, ConnectionCallbacks: server.ConnectionCallbacksStruct{
 						OnMessageFunc:         srv.onMessage,
 						OnConnectionCloseFunc: srv.onDisconnect,
 					}}
