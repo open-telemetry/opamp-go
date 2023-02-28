@@ -107,9 +107,22 @@ func NewSupervisor(logger types.Logger) (*Supervisor, error) {
 		return nil, err
 	}
 
+	s.createHealthCheckTimer()
+
 	go s.runAgentProcess()
 
 	return s, nil
+}
+
+func (s *Supervisor) createHealthCheckTimer() {
+	// Prepare health checker
+	healthCheckBackoff := backoff.NewExponentialBackOff()
+	healthCheckBackoff.MaxInterval = 60 * time.Second
+	healthCheckBackoff.MaxElapsedTime = 0 // Never stop
+	if s.healthCheckTicker != nil {
+		s.healthCheckTicker.Stop()
+	}
+	s.healthCheckTicker = backoff.NewTicker(healthCheckBackoff)
 }
 
 func (s *Supervisor) loadConfig() error {
@@ -413,14 +426,7 @@ func (s *Supervisor) startAgent() {
 	}
 	s.startedAt = time.Now()
 
-	// Prepare health checker
-	healthCheckBackoff := backoff.NewExponentialBackOff()
-	healthCheckBackoff.MaxInterval = 60 * time.Second
-	healthCheckBackoff.MaxElapsedTime = 0 // Never stop
-	if s.healthCheckTicker != nil {
-		s.healthCheckTicker.Stop()
-	}
-	s.healthCheckTicker = backoff.NewTicker(healthCheckBackoff)
+	s.createHealthCheckTimer()
 
 	// TODO: choose the port dynamically.
 	healthEndpoint := "http://localhost:13133"
