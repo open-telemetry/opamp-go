@@ -48,6 +48,13 @@ OTEL_DOCKER_PROTOBUF ?= otel/build-protobuf:0.14.0
 .PHONY: gen-proto
 gen-proto:
 	mkdir -p ${PWD}/internal/proto/
+
+	@if [ ! -d "${PWD}/internal/opamp-spec/proto" ]; then \
+		echo "${PWD}/internal/opamp-spec/proto does not exist."; \
+		echo "Run \`git submodule update --init\` to fetch the submodule"; \
+		exit 1; \
+	fi
+
 	$(foreach file,$(BASELINE_PROTO_FILES),$(call exec-command,docker run --rm -v${PWD}:${PWD} \
         -w${PWD} $(OTEL_DOCKER_PROTOBUF) --proto_path=${PWD}/internal/opamp-spec/proto/ \
         --go_out=${PWD}/internal/proto/ -I${PWD}/internal/proto/ ${PWD}/$(file)))
