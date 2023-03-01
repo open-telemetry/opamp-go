@@ -3,6 +3,7 @@ package opampsrv
 import (
 	"context"
 	"log"
+	"net/http"
 
 	"github.com/open-telemetry/opamp-go/internal/examples/server/data"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -35,8 +36,12 @@ func (srv *Server) Start() {
 	settings := server.StartSettings{
 		Settings: server.Settings{
 			Callbacks: server.CallbacksStruct{
-				OnMessageFunc:         srv.onMessage,
-				OnConnectionCloseFunc: srv.onDisconnect,
+				OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
+					return types.ConnectionResponse{Accept: true, ConnectionCallbacks: server.ConnectionCallbacksStruct{
+						OnMessageFunc:         srv.onMessage,
+						OnConnectionCloseFunc: srv.onDisconnect,
+					}}
+				},
 			},
 		},
 		ListenEndpoint: "127.0.0.1:4320",
