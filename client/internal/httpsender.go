@@ -117,6 +117,7 @@ func (h *HTTPSender) SetRequestHeader(header http.Header) {
 func (h *HTTPSender) makeOneRequestRoundtrip(ctx context.Context) {
 	resp, err := h.sendRequestWithRetries(ctx)
 	if err != nil {
+		h.logger.Errorf("%v", err)
 		return
 	}
 	if resp == nil {
@@ -166,6 +167,9 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 					case http.StatusTooManyRequests, http.StatusServiceUnavailable:
 						interval = recalculateInterval(interval, resp)
 						err = fmt.Errorf("server response code=%d", resp.StatusCode)
+
+					case http.StatusNotFound:
+						return nil, fmt.Errorf("failed to connect to the server, server not found: %d", resp.StatusCode)
 
 					default:
 						return nil, fmt.Errorf("invalid response from server: %d", resp.StatusCode)
