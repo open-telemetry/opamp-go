@@ -14,6 +14,33 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestHTTPSender_makeOneRequestRoundtrip(t *testing.T) {
+	srv := StartMockServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	url := "https://google.com/v1/opamp"
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.AgentDescription = &protobufs.AgentDescription{
+			IdentifyingAttributes: []*protobufs.KeyValue{{
+				Key: "service.name",
+				Value: &protobufs.AnyValue{
+					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
+				},
+			}},
+		}
+	})
+	sender.callbacks = types.CallbacksStruct{
+		OnConnectFunc: func() {
+		},
+		OnConnectFailedFunc: func(_ error) {
+		},
+	}
+	sender.url = url
+	sender.makeOneRequestRoundtrip(ctx)
+	cancel()
+	srv.Close()
+}
+
 func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
 
 	var connectionAttempts int64
@@ -53,6 +80,36 @@ func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.True(t, time.Since(start) > time.Second)
+	cancel()
+	srv.Close()
+}
+
+func TestHTTPSenderRetryForStatusNotFound(t *testing.T) {
+
+	srv := StartMockServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	url := "https://google.com/v1/opamp"
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.AgentDescription = &protobufs.AgentDescription{
+			IdentifyingAttributes: []*protobufs.KeyValue{{
+				Key: "service.name",
+				Value: &protobufs.AnyValue{
+					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
+				},
+			}},
+		}
+	})
+	sender.callbacks = types.CallbacksStruct{
+		OnConnectFunc: func() {
+		},
+		OnConnectFailedFunc: func(_ error) {
+		},
+	}
+	sender.url = url
+	resp, err := sender.sendRequestWithRetries(ctx)
+	assert.Error(t, err)
+	assert.Nil(t, resp)
 	cancel()
 	srv.Close()
 }
