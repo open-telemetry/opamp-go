@@ -16,8 +16,11 @@ import (
 
 func TestHTTPSender_makeOneRequestRoundtrip(t *testing.T) {
 	srv := StartMockServer(t)
+	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	url := "https://google.com/v1/opamp"
+	url := "http://" + srv.Endpoint
 	sender := NewHTTPSender(&sharedinternal.NopLogger{})
 	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
 		msg.AgentDescription = &protobufs.AgentDescription{
@@ -87,8 +90,11 @@ func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
 func TestHTTPSenderRetryForStatusNotFound(t *testing.T) {
 
 	srv := StartMockServer(t)
+	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	url := "https://google.com/v1/opamp"
+	url := "http://" + srv.Endpoint
 	sender := NewHTTPSender(&sharedinternal.NopLogger{})
 	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
 		msg.AgentDescription = &protobufs.AgentDescription{
@@ -100,12 +106,6 @@ func TestHTTPSenderRetryForStatusNotFound(t *testing.T) {
 			}},
 		}
 	})
-	sender.callbacks = types.CallbacksStruct{
-		OnConnectFunc: func() {
-		},
-		OnConnectFailedFunc: func(_ error) {
-		},
-	}
 	sender.url = url
 	resp, err := sender.sendRequestWithRetries(ctx)
 	assert.Error(t, err)
