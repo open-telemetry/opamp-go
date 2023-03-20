@@ -117,6 +117,7 @@ func (h *HTTPSender) SetRequestHeader(header http.Header) {
 func (h *HTTPSender) makeOneRequestRoundtrip(ctx context.Context) {
 	resp, err := h.sendRequestWithRetries(ctx)
 	if err != nil {
+		h.logger.Errorf("%v", err)
 		return
 	}
 	if resp == nil {
