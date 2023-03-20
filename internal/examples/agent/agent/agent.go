@@ -150,7 +150,7 @@ func (agent *Agent) createAgentIdentity() {
 		},
 		NonIdentifyingAttributes: []*protobufs.KeyValue{
 			{
-				Key: "os.family",
+				Key: "os.type",
 				Value: &protobufs.AnyValue{
 					Value: &protobufs.AnyValue_StringValue{
 						StringValue: runtime.GOOS,
