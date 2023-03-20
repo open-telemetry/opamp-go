@@ -168,9 +168,6 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 						interval = recalculateInterval(interval, resp)
 						err = fmt.Errorf("server response code=%d", resp.StatusCode)
 
-					case http.StatusNotFound:
-						return nil, fmt.Errorf("failed to connect to the server, server not found: %d", resp.StatusCode)
-
 					default:
 						return nil, fmt.Errorf("invalid response from server: %d", resp.StatusCode)
 					}
