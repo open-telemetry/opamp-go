@@ -17,3 +17,15 @@ work if you only have https access.
 
 Note that this is tested on linux/amd64 and darwin/amd64 and is known to not work
 on darwin/arm64 (M1/M2 Macs). Fixes are welcome.
+
+# Releasing a new version of opamp-go
+
+1. `Draft a new release` on the releases page in GitHub.
+
+2. Create a new tag for the release and target the `main` branch.
+
+3. Use the `Generate release notes` button to automatically generate release notes. Modify as appropriate.
+
+4. Check `Set as a pre-release` as appropriate.
+
+5. `Publish release`
