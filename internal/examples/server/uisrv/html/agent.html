@@ -25,14 +25,14 @@
                 </tr>
                 {{if .Status.Health }}
                 <tr>
-                    <td>Up:</td><td>{{ .Status.Health.Up }}</td>
+                    <td>Up:</td><td>{{ .Status.Health.Healthy }}</td>
                 </tr>
                 {{if .Status.Health.LastError }}
                 <tr>
                     <td></td><td><span style="color:red">{{ .Status.Health.LastError }}</span></td>
                 </tr>
                 {{end}}
-                {{if .Status.Health.Up }}
+                {{if .Status.Health.Healthy }}
                 <tr>
                     <td>Up since:</td><td>{{ .StartedAt }}</td>
                 </tr>
