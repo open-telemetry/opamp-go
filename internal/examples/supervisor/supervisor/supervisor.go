@@ -475,6 +475,11 @@ func (s *Supervisor) runAgentProcess() {
 	restartTimer.Stop()
 
 	for {
+		var healthCheckTickerCh <-chan time.Time
+		if s.healthCheckTicker != nil {
+			healthCheckTickerCh = s.healthCheckTicker.C
+		}
+
 		select {
 		case <-s.hasNewConfig:
 			restartTimer.Stop()
@@ -498,7 +503,7 @@ func (s *Supervisor) runAgentProcess() {
 		case <-restartTimer.C:
 			s.startAgent()
 
-		case <-s.healthCheckTicker.C:
+		case <-healthCheckTickerCh:
 			s.healthCheck()
 		}
 	}
