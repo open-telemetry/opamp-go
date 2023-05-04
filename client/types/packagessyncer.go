@@ -24,6 +24,7 @@ type PackagesSyncer interface {
 	Done() <-chan struct{}
 }
 
+// PackageState represents the state of a package in the Agent's local storage.
 type PackageState struct {
 	// Exists indicates that the package exists locally. The rest of the fields
 	// must be ignored if this field is false.

@@ -7,6 +7,7 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
+// OpAMPClient is an interface representing the client side of the OpAMP protocol.
 type OpAMPClient interface {
 
 	// Start the client and begin attempts to connect to the Server. Once connection
@@ -14,7 +15,7 @@ type OpAMPClient interface {
 	// the connection is lost. All failed connection attempts will be reported via
 	// OnConnectFailed callback.
 	//
-	// AgentDescription in settings MUST be set.
+	// SetAgentDescription() MUST be called before Start().
 	//
 	// Start may immediately return an error if the settings are incorrect (e.g. the
 	// serverURL is not a valid URL).

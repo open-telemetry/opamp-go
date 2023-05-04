@@ -7,6 +7,7 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
+// StartSettings defines the parameters for starting the OpAMP Client.
 type StartSettings struct {
 	// Connection parameters.
 
