@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	
+	"github.com/stretchr/testify/assert"
 
 	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/examples/server/data"
 	"github.com/open-telemetry/opamp-go/internal/examples/server/opampsrv"
-	"github.com/stretchr/testify/assert"
 )
 
 func changeCurrentDir(t *testing.T) string {
@@ -57,7 +58,7 @@ agent:
 	startOpampServer(t)
 
 	supervisor, err := NewSupervisor(&internal.NopLogger{})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	supervisor.Shutdown()
 }
