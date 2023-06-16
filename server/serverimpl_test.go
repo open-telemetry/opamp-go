@@ -123,7 +123,7 @@ func TestServerStartAcceptConnection(t *testing.T) {
 	assert.True(t, atomic.LoadInt32(&connectionCloseCalled) == 0)
 
 	// Verify that the RemoteAddr is correct.
-	require.Equal(t, conn.LocalAddr().String(), srvConn.RemoteAddr().String())
+	require.Equal(t, conn.LocalAddr().String(), srvConn.Connection().RemoteAddr().String())
 
 	// Close the connection from client side.
 	conn.Close()
