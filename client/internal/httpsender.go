@@ -13,8 +13,9 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/open-telemetry/opamp-go/internal"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/open-telemetry/opamp-go/internal"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -36,7 +37,7 @@ type HTTPSender struct {
 	url                string
 	logger             types.Logger
 	client             *http.Client
-	callbacks          types.Callbacks
+	callbacks          *CallbacksWrapper
 	pollingIntervalMs  int64
 	compressionEnabled bool
 
@@ -70,7 +71,7 @@ func NewHTTPSender(logger types.Logger) *HTTPSender {
 func (h *HTTPSender) Run(
 	ctx context.Context,
 	url string,
-	callbacks types.Callbacks,
+	callbacks *CallbacksWrapper,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,

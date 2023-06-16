@@ -13,7 +13,7 @@ type receivedProcessor struct {
 	logger types.Logger
 
 	// Callbacks to call for corresponding messages.
-	callbacks types.Callbacks
+	callbacks *CallbacksWrapper
 
 	// A sender to cooperate with when the received message has an impact on
 	// what will be sent later.
@@ -30,7 +30,7 @@ type receivedProcessor struct {
 
 func newReceivedProcessor(
 	logger types.Logger,
-	callbacks types.Callbacks,
+	callbacks *CallbacksWrapper,
 	sender Sender,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
