@@ -18,8 +18,8 @@ type wsConnection struct {
 
 var _ types.Connection = (*wsConnection)(nil)
 
-func (c wsConnection) RemoteAddr() net.Addr {
-	return c.wsConn.RemoteAddr()
+func (c wsConnection) Connection() net.Conn {
+	return c.wsConn.UnderlyingConn()
 }
 
 // Message header is currently uint64 zero value.
