@@ -83,5 +83,46 @@
     </tr>
 </table>
 
+<hr/>
+
+<h3>Client Certificate</h3>
+
+<table border="1" style="border-collapse: collapse">
+    {{if .ClientCert}}
+    <tr>
+        <td>Subject:</td><td>{{ .ClientCert.Subject }}</td>
+    </tr>
+    <tr>
+        <td>Not Valid Before:</td><td>{{ .ClientCert.NotBefore }}</td>
+    </tr>
+    <tr>
+        <td>Not Valid After:</td><td>{{ .ClientCert.NotAfter }}</td>
+    </tr>
+    <tr>
+        <td>SHA256 Fingerprint:</td><td>{{ .ClientCertSha256Fingerprint }}</td>
+    </tr>
+    {{else}}
+    <tr>
+        <td><span style="color:red">Client did not supply a certificate.</span></td>
+    </tr>
+    {{end}}
+</table>
+
+{{if .ClientCertOfferError }}
+<br/>
+<span style="color:red">Cannot apply offered certificate: {{ .ClientCertOfferError }}</span>
+<br/>
+{{end}}
+
+<br/>
+<form action="/rotate_client_cert" method="post">
+    <input type="hidden" name="instanceid" value="{{ .InstanceId }}"/>
+    {{if .ClientCert}}
+    <input type="submit" value="Rotate Client Certificate"/>
+    {{else}}
+    <input type="submit" value="Accept and Offer Client Certificate"/>
+    {{end}}
+</form>
+
 </body>
 </html>

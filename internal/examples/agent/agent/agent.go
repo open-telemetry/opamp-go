@@ -2,7 +2,11 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"log"
 	"math/rand"
 	"os"
 	"runtime"
@@ -55,6 +59,10 @@ type Agent struct {
 	remoteConfigStatus *protobufs.RemoteConfigStatus
 
 	metricReporter *MetricReporter
+
+	// The TLS certificate used for the OpAMP connection. Can be nil, meaning no client-side
+	// certificate is used.
+	opampClientCert *tls.Certificate
 }
 
 func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent {
@@ -70,19 +78,20 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 		agent.instanceId.String(), agentType, agentVersion)
 
 	agent.loadLocalConfig()
-	if err := agent.start(); err != nil {
-		agent.logger.Errorf("Cannot start OpAMP client: %v", err)
+	if err := agent.connect(); err != nil {
+		agent.logger.Errorf("Cannot connect OpAMP client: %v", err)
 		return nil
 	}
 
 	return agent
 }
 
-func (agent *Agent) start() error {
+func (agent *Agent) connect() error {
 	agent.opampClient = client.NewWebSocket(agent.logger)
 
 	settings := types.StartSettings{
-		OpAMPServerURL: "ws://127.0.0.1:4320/v1/opamp",
+		OpAMPServerURL: "wss://127.0.0.1:4320/v1/opamp",
+		TLSConfig:      createClientTLSConfig(agent.opampClientCert),
 		InstanceUid:    agent.instanceId.String(),
 		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func() {
@@ -100,14 +109,17 @@ func (agent *Agent) start() error {
 			GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 				return agent.composeEffectiveConfig(), nil
 			},
-			OnMessageFunc: agent.onMessage,
+			OnMessageFunc:                 agent.onMessage,
+			OnOpampConnectionSettingsFunc: agent.onOpampConnectionSettings,
 		},
 		RemoteConfigStatus: agent.remoteConfigStatus,
 		Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
-			protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics,
+			protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
+			protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings,
 	}
+
 	err := agent.opampClient.SetAgentDescription(agent.agentDescription)
 	if err != nil {
 		return err
@@ -123,6 +135,34 @@ func (agent *Agent) start() error {
 	agent.logger.Debugf("OpAMP Client started.")
 
 	return nil
+}
+
+func createClientTLSConfig(clientCert *tls.Certificate) *tls.Config {
+	// Read the CA's public key. This is the CA that signs the server's certificate.
+	caCertBytes, err := os.ReadFile("../certs/certs/ca.cert.pem")
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	// Create a certificate pool and make our CA trusted.
+	caCertPool := x509.NewCertPool()
+	if ok := caCertPool.AppendCertsFromPEM(caCertBytes); !ok {
+		log.Fatalln("Cannot append ca.cert.pem")
+	}
+
+	cfg := &tls.Config{
+		RootCAs: caCertPool,
+	}
+	if clientCert != nil {
+		// If there is a client-side certificate use it for connection too.
+		cfg.Certificates = []tls.Certificate{*clientCert}
+	}
+	return cfg
+}
+
+func (agent *Agent) disconnect() {
+	agent.logger.Debugf("Disconnecting from server...")
+	agent.opampClient.Stop(context.Background())
 }
 
 func (agent *Agent) createAgentIdentity() {
@@ -353,4 +393,68 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 			agent.logger.Errorf(err.Error())
 		}
 	}
+}
+
+func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *protobufs.OpAMPConnectionSettings) error {
+	if settings == nil || settings.Certificate == nil {
+		agent.logger.Debugf("Received nil certificate offer, ignoring.\n")
+		return nil
+	}
+
+	cert, err := agent.getCertFromSettings(settings.Certificate)
+	if err != nil {
+		return err
+	}
+
+	agent.logger.Debugf("Reconnecting to verify offered client certificate.\n")
+
+	agent.disconnect()
+
+	// TODO: wait for disconnect() to complete the stopping of old connection before
+	// we begin connecting with the new settings.
+
+	agent.opampClientCert = cert
+	if err := agent.connect(); err != nil {
+		agent.logger.Errorf("Cannot connect using offered certificate: %s. Ignoring the offer\n", err)
+		agent.opampClientCert = nil
+
+		if err := agent.connect(); err != nil {
+			agent.logger.Errorf("Unable to reconnect after restoring client certificate: %v\n", err)
+			return err
+		}
+	}
+
+	agent.logger.Debugf("Successfully connected to server. Accepting new client certificate.\n")
+
+	// TODO: we can also persist the successfully accepted certificate and use it when the
+	// agent connects to the server after the restart.
+
+	// TODO: also use settings.DestinationEndpoint and settings.Headers for future connections.
+
+	return nil
+}
+
+func (agent *Agent) getCertFromSettings(certificate *protobufs.TLSCertificate) (*tls.Certificate, error) {
+	// Parse the key pair to a certificate that can be used for network connections.
+	cert, err := tls.X509KeyPair(
+		certificate.PublicKey,
+		certificate.PrivateKey,
+	)
+	if err != nil {
+		agent.logger.Errorf("Received invalid certificate offer: %s\n", err)
+		return nil, err
+	}
+
+	if len(certificate.CaPublicKey) != 0 {
+		caCertPB, _ := pem.Decode(certificate.CaPublicKey)
+		caCert, err := x509.ParseCertificate(caCertPB.Bytes)
+		if err != nil {
+			agent.logger.Errorf("Cannot parse CA cert: %v", err)
+			return nil, err
+		}
+		agent.logger.Debugf("Received offer signed by CA: %v", caCert.Subject)
+		// TODO: we can verify the CA's identity here (to match our CA as we know it).
+	}
+
+	return &cert, nil
 }
