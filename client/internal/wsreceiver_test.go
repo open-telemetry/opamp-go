@@ -3,8 +3,10 @@ package internal
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
 
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -20,6 +22,11 @@ type TestLogger struct {
 
 func (logger TestLogger) Debugf(format string, v ...interface{}) {
 	logger.Logf(format, v...)
+}
+
+func (logger TestLogger) Errorf(format string, v ...interface{}) {
+	err := fmt.Sprintf(format, v...)
+	logger.T.Errorf("unexpected error found: %s", err)
 }
 
 type commandAction int
@@ -141,4 +148,19 @@ func TestDecodeMessage(t *testing.T) {
 			assert.True(t, proto.Equal(msg, &decoded))
 		}
 	}
+}
+
+func TestWSReceiverReceiverLoop(t *testing.T) {
+	ctx := context.Background()
+	// Start a Server.
+	srv := StartMockServer(t)
+	defer srv.Close()
+	dialer := *websocket.DefaultDialer
+	conn, _, err := dialer.DialContext(ctx, "ws://"+srv.Endpoint, make(http.Header))
+	assert.NotNil(t, conn)
+	assert.NoError(t, err)
+	err = conn.Close()
+	assert.NoError(t, err)
+	receiver := NewWSReceiver(TestLogger{t}, nil, conn, nil, nil, nil, 0)
+	receiver.ReceiverLoop(ctx)
 }
