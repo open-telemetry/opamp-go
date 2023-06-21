@@ -37,9 +37,11 @@ type OpAMPClient interface {
 	// May be called only once.
 	// After this call returns successfully it is guaranteed that no
 	// callbacks will be called. Stop() will cancel context of any in-fly
-	// callbacks, but will wait until such in-fly callbacks are returned before
-	// Stop returns, so make sure the callbacks don't block infinitely and react
-	// promptly to context cancellations.
+	// callbacks.
+	//
+	// If a callback is in progress (e.g. OnMessage is called but not finished)
+	// Stop() initiates stopping and returns without waiting for stopping to finish.
+	//
 	// Once stopped OpAMPClient cannot be started again.
 	Stop(ctx context.Context) error
 

@@ -123,7 +123,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 	var resp *http.Response
 	conn, resp, err := c.dialer.DialContext(ctx, c.url.String(), c.requestHeader)
 	if err != nil {
-		if c.common.Callbacks != nil && !c.common.IsStopping() {
+		if !c.common.IsStopping() {
 			c.common.Callbacks.OnConnectFailed(err)
 		}
 		if resp != nil {
@@ -138,9 +138,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 	c.connMutex.Lock()
 	c.conn = conn
 	c.connMutex.Unlock()
-	if c.common.Callbacks != nil {
-		c.common.Callbacks.OnConnect()
-	}
+	c.common.Callbacks.OnConnect()
 
 	return nil, sharedinternal.OptionalDuration{Defined: false}
 }
@@ -193,9 +191,10 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 }
 
 // runOneCycle performs the following actions:
-//   1. connect (try until succeeds).
-//   2. send first status report.
-//   3. receive and process messages until error happens.
+//  1. connect (try until succeeds).
+//  2. send first status report.
+//  3. receive and process messages until error happens.
+//
 // If it encounters an error it closes the connection and returns.
 // Will stop and return if Stop() is called (ctx is cancelled, isStopping is set).
 func (c *wsClient) runOneCycle(ctx context.Context) {

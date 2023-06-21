@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
-	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -25,11 +27,105 @@ var (
 	errReportsPackageStatusesNotSet = errors.New("ReportsPackageStatuses capability is not set")
 )
 
+// CallbacksWrapper wraps Callbacks such that it is possible to query if any callback
+// function is in progress (called, but not yet returned). This is necessary for
+// safe handling of certain ClientCommon methods when they are called from the callbacks.
+// See for example Stop() implementation.
+type CallbacksWrapper struct {
+	wrapped types.Callbacks
+	// Greater than zero if currently processing a callback.
+	inCallback *int64
+}
+
+func (cc *CallbacksWrapper) OnConnect() {
+	cc.EnterCallback()
+	defer cc.LeaveCallback()
+	cc.wrapped.OnConnect()
+}
+
+func (cc *CallbacksWrapper) OnConnectFailed(err error) {
+	cc.EnterCallback()
+	defer cc.LeaveCallback()
+	cc.wrapped.OnConnectFailed(err)
+}
+
+func (cc *CallbacksWrapper) OnError(err *protobufs.ServerErrorResponse) {
+	cc.EnterCallback()
+	defer cc.LeaveCallback()
+	cc.wrapped.OnError(err)
+}
+
+func (cc *CallbacksWrapper) OnMessage(ctx context.Context, msg *types.MessageData) {
+	cc.EnterCallback()
+	defer cc.LeaveCallback()
+	cc.wrapped.OnMessage(ctx, msg)
+}
+
+func (cc *CallbacksWrapper) OnOpampConnectionSettings(
+	ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
+) error {
+	cc.EnterCallback()
+	defer cc.LeaveCallback()
+	return cc.wrapped.OnOpampConnectionSettings(ctx, settings)
+}
+
+func (cc *CallbacksWrapper) OnOpampConnectionSettingsAccepted(settings *protobufs.OpAMPConnectionSettings) {
+	cc.EnterCallback()
+	defer cc.LeaveCallback()
+	cc.wrapped.OnOpampConnectionSettingsAccepted(settings)
+}
+
+func (cc *CallbacksWrapper) SaveRemoteConfigStatus(ctx context.Context, status *protobufs.RemoteConfigStatus) {
+	cc.EnterCallback()
+	defer cc.LeaveCallback()
+	cc.wrapped.SaveRemoteConfigStatus(ctx, status)
+}
+
+func (cc *CallbacksWrapper) GetEffectiveConfig(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+	cc.EnterCallback()
+	defer cc.LeaveCallback()
+	return cc.wrapped.GetEffectiveConfig(ctx)
+}
+
+func (cc *CallbacksWrapper) OnCommand(command *protobufs.ServerToAgentCommand) error {
+	cc.EnterCallback()
+	defer cc.LeaveCallback()
+	return cc.wrapped.OnCommand(command)
+}
+
+var _ types.Callbacks = (*CallbacksWrapper)(nil)
+
+func NewCallbacksWrapper(wrapped types.Callbacks) *CallbacksWrapper {
+	zero := int64(0)
+
+	if wrapped == nil {
+		// Make sure it is always safe to call Callbacks.
+		wrapped = types.CallbacksStruct{}
+	}
+
+	return &CallbacksWrapper{
+		wrapped:    wrapped,
+		inCallback: &zero,
+	}
+}
+
+func (cc *CallbacksWrapper) EnterCallback() {
+	atomic.AddInt64(cc.inCallback, 1)
+}
+
+func (cc *CallbacksWrapper) LeaveCallback() {
+	atomic.AddInt64(cc.inCallback, -1)
+}
+
+func (cc *CallbacksWrapper) InCallback() bool {
+	return atomic.LoadInt64(cc.inCallback) != 0
+}
+
 // ClientCommon contains the OpAMP logic that is common between WebSocket and
 // plain HTTP transports.
 type ClientCommon struct {
 	Logger    types.Logger
-	Callbacks types.Callbacks
+	Callbacks *CallbacksWrapper
 
 	// Agent's capabilities defined at Start() time.
 	Capabilities protobufs.AgentCapabilities
@@ -129,11 +225,7 @@ func (c *ClientCommon) PrepareStart(
 	}
 
 	// Prepare callbacks.
-	c.Callbacks = settings.Callbacks
-	if c.Callbacks == nil {
-		// Make sure it is always safe to call Callbacks.
-		c.Callbacks = types.CallbacksStruct{}
-	}
+	c.Callbacks = NewCallbacksWrapper(settings.Callbacks)
 
 	if err := c.sender.SetInstanceUid(settings.InstanceUid); err != nil {
 		return err
@@ -154,6 +246,16 @@ func (c *ClientCommon) Stop(ctx context.Context) error {
 	c.isStoppingMutex.Unlock()
 
 	cancelFunc()
+
+	if c.Callbacks.InCallback() {
+		// Stop() is called from a callback. We cannot wait and block here
+		// because the c.stoppedSignal may not be set until the callback
+		// returns. This is the case for example when OnMessage callback is
+		// called. So, for this case we return immediately and the caller
+		// needs to be aware that Stop() does not wait for stopping to
+		// finish in this case.
+		return nil
+	}
 
 	// Wait until stopping is finished.
 	select {
@@ -186,6 +288,7 @@ func (c *ClientCommon) StartConnectAndRun(runner func(ctx context.Context)) {
 		return
 	}
 	c.runCancel = runCancel
+	c.isStarted = true
 
 	go func() {
 		defer func() {
@@ -196,8 +299,6 @@ func (c *ClientCommon) StartConnectAndRun(runner func(ctx context.Context)) {
 
 		runner(runCtx)
 	}()
-
-	c.isStarted = true
 }
 
 // PrepareFirstMessage prepares the initial state of NextMessage struct that client

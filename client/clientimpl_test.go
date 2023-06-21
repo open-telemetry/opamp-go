@@ -465,6 +465,85 @@ func TestIncludesDetailsOnReconnect(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestStopFromCallback(t *testing.T) {
+	// This test verifies calling Stop() from a callback. We had a bug previously
+	// where Stop() would hang if called from a callback.
+
+	callbacksToTest := []string{"connect", "opamp", "message"}
+	for _, callbackToTest := range callbacksToTest {
+		t.Run(
+			callbackToTest, func(t *testing.T) {
+
+				testClients(
+					t, func(t *testing.T, client OpAMPClient) {
+						var called int64
+
+						hash := []byte{1, 2, 3}
+						opampSettings := &protobufs.OpAMPConnectionSettings{DestinationEndpoint: "http://opamp.com"}
+
+						// Start a Server.
+						srv := internal.StartMockServer(t)
+						srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+							if msg != nil {
+								return &protobufs.ServerToAgent{
+									ConnectionSettings: &protobufs.ConnectionSettingsOffers{
+										Hash:  hash,
+										Opamp: opampSettings,
+									},
+								}
+							}
+							return nil
+						}
+
+						// Start a client.
+						settings := types.StartSettings{
+							Callbacks: types.CallbacksStruct{
+								OnConnectFunc: func() {
+									if callbackToTest == "connect" {
+										client.Stop(context.Background())
+										atomic.StoreInt64(&called, 1)
+									}
+								},
+								OnOpampConnectionSettingsFunc: func(
+									ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
+								) error {
+									if callbackToTest == "opamp" {
+										client.Stop(context.Background())
+										atomic.StoreInt64(&called, 1)
+									}
+									return nil
+								},
+								OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+									if callbackToTest == "message" {
+										client.Stop(context.Background())
+										atomic.StoreInt64(&called, 1)
+									}
+								},
+							},
+							Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings,
+						}
+						settings.OpAMPServerURL = "ws://" + srv.Endpoint
+						prepareClient(t, &settings, client)
+
+						assert.NoError(t, client.Start(context.Background(), settings))
+
+						eventually(
+							t, func() bool {
+								return atomic.LoadInt64(&called) == 1
+							},
+						)
+
+						// Shutdown the Server.
+						srv.Close()
+
+						// Shutdown the client.
+						err := client.Stop(context.Background())
+						assert.NoError(t, err)
+					})
+			})
+	}
+}
+
 func createEffectiveConfig() *protobufs.EffectiveConfig {
 	cfg := &protobufs.EffectiveConfig{
 		ConfigMap: &protobufs.AgentConfigMap{
