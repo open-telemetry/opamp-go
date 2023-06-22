@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
@@ -16,6 +17,19 @@ import (
 	"github.com/open-telemetry/opamp-go/internal/testhelpers"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
+
+type TestLogger struct {
+	*testing.T
+}
+
+func (logger TestLogger) Debugf(format string, v ...interface{}) {
+	logger.Logf(format, v...)
+}
+
+func (logger TestLogger) Errorf(format string, v ...interface{}) {
+	err := fmt.Sprintf(format, v...)
+	logger.T.Errorf("unexpected error found: %s", err)
+}
 
 func TestDisconnectWSByServer(t *testing.T) {
 	// Start a Server.
@@ -57,6 +71,23 @@ func TestDisconnectWSByServer(t *testing.T) {
 	// Stop the client.
 	err := client.Stop(context.Background())
 	assert.NoError(t, err)
+}
+
+func TestDisconnectWSByClient(t *testing.T) {
+	// Start a Server.
+	srv := internal.StartMockServer(t)
+
+	defer srv.Close()
+
+	var settings types.StartSettings
+	settings.OpAMPServerURL = "ws://" + srv.Endpoint
+	client := NewWebSocket(TestLogger{t})
+	go func() {
+		time.Sleep(1 * time.Second)
+		startClient(t, settings, client)
+	}()
+	time.Sleep(2 * time.Second)
+	_ = client.Stop(context.Background())
 }
 
 func TestVerifyWSCompress(t *testing.T) {
