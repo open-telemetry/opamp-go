@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
@@ -82,11 +81,12 @@ func TestDisconnectWSByClient(t *testing.T) {
 	var settings types.StartSettings
 	settings.OpAMPServerURL = "ws://" + srv.Endpoint
 	client := NewWebSocket(TestLogger{t})
+	done := make(chan struct{})
 	go func() {
-		time.Sleep(1 * time.Second)
 		startClient(t, settings, client)
+		done <- struct{}{}
 	}()
-	time.Sleep(2 * time.Second)
+	eventually(t, func() bool { <-done; return true })
 	_ = client.Stop(context.Background())
 }
 
