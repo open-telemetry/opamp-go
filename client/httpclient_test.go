@@ -70,10 +70,22 @@ func TestHTTPClientCompression(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, response.AgentDescription.IdentifyingAttributes, []*protobufs.KeyValue{
 			{
-				Key:   "host.name",
-				Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "somehost"}},
-			}},
-		)
+				Key:   "service.name",
+				Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "otelcol"}},
+			},
+			{
+				Key:   "service.namespace",
+				Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "default"}},
+			},
+			{
+				Key:   "service.instance.id",
+				Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "443e083c-b968-4428-a281-6867bd280e0d"}},
+			},
+			{
+				Key:   "service.version",
+				Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "1.0.0"}},
+			},
+		})
 		w.WriteHeader(http.StatusOK)
 	}
 
