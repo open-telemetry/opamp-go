@@ -276,11 +276,7 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 	// TODO: either add a callback to verify file.Signature or pass the Signature
 	// as a parameter to UpdateContent.
 
-	err = s.localState.UpdateContent(ctx, pkgName, resp.Body, file.ContentHash)
-	if err != nil {
-		return fmt.Errorf("cannot download file from %s: %v", file.DownloadUrl, err)
-	}
-	return nil
+	return s.localState.UpdateContent(ctx, pkgName, resp.Body, file.ContentHash)
 }
 
 // deleteUnneededLocalPackages deletes local packages that are not
