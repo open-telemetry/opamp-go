@@ -17,15 +17,15 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
-type TestLogger struct {
+type testLogger struct {
 	*testing.T
 }
 
-func (logger TestLogger) Debugf(format string, v ...interface{}) {
+func (logger testLogger) Debugf(format string, v ...interface{}) {
 	logger.Logf(format, v...)
 }
 
-func (logger TestLogger) Errorf(format string, v ...interface{}) {
+func (logger testLogger) Errorf(format string, v ...interface{}) {
 	err := fmt.Sprintf(format, v...)
 	logger.T.Errorf("unexpected error found: %s", err)
 }
@@ -80,7 +80,7 @@ func TestDisconnectWSByClient(t *testing.T) {
 
 	var settings types.StartSettings
 	settings.OpAMPServerURL = "ws://" + srv.Endpoint
-	client := NewWebSocket(TestLogger{t})
+	client := NewWebSocket(testLogger{t})
 	done := make(chan struct{})
 	go func() {
 		startClient(t, settings, client)
