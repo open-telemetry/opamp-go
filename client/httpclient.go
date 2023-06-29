@@ -52,6 +52,10 @@ func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) er
 		c.sender.EnableCompression()
 	}
 
+	if settings.PollingIntervalMs != nil {
+		c.sender.SetPollingInterval(*settings.PollingIntervalMs)
+	}
+
 	// Prepare the first message to send.
 	err := c.common.PrepareFirstMessage(ctx)
 	if err != nil {
