@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
 	"sync"
 	"time"
 
@@ -41,6 +44,11 @@ type Agent struct {
 	// the user in the UI.
 	CustomInstanceConfig string
 
+	// Client certificate
+	ClientCert                  *x509.Certificate
+	ClientCertSha256Fingerprint string
+	ClientCertOfferError        string
+
 	// Remote config that we will give to this Agent.
 	remoteConfig *protobufs.AgentRemoteConfig
 
@@ -52,7 +60,21 @@ func NewAgent(
 	instanceId InstanceId,
 	conn types.Connection,
 ) *Agent {
-	return &Agent{InstanceId: instanceId, conn: conn}
+	agent := &Agent{InstanceId: instanceId, conn: conn}
+	tslConn, ok := conn.Connection().(*tls.Conn)
+	if ok {
+		// Client is using TLS connection.
+		connState := tslConn.ConnectionState()
+		if len(connState.PeerCertificates) > 0 {
+			// Client uses client-side certificate. Get certificate details to display in the UI.
+			leafClientCert := connState.PeerCertificates[0]
+			fingerprint := sha256.Sum256(leafClientCert.Raw)
+			agent.ClientCert = leafClientCert
+			agent.ClientCertSha256Fingerprint = fmt.Sprintf("%X", fingerprint)
+		}
+	}
+
+	return agent
 }
 
 // CloneReadonly returns a copy of the Agent that is safe to read.
@@ -61,12 +83,15 @@ func (agent *Agent) CloneReadonly() *Agent {
 	agent.mux.RLock()
 	defer agent.mux.RUnlock()
 	return &Agent{
-		InstanceId:           agent.InstanceId,
-		Status:               proto.Clone(agent.Status).(*protobufs.AgentToServer),
-		EffectiveConfig:      agent.EffectiveConfig,
-		CustomInstanceConfig: agent.CustomInstanceConfig,
-		remoteConfig:         proto.Clone(agent.remoteConfig).(*protobufs.AgentRemoteConfig),
-		StartedAt:            agent.StartedAt,
+		InstanceId:                  agent.InstanceId,
+		Status:                      proto.Clone(agent.Status).(*protobufs.AgentToServer),
+		EffectiveConfig:             agent.EffectiveConfig,
+		CustomInstanceConfig:        agent.CustomInstanceConfig,
+		remoteConfig:                proto.Clone(agent.remoteConfig).(*protobufs.AgentRemoteConfig),
+		StartedAt:                   agent.StartedAt,
+		ClientCert:                  agent.ClientCert,
+		ClientCertOfferError:        agent.ClientCertOfferError,
+		ClientCertSha256Fingerprint: agent.ClientCertSha256Fingerprint,
 	}
 }
 
@@ -400,4 +425,10 @@ func (agent *Agent) SendToAgent(msg *protobufs.ServerToAgent) {
 	defer agent.connMutex.Unlock()
 
 	agent.conn.Send(context.Background(), msg)
+}
+
+func (agent *Agent) OfferConnectionSettings(offers *protobufs.ConnectionSettingsOffers) {
+	agent.SendToAgent(&protobufs.ServerToAgent{
+		ConnectionSettings: offers,
+	})
 }
