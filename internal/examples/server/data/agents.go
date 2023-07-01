@@ -1,6 +1,7 @@
 package data
 
 import (
+	"log"
 	"sync"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -13,6 +14,8 @@ type Agents struct {
 	agentsById  map[InstanceId]*Agent
 	connections map[types.Connection]map[InstanceId]bool
 }
+
+var logger = log.New(log.Default().Writer(), "[AGENTS] ", log.Default().Flags()|log.Lmsgprefix|log.Lmicroseconds)
 
 // RemoveConnection removes the connection all Agent instances associated with the
 // connection.
@@ -113,6 +116,24 @@ func (agents *Agents) GetAllAgentsReadonlyClone() map[InstanceId]*Agent {
 		m[id] = agent.CloneReadonly()
 	}
 	return m
+}
+
+func (a *Agents) OfferAgentConnectionSettings(
+	id InstanceId,
+	offers *protobufs.ConnectionSettingsOffers,
+) {
+	logger.Printf("Begin rotate client certificate for %s\n", id)
+
+	a.mux.Lock()
+	defer a.mux.Unlock()
+
+	agent, ok := a.agentsById[id]
+	if ok {
+		agent.OfferConnectionSettings(offers)
+		logger.Printf("Client certificate offers sent to %s\n", id)
+	} else {
+		logger.Printf("Agent %s not found\n", id)
+	}
 }
 
 var AllAgents = Agents{

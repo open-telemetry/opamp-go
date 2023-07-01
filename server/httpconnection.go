@@ -23,8 +23,8 @@ type httpConnection struct {
 	conn net.Conn
 }
 
-func (c httpConnection) RemoteAddr() net.Addr {
-	return c.conn.RemoteAddr()
+func (c httpConnection) Connection() net.Conn {
+	return c.conn
 }
 
 var _ types.Connection = (*httpConnection)(nil)

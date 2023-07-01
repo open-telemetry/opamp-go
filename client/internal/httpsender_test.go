@@ -8,10 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/open-telemetry/opamp-go/client/types"
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestDelaySchedule(t *testing.T) {
@@ -74,12 +75,12 @@ func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
 			}},
 		}
 	})
-	sender.callbacks = types.CallbacksStruct{
+	sender.callbacks = NewCallbacksWrapper(types.CallbacksStruct{
 		OnConnectFunc: func() {
 		},
 		OnConnectFailedFunc: func(_ error) {
 		},
-	}
+	})
 	sender.url = url
 	start := time.Now()
 	resp, err := sender.sendRequestWithRetries(ctx)

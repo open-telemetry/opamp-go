@@ -6,6 +6,7 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
+// MessageData represents a message received from the server and handled by Callbacks.
 type MessageData struct {
 	// RemoteConfig is offered by the Server. The Agent must process it and call
 	// OpAMPClient.SetRemoteConfigStatus to indicate success or failure. If the
@@ -38,6 +39,7 @@ type MessageData struct {
 	AgentIdentification *protobufs.AgentIdentification
 }
 
+// Callbacks is an interface for the Client to handle messages from the Server.
 type Callbacks interface {
 	// OnConnect is called when the connection is successfully established to the Server.
 	// May be called after Start() is called and every time a connection is established to the Server.
@@ -116,6 +118,8 @@ type Callbacks interface {
 	OnCommand(command *protobufs.ServerToAgentCommand) error
 }
 
+// CallbacksStruct is a struct that implements Callbacks interface and allows
+// to override only the methods that are needed. If a method is not overridden then it is a no-op.
 type CallbacksStruct struct {
 	OnConnectFunc       func()
 	OnConnectFailedFunc func(err error)
@@ -139,36 +143,42 @@ type CallbacksStruct struct {
 
 var _ Callbacks = (*CallbacksStruct)(nil)
 
+// OnConnect implements Callbacks.OnConnect.
 func (c CallbacksStruct) OnConnect() {
 	if c.OnConnectFunc != nil {
 		c.OnConnectFunc()
 	}
 }
 
+// OnConnectFailed implements Callbacks.OnConnectFailed.
 func (c CallbacksStruct) OnConnectFailed(err error) {
 	if c.OnConnectFailedFunc != nil {
 		c.OnConnectFailedFunc(err)
 	}
 }
 
+// OnError implements Callbacks.OnError.
 func (c CallbacksStruct) OnError(err *protobufs.ServerErrorResponse) {
 	if c.OnErrorFunc != nil {
 		c.OnErrorFunc(err)
 	}
 }
 
+// OnMessage implements Callbacks.OnMessage.
 func (c CallbacksStruct) OnMessage(ctx context.Context, msg *MessageData) {
 	if c.OnMessageFunc != nil {
 		c.OnMessageFunc(ctx, msg)
 	}
 }
 
+// SaveRemoteConfigStatus implements Callbacks.SaveRemoteConfigStatus.
 func (c CallbacksStruct) SaveRemoteConfigStatus(ctx context.Context, status *protobufs.RemoteConfigStatus) {
 	if c.SaveRemoteConfigStatusFunc != nil {
 		c.SaveRemoteConfigStatusFunc(ctx, status)
 	}
 }
 
+// GetEffectiveConfig implements Callbacks.GetEffectiveConfig.
 func (c CallbacksStruct) GetEffectiveConfig(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 	if c.GetEffectiveConfigFunc != nil {
 		return c.GetEffectiveConfigFunc(ctx)
@@ -176,6 +186,7 @@ func (c CallbacksStruct) GetEffectiveConfig(ctx context.Context) (*protobufs.Eff
 	return nil, nil
 }
 
+// OnOpampConnectionSettings implements Callbacks.OnOpampConnectionSettings.
 func (c CallbacksStruct) OnOpampConnectionSettings(
 	ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
 ) error {
@@ -185,12 +196,14 @@ func (c CallbacksStruct) OnOpampConnectionSettings(
 	return nil
 }
 
+// OnOpampConnectionSettingsAccepted implements Callbacks.OnOpampConnectionSettingsAccepted.
 func (c CallbacksStruct) OnOpampConnectionSettingsAccepted(settings *protobufs.OpAMPConnectionSettings) {
 	if c.OnOpampConnectionSettingsAcceptedFunc != nil {
 		c.OnOpampConnectionSettingsAcceptedFunc(settings)
 	}
 }
 
+// OnCommand implements Callbacks.OnCommand.
 func (c CallbacksStruct) OnCommand(command *protobufs.ServerToAgentCommand) error {
 	if c.OnCommandFunc != nil {
 		return c.OnCommandFunc(command)
