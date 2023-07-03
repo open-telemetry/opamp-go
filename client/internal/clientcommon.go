@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"sync"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
-	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -186,6 +187,7 @@ func (c *ClientCommon) StartConnectAndRun(runner func(ctx context.Context)) {
 		return
 	}
 	c.runCancel = runCancel
+	c.isStarted = true
 
 	go func() {
 		defer func() {
@@ -196,8 +198,6 @@ func (c *ClientCommon) StartConnectAndRun(runner func(ctx context.Context)) {
 
 		runner(runCtx)
 	}()
-
-	c.isStarted = true
 }
 
 // PrepareFirstMessage prepares the initial state of NextMessage struct that client
