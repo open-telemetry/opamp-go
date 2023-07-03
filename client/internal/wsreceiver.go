@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/gorilla/websocket"
-
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -16,7 +15,7 @@ type wsReceiver struct {
 	conn      *websocket.Conn
 	logger    types.Logger
 	sender    *WSSender
-	callbacks *CallbacksWrapper
+	callbacks types.Callbacks
 	processor receivedProcessor
 }
 
@@ -24,7 +23,7 @@ type wsReceiver struct {
 // messages from the server.
 func NewWSReceiver(
 	logger types.Logger,
-	callbacks *CallbacksWrapper,
+	callbacks types.Callbacks,
 	conn *websocket.Conn,
 	sender *WSSender,
 	clientSyncedState *ClientSyncedState,
