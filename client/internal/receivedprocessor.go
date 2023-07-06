@@ -52,9 +52,13 @@ func newReceivedProcessor(
 func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
 	if r.callbacks != nil {
 		if msg.Command != nil {
-			r.rcvCommand(msg.Command)
-			// If a command message exists, other messages will be ignored
-			return
+			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand) {
+				r.rcvCommand(msg.Command)
+				// If a command message exists, other messages will be ignored
+				return
+			} else {
+				r.logger.Debugf("Ignoring Command, agent does not have AcceptsCommands capability")
+			}
 		}
 
 		scheduled, err := r.rcvFlags(ctx, protobufs.ServerToAgentFlags(msg.Flags))
