@@ -219,6 +219,17 @@ func (r *receivedProcessor) rcvAgentIdentification(agentId *protobufs.AgentIdent
 
 func (r *receivedProcessor) rcvCommand(command *protobufs.ServerToAgentCommand) {
 	if command != nil {
-		r.callbacks.OnCommand(command)
+		err := r.callbacks.OnCommand(command)
+		if err != nil {
+			r.sender.NextMessage().Update(
+				func(msg *protobufs.AgentToServer) {
+					msg.Health = &protobufs.AgentHealth{
+						Healthy:   false,
+						LastError: err.Error(),
+					}
+				},
+			)
+			r.sender.ScheduleSend()
+		}
 	}
 }
