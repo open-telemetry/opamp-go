@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -17,6 +18,7 @@ import (
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/oklog/ulid/v2"
+
 	"github.com/open-telemetry/opamp-go/client"
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/internal/examples/supervisor/supervisor/commander"
@@ -133,7 +135,10 @@ func (s *Supervisor) startOpAMP() error {
 
 	settings := types.StartSettings{
 		OpAMPServerURL: s.config.Server.Endpoint,
-		InstanceUid:    s.instanceId.String(),
+		TLSConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+		InstanceUid: s.instanceId.String(),
 		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func() {
 				s.logger.Debugf("Connected to the server.")
