@@ -3,7 +3,6 @@ package types
 import (
 	"crypto/tls"
 	"net/http"
-	"time"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
@@ -49,8 +48,4 @@ type StartSettings struct {
 	// the compression is only effectively enabled if the Server also supports compression.
 	// The data will be compressed in both directions.
 	EnableCompression bool
-
-	// Optional PollingIntervalMs to configure the polling interval for http client
-	// if nil uses the default polling interval else uses this value.
-	PollingIntervalMs *time.Duration
 }

@@ -108,14 +108,10 @@ func TestHTTPClientSetPollingInterval(t *testing.T) {
 	}
 
 	// Start a client.
-	settings := types.StartSettings{
-		PollingIntervalMs: func() *time.Duration {
-			tms := 101 * time.Millisecond
-			return &tms
-		}(),
-	}
+	settings := types.StartSettings{}
 	settings.OpAMPServerURL = "http://" + srv.Endpoint
 	client := NewHTTP(nil)
+	client.SetPollingInterval(101 * time.Millisecond)
 	prepareClient(t, &settings, client)
 
 	assert.NoError(t, client.Start(context.Background(), settings))
