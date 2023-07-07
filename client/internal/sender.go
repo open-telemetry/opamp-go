@@ -2,9 +2,9 @@ package internal
 
 import (
 	"errors"
-
 	"github.com/oklog/ulid/v2"
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"sync/atomic"
 )
 
 // Sender is an interface of the sending portion of OpAMP protocol that stores
@@ -20,6 +20,12 @@ type Sender interface {
 	// "pending" flag is reset) then no message will be sent.
 	ScheduleSend()
 
+	// DisableScheduleSend temporary preventing ScheduleSend from writing to channel
+	DisableScheduleSend()
+
+	// EnableScheduleSend re-enables ScheduleSend and checks if it was called during onMessage callback
+	EnableScheduleSend()
+
 	// SetInstanceUid sets a new instanceUid to be used for all subsequent messages to be sent.
 	SetInstanceUid(instanceUid string) error
 }
@@ -31,6 +37,12 @@ type SenderCommon struct {
 	// Indicates that there is a pending message to send.
 	hasPendingMessage chan struct{}
 
+	// When set to non-zero indicates message sending is disabled
+	isSendingDisabled int32
+
+	// Indicates ScheduleSend() was called when message sending was disabled
+	registerScheduleSend chan struct{}
+
 	// The next message to send.
 	nextMessage NextMessage
 }
@@ -39,8 +51,10 @@ type SenderCommon struct {
 // the WebSocket and HTTP Sender implementations.
 func NewSenderCommon() SenderCommon {
 	return SenderCommon{
-		hasPendingMessage: make(chan struct{}, 1),
-		nextMessage:       NewNextMessage(),
+		hasPendingMessage:    make(chan struct{}, 1),
+		registerScheduleSend: make(chan struct{}, 1),
+		nextMessage:          NewNextMessage(),
+		isSendingDisabled:    0,
 	}
 }
 
@@ -48,6 +62,16 @@ func NewSenderCommon() SenderCommon {
 // is now ready to be sent. If there is no pending message (e.g. the NextMessage was
 // already sent and "pending" flag is reset) then no message will be sent.
 func (h *SenderCommon) ScheduleSend() {
+	if h.IsSendingDisabled() {
+		// Register message sending to when message sending is enabled, won't block on writing to channel.
+		select {
+		case h.registerScheduleSend <- struct{}{}:
+		default:
+			break
+		}
+		return
+	}
+
 	// Set pending flag. Don't block on writing to channel.
 	select {
 	case h.hasPendingMessage <- struct{}{}:
@@ -60,6 +84,28 @@ func (h *SenderCommon) ScheduleSend() {
 // Can be called concurrently with any other method.
 func (h *SenderCommon) NextMessage() *NextMessage {
 	return &h.nextMessage
+}
+
+// IsSendingDisabled returns true when isSendingDisabled is set to non-zero value.
+func (h *SenderCommon) IsSendingDisabled() bool {
+	return atomic.LoadInt32(&h.isSendingDisabled) != 0
+}
+
+// DisableScheduleSend temporary preventing ScheduleSend from writing to channel
+func (h *SenderCommon) DisableScheduleSend() {
+
+	atomic.StoreInt32(&h.isSendingDisabled, 1)
+}
+
+// EnableScheduleSend re-enables message sending, won't block on reading from channel.
+func (h *SenderCommon) EnableScheduleSend() {
+	atomic.StoreInt32(&h.isSendingDisabled, 0)
+	select {
+	case <-h.registerScheduleSend:
+		h.ScheduleSend()
+	default:
+		break
+	}
 }
 
 // SetInstanceUid sets a new instanceUid to be used for all subsequent messages to be sent.

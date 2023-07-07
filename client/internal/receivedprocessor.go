@@ -3,7 +3,6 @@ package internal
 import (
 	"context"
 	"errors"
-
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
@@ -50,6 +49,11 @@ func newReceivedProcessor(
 // the received message and performs any processing necessary based on what fields are set.
 // This function will call any relevant callbacks.
 func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
+	r.sender.DisableScheduleSend()
+
+	// Verify message sending is enabled. Can be called several times since process is non-blocking
+	defer r.sender.EnableScheduleSend()
+
 	if r.callbacks != nil {
 		if msg.Command != nil {
 			r.rcvCommand(msg.Command)
@@ -127,8 +131,9 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 				msgData.AgentIdentification = msg.AgentIdentification
 			}
 		}
-
 		r.callbacks.OnMessage(ctx, msgData)
+
+		r.sender.EnableScheduleSend()
 
 		r.rcvOpampConnectionSettings(ctx, msg.ConnectionSettings)
 

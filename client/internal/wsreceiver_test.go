@@ -100,7 +100,7 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 		},
 	}
 	clientSyncedState := ClientSyncedState{}
-	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, 0)
+	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, &WSSender{}, &clientSyncedState, nil, 0)
 	receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 		Command: &protobufs.ServerToAgentCommand{
 			Type: protobufs.CommandType_CommandType_Restart,
