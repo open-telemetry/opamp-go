@@ -9,11 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/open-telemetry/opamp-go/client/internal"
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
-	"github.com/stretchr/testify/assert"
-	"google.golang.org/protobuf/proto"
 )
 
 func TestHTTPPolling(t *testing.T) {
@@ -102,6 +103,41 @@ func TestHTTPClientCompression(t *testing.T) {
 
 	srv.Close()
 
+	err := client.Stop(context.Background())
+	assert.NoError(t, err)
+}
+
+func TestHTTPClientSetPollingInterval(t *testing.T) {
+	// Start a Server.
+	srv := internal.StartMockServer(t)
+	var rcvCounter int64
+	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+		assert.EqualValues(t, rcvCounter, msg.SequenceNum)
+		if msg != nil {
+			atomic.AddInt64(&rcvCounter, 1)
+		}
+		return nil
+	}
+
+	// Start a client.
+	settings := types.StartSettings{}
+	settings.OpAMPServerURL = "http://" + srv.Endpoint
+	client := NewHTTP(nil)
+	client.SetPollingInterval(100 * time.Millisecond)
+	prepareClient(t, &settings, client)
+
+	assert.NoError(t, client.Start(context.Background(), settings))
+
+	// Verify that status report is delivered.
+	eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) == 1 })
+
+	// Verify that status report is delivered again. no call is made for next 100ms
+	assert.Eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) == 2 }, 5*time.Second, 100*time.Millisecond)
+
+	// Shutdown the Server.
+	srv.Close()
+
+	// Shutdown the client.
 	err := client.Stop(context.Background())
 	assert.NoError(t, err)
 }

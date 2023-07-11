@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"time"
 
 	"github.com/open-telemetry/opamp-go/client/internal"
 	"github.com/open-telemetry/opamp-go/client/types"
@@ -112,4 +113,8 @@ func (c *httpClient) runUntilStopped(ctx context.Context) {
 		c.common.PackagesStateProvider,
 		c.common.Capabilities,
 	)
+}
+
+func (c *httpClient) SetPollingInterval(duration time.Duration) {
+	c.sender.SetPollingInterval(duration)
 }

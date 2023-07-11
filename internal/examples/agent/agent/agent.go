@@ -395,6 +395,27 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	}
 }
 
+func (agent *Agent) tryChangeOpAMPCert(cert *tls.Certificate) {
+	agent.logger.Debugf("Reconnecting to verify offered client certificate.\n")
+
+	agent.disconnect()
+
+	agent.opampClientCert = cert
+	if err := agent.connect(); err != nil {
+		agent.logger.Errorf("Cannot connect using offered certificate: %s. Ignoring the offer\n", err)
+		agent.opampClientCert = nil
+
+		if err := agent.connect(); err != nil {
+			agent.logger.Errorf("Unable to reconnect after restoring client certificate: %v\n", err)
+		}
+	}
+
+	agent.logger.Debugf("Successfully connected to server. Accepting new client certificate.\n")
+
+	// TODO: we can also persist the successfully accepted certificate and use it when the
+	// agent connects to the server after the restart.
+}
+
 func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *protobufs.OpAMPConnectionSettings) error {
 	if settings == nil || settings.Certificate == nil {
 		agent.logger.Debugf("Received nil certificate offer, ignoring.\n")
@@ -406,30 +427,8 @@ func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *pro
 		return err
 	}
 
-	agent.logger.Debugf("Reconnecting to verify offered client certificate.\n")
-
-	agent.disconnect()
-
-	// TODO: wait for disconnect() to complete the stopping of old connection before
-	// we begin connecting with the new settings.
-
-	agent.opampClientCert = cert
-	if err := agent.connect(); err != nil {
-		agent.logger.Errorf("Cannot connect using offered certificate: %s. Ignoring the offer\n", err)
-		agent.opampClientCert = nil
-
-		if err := agent.connect(); err != nil {
-			agent.logger.Errorf("Unable to reconnect after restoring client certificate: %v\n", err)
-			return err
-		}
-	}
-
-	agent.logger.Debugf("Successfully connected to server. Accepting new client certificate.\n")
-
-	// TODO: we can also persist the successfully accepted certificate and use it when the
-	// agent connects to the server after the restart.
-
 	// TODO: also use settings.DestinationEndpoint and settings.Headers for future connections.
+	go agent.tryChangeOpAMPCert(cert)
 
 	return nil
 }
