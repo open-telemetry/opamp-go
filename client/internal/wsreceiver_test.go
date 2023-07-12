@@ -77,7 +77,8 @@ func TestServerToAgentCommand(t *testing.T) {
 				remoteConfigStatus: &protobufs.RemoteConfigStatus{},
 			}
 			sender := WSSender{}
-			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, &sender, &clientSyncedState, nil, 0)
+			capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
+			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, &sender, &clientSyncedState, nil, capabilities)
 			receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 				Command: test.command,
 			})
@@ -100,7 +101,8 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 		},
 	}
 	clientSyncedState := ClientSyncedState{}
-	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, 0)
+	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
+	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, capabilities)
 	receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 		Command: &protobufs.ServerToAgentCommand{
 			Type: protobufs.CommandType_CommandType_Restart,
