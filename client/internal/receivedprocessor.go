@@ -51,6 +51,9 @@ func newReceivedProcessor(
 // This function will call any relevant callbacks.
 func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
 	if r.callbacks != nil {
+		// Note that anytime we add a new command capabilities we need to add a check here.
+		// This is because we want to ignore commands that the agent does not have the capability
+		// to process.
 		if msg.Command != nil {
 			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand) {
 				r.rcvCommand(msg.Command)
