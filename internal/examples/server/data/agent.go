@@ -6,12 +6,14 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/open-telemetry/opamp-go/internal/examples/server/certman"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server/types"
 )
@@ -103,6 +105,10 @@ func (agent *Agent) UpdateStatus(
 	agent.mux.Lock()
 
 	agent.processStatusUpdate(statusMsg, response)
+
+	if statusMsg.ConnectionSettingsRequest != nil {
+		agent.processConnectionSettingsRequest(statusMsg.ConnectionSettingsRequest.Opamp, response)
+	}
 
 	statusUpdateWatchers := agent.statusUpdateWatchers
 	agent.statusUpdateWatchers = nil
@@ -423,7 +429,73 @@ func (agent *Agent) SendToAgent(msg *protobufs.ServerToAgent) {
 }
 
 func (agent *Agent) OfferConnectionSettings(offers *protobufs.ConnectionSettingsOffers) {
-	agent.SendToAgent(&protobufs.ServerToAgent{
-		ConnectionSettings: offers,
-	})
+	agent.SendToAgent(
+		&protobufs.ServerToAgent{
+			ConnectionSettings: offers,
+		},
+	)
+}
+
+func (agent *Agent) addErrorResponse(errMsg string, response *protobufs.ServerToAgent) {
+	logger.Println(errMsg)
+	if response.ErrorResponse == nil {
+		response.ErrorResponse = &protobufs.ServerErrorResponse{
+			Type:         protobufs.ServerErrorResponseType_ServerErrorResponseType_BadRequest,
+			ErrorMessage: errMsg,
+			Details:      nil,
+		}
+	} else if response.ErrorResponse.Type == protobufs.ServerErrorResponseType_ServerErrorResponseType_BadRequest {
+		// Append this error message to the existing error message.
+		response.ErrorResponse.ErrorMessage += errMsg
+	} else {
+		// Can't report it since it is a different error type.
+		// TODO: consider adding support for reporting multiple errors of different type in the response.
+	}
+}
+
+func (agent *Agent) processConnectionSettingsRequest(
+	request *protobufs.OpAMPConnectionSettingsRequest, response *protobufs.ServerToAgent,
+) {
+	if request == nil || request.CertificateRequest == nil {
+		return
+	}
+
+	csrDer, _ := pem.Decode(request.CertificateRequest.Csr)
+	if csrDer == nil {
+		agent.addErrorResponse("Failed to decode PEM certificate request", response)
+		return
+	}
+
+	csr, err := x509.ParseCertificateRequest(csrDer.Bytes)
+	if err != nil {
+		agent.addErrorResponse("Failed to parse received certificate request: "+err.Error(), response)
+		return
+	}
+
+	if csr.CheckSignature() != err {
+		agent.addErrorResponse("Certificate request signature check failed: "+err.Error(), response)
+		return
+	}
+
+	// Verify the CSR's details and decide if we want to honor the request.
+	// For example verify the CommonName.
+	if csr.Subject.CommonName != "OpAMP Example Client" {
+		agent.addErrorResponse("Invalid CommonName in certificate request", response)
+		return
+	}
+
+	// Create a new certificate for the agent.
+	certificate, err := certman.CreateClientTLSCertFromCSR(csr)
+	if err != nil {
+		agent.addErrorResponse("Failed to create client certificate from CSR: "+err.Error(), response)
+		return
+	}
+
+	// Create an offer for the agent.
+	if response.ConnectionSettings == nil {
+		response.ConnectionSettings = &protobufs.ConnectionSettingsOffers{}
+	}
+	response.ConnectionSettings.Opamp = &protobufs.OpAMPConnectionSettings{
+		Certificate: certificate,
+	}
 }

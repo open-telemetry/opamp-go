@@ -80,4 +80,13 @@ type OpAMPClient interface {
 	// May be called anytime after Start(), including from OnMessage handler.
 	// nil values are not allowed and will return an error.
 	SetPackageStatuses(statuses *protobufs.PackageStatuses) error
+
+	// RequestConnectionSettings sets a ConnectionSettingsRequest. The ConnectionSettingsRequest
+	// will be included in the next AgentToServer message sent to the Server.
+	// Used for client-initiated connection setting acquisition flows.
+	// It is the responsibility of the caller to ensure that the Server supports
+	// AcceptsConnectionSettingsRequest capability.
+	// May be called before or after Start().
+	// May be also called from OnMessage handler.
+	RequestConnectionSettings(request *protobufs.ConnectionSettingsRequest) error
 }

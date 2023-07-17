@@ -100,6 +100,10 @@ func (c *wsClient) SetAgentDescription(descr *protobufs.AgentDescription) error 
 	return c.common.SetAgentDescription(descr)
 }
 
+func (c *wsClient) RequestConnectionSettings(request *protobufs.ConnectionSettingsRequest) error {
+	return c.common.RequestConnectionSettings(request)
+}
+
 func (c *wsClient) SetHealth(health *protobufs.ComponentHealth) error {
 	return c.common.SetHealth(health)
 }
