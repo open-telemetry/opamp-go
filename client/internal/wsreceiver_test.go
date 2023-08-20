@@ -88,29 +88,60 @@ func TestServerToAgentCommand(t *testing.T) {
 }
 
 func TestServerToAgentCommandExclusive(t *testing.T) {
-	calledCommand := false
-	calledOnMessageConfig := false
-
-	callbacks := types.CallbacksStruct{
-		OnCommandFunc: func(command *protobufs.ServerToAgentCommand) error {
-			calledCommand = true
-			return nil
+	cases := []struct {
+		capabilities             protobufs.AgentCapabilities
+		command                  *protobufs.ServerToAgentCommand
+		calledCommand            bool
+		calledCommandMsg         string
+		calledOnMessageConfig    bool
+		calledOnMessageConfigMsg string
+	}{
+		{
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand,
+			command: &protobufs.ServerToAgentCommand{
+				Type: protobufs.CommandType_CommandType_Restart,
+			},
+			calledCommand:            true,
+			calledCommandMsg:         "OnCommand should be called when a Command is specified and capabilities are set",
+			calledOnMessageConfig:    false,
+			calledOnMessageConfigMsg: "OnMessage should not be called when a Command is specified and capabilities are set",
 		},
-		OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
-			calledOnMessageConfig = true
+		{
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_Unspecified,
+			command: &protobufs.ServerToAgentCommand{
+				Type: protobufs.CommandType_CommandType_Restart,
+			},
+			calledCommand:            false,
+			calledCommandMsg:         "OnCommand should not be called when a Command is specified and capabilities are not set",
+			calledOnMessageConfig:    true,
+			calledOnMessageConfigMsg: "OnMessage should be called when a Command is specified and capabilities are not set",
 		},
 	}
-	clientSyncedState := ClientSyncedState{}
-	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
-	receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, capabilities)
-	receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
-		Command: &protobufs.ServerToAgentCommand{
-			Type: protobufs.CommandType_CommandType_Restart,
-		},
-		RemoteConfig: &protobufs.AgentRemoteConfig{},
-	})
-	assert.Equal(t, true, calledCommand, "OnCommand should be called when a Command is specified")
-	assert.Equal(t, false, calledOnMessageConfig, "OnMessage should not be called when a Command is specified")
+
+	for _, test := range cases {
+		calledCommand := false
+		calledOnMessageConfig := false
+
+		callbacks := types.CallbacksStruct{
+			OnCommandFunc: func(command *protobufs.ServerToAgentCommand) error {
+				calledCommand = true
+				return nil
+			},
+			OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+				calledOnMessageConfig = true
+			},
+		}
+		clientSyncedState := ClientSyncedState{}
+		receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, test.capabilities)
+		receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
+			Command: &protobufs.ServerToAgentCommand{
+				Type: protobufs.CommandType_CommandType_Restart,
+			},
+			RemoteConfig: &protobufs.AgentRemoteConfig{},
+		})
+		assert.Equal(t, test.calledCommand, calledCommand, test.calledCommandMsg)
+		assert.Equal(t, test.calledOnMessageConfig, calledOnMessageConfig, test.calledOnMessageConfigMsg)
+	}
 }
 
 func TestDecodeMessage(t *testing.T) {
