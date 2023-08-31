@@ -278,7 +278,7 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 
 	err = s.localState.UpdateContent(ctx, pkgName, resp.Body, file.ContentHash)
 	if err != nil {
-		return fmt.Errorf("cannot download file from %s: %v", file.DownloadUrl, err)
+		return fmt.Errorf("failed to install/update the package %s: %v", pkgName, err)
 	}
 	return nil
 }
