@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -179,7 +180,7 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func (s *server) handleWSConnection(wsConn *websocket.Conn, connectionCallbacks serverTypes.ConnectionCallbacks) {
-	agentConn := wsConnection{wsConn: wsConn}
+	agentConn := wsConnection{wsConn: wsConn, connMutex: &sync.Mutex{}}
 
 	defer func() {
 		// Close the connection when all is done.

@@ -25,8 +25,6 @@ type Agent struct {
 
 	// Connection to the Agent.
 	conn types.Connection
-	// Mutex to protect Send() operation.
-	connMutex sync.Mutex
 
 	// mutex for the fields that follow it.
 	mux sync.RWMutex
@@ -421,9 +419,6 @@ func (agent *Agent) calcConnectionSettings(response *protobufs.ServerToAgent) {
 }
 
 func (agent *Agent) SendToAgent(msg *protobufs.ServerToAgent) {
-	agent.connMutex.Lock()
-	defer agent.connMutex.Unlock()
-
 	agent.conn.Send(context.Background(), msg)
 }
 
