@@ -726,12 +726,12 @@ func TestDecodeMessage(t *testing.T) {
 }
 
 func TestConnectionAllowsConcurrentWrites(t *testing.T) {
-	var srvConn types.Connection
+	srvConnVal := atomic.Value{}
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
 				OnConnectedFunc: func(conn types.Connection) {
-					srvConn = conn
+					srvConnVal.Store(conn)
 				},
 			}}
 		},
@@ -751,6 +751,20 @@ func TestConnectionAllowsConcurrentWrites(t *testing.T) {
 
 	defer conn.Close()
 
+	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	select {
+	case <-timeout.Done():
+		t.Error("Connections failed to establish in time")
+	default:
+		if srvConnVal.Load() != nil {
+			break
+		}
+	}
+
+	cancel()
+
+	srvConn := srvConnVal.Load().(types.Connection)
 	for i := 0; i < 20; i++ {
 		go func() {
 			defer func() {
