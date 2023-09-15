@@ -755,9 +755,9 @@ func TestConnectionAllowsConcurrentWrites(t *testing.T) {
 
 	select {
 	case <-timeout.Done():
-		t.Error("Connections failed to establish in time")
+		t.Error("Client failed to connect before timeout")
 	default:
-		if srvConnVal.Load() != nil {
+		if _, ok := srvConnVal.Load().(types.Connection); ok == true {
 			break
 		}
 	}
