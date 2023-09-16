@@ -119,19 +119,25 @@ func (c *wsClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) error
 // Try to connect once. Returns an error if connection fails and optional retryAfter
 // duration to indicate to the caller to retry after the specified time as instructed
 // by the Server.
-func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sharedinternal.OptionalDuration) {
+func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinternal.OptionalDuration, err error) {
 	var resp *http.Response
 	conn, resp, err := c.dialer.DialContext(ctx, c.url.String(), c.requestHeader)
 	if err != nil {
+		// `DailContext` returns a mapped error for any context error, we remap it
+		// to the original context error.
+		// See https://github.com/golang/go/blob/561a5079057e3a660ab638e1ba957a96c4ff3fd1/src/net/net.go#L424-L435
+		if ctx.Err() == context.Canceled || ctx.Err() == context.DeadlineExceeded {
+			err = ctx.Err()
+		}
 		if c.common.Callbacks != nil && !c.common.IsStopping() {
 			c.common.Callbacks.OnConnectFailed(err)
 		}
 		if resp != nil {
 			c.common.Logger.Errorf("Server responded with status=%v", resp.Status)
 			duration := sharedinternal.ExtractRetryAfterHeader(resp)
-			return err, duration
+			return duration, err
 		}
-		return err, sharedinternal.OptionalDuration{Defined: false}
+		return sharedinternal.OptionalDuration{Defined: false}, err
 	}
 
 	// Successfully connected.
@@ -142,7 +148,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 		c.common.Callbacks.OnConnect()
 	}
 
-	return nil, sharedinternal.OptionalDuration{Defined: false}
+	return sharedinternal.OptionalDuration{Defined: false}, nil
 }
 
 // Continuously try until connected. Will return nil when successfully
@@ -162,7 +168,7 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 		select {
 		case <-timer.C:
 			{
-				if err, retryAfter := c.tryConnectOnce(ctx); err != nil {
+				if retryAfter, err := c.tryConnectOnce(ctx); err != nil {
 					if errors.Is(err, context.Canceled) {
 						c.common.Logger.Debugf("Client is stopped, will not try anymore.")
 						return err
@@ -193,9 +199,10 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 }
 
 // runOneCycle performs the following actions:
-//   1. connect (try until succeeds).
-//   2. send first status report.
-//   3. receive and process messages until error happens.
+//  1. connect (try until succeeds).
+//  2. send first status report.
+//  3. receive and process messages until error happens.
+//
 // If it encounters an error it closes the connection and returns.
 // Will stop and return if Stop() is called (ctx is cancelled, isStopping is set).
 func (c *wsClient) runOneCycle(ctx context.Context) {

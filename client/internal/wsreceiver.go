@@ -2,7 +2,9 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 
 	"github.com/gorilla/websocket"
 	"github.com/open-telemetry/opamp-go/client/types"
@@ -49,7 +51,7 @@ out:
 	for {
 		var message protobufs.ServerToAgent
 		if err := r.receiveMessage(&message); err != nil {
-			if ctx.Err() == nil && !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+			if ctx.Err() == nil && !websocket.IsCloseError(err, websocket.CloseNormalClosure) && !errors.Is(err, net.ErrClosed) {
 				r.logger.Errorf("Unexpected error while receiving: %v", err)
 			}
 			break out

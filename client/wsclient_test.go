@@ -17,6 +17,19 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
+type testLogger struct {
+	*testing.T
+}
+
+func (logger testLogger) Debugf(format string, v ...interface{}) {
+	logger.Logf(format, v...)
+}
+
+func (logger testLogger) Errorf(format string, v ...interface{}) {
+	err := fmt.Sprintf(format, v...)
+	logger.T.Errorf("unexpected error found: %s", err)
+}
+
 func TestDisconnectWSByServer(t *testing.T) {
 	// Start a Server.
 	srv := internal.StartMockServer(t)
@@ -57,6 +70,24 @@ func TestDisconnectWSByServer(t *testing.T) {
 	// Stop the client.
 	err := client.Stop(context.Background())
 	assert.NoError(t, err)
+}
+
+func TestDisconnectWSByClient(t *testing.T) {
+	// Start a Server.
+	srv := internal.StartMockServer(t)
+
+	defer srv.Close()
+
+	var settings types.StartSettings
+	settings.OpAMPServerURL = "ws://" + srv.Endpoint
+	client := NewWebSocket(testLogger{t})
+	done := make(chan struct{})
+	go func() {
+		startClient(t, settings, client)
+		done <- struct{}{}
+	}()
+	eventually(t, func() bool { <-done; return true })
+	_ = client.Stop(context.Background())
 }
 
 func TestVerifyWSCompress(t *testing.T) {
@@ -123,7 +154,7 @@ func TestVerifyWSCompress(t *testing.T) {
 			remoteCfg := &protobufs.AgentRemoteConfig{
 				Config: &protobufs.AgentConfigMap{
 					ConfigMap: map[string]*protobufs.AgentConfigFile{
-						"": &protobufs.AgentConfigFile{
+						"": {
 							Body: uncompressedCfg,
 						},
 					},
