@@ -1,6 +1,6 @@
 module github.com/open-telemetry/opamp-go
 
-go 1.17
+go 1.20
 
 require (
 	github.com/cenkalti/backoff/v4 v4.1.2
