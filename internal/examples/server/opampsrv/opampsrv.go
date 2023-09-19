@@ -2,15 +2,10 @@ package opampsrv
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"errors"
-	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path"
 
+	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/examples/server/data"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server"
@@ -59,49 +54,13 @@ func (srv *Server) Start() {
 		},
 		ListenEndpoint: "127.0.0.1:4320",
 	}
-	tlsConfig, err := createServerTLSConfig("../certs")
+	tlsConfig, err := internal.CreateServerTLSConfig("../../certs")
 	if err != nil {
 		srv.logger.Debugf("Could not load TLS config, working without TLS: %v", err.Error())
 	}
 	settings.TLSConfig = tlsConfig
 
 	srv.opampSrv.Start(settings)
-}
-
-func createServerTLSConfig(certsDir string) (*tls.Config, error) {
-	// Read the CA's public key. This is the CA that signs the server's certificate.
-	caCertBytes, err := os.ReadFile(path.Join(certsDir, "certs/ca.cert.pem"))
-	if err != nil {
-		return nil, err
-	}
-
-	// Create a certificate pool and make our CA trusted.
-	caCertPool := x509.NewCertPool()
-	if ok := caCertPool.AppendCertsFromPEM(caCertBytes); !ok {
-		return nil, errors.New("cannot append ca.cert.pem")
-	}
-
-	// Load server's certificate.
-	cert, err := tls.LoadX509KeyPair(
-		path.Join(certsDir, "server_certs/server.cert.pem"),
-		path.Join(certsDir, "server_certs/server.key.pem"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("tls.LoadX509KeyPair failed: %v", err)
-	}
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		// TODO: verify client cert manually, and allow TOFU option. See manual
-		// verification example: https://dev.to/living_syn/validating-client-certificate-sans-in-go-i5p
-		// Instead, we use VerifyClientCertIfGiven which will automatically verify the provided certificate
-		// is signed by our CA (so TOFU with self-generated client certificate will not work).
-		ClientAuth: tls.VerifyClientCertIfGiven,
-		// Allow insecure connections for demo purposes.
-		InsecureSkipVerify: true,
-		ClientCAs:          caCertPool,
-	}
-	tlsConfig.BuildNameToCertificate()
-	return tlsConfig, nil
 }
 
 func (srv *Server) Stop() {

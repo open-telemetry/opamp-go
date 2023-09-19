@@ -1,23 +1,14 @@
 package uisrv
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
-	"fmt"
-	"io/ioutil"
 	"log"
-	"math/big"
-	"net"
 	"net/http"
 	"path"
 	"text/template"
 	"time"
 
+	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/examples/server/data"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
@@ -130,7 +121,7 @@ func rotateInstanceClientCert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create a new certificate for the agent.
-	certificate, err := createTLSCert()
+	certificate, err := internal.CreateTLSCert("../../certs")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		logger.Println(err)
@@ -161,85 +152,4 @@ func rotateInstanceClientCert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/agent?instanceid="+string(instanceId), http.StatusSeeOther)
-}
-
-func createTLSCert() (*protobufs.TLSCertificate, error) {
-	certsDir := "../certs"
-
-	// Load CA Cert.
-	caCertBytes, err := ioutil.ReadFile(path.Join(certsDir, "certs/ca.cert.pem"))
-	if err != nil {
-		logger.Fatalf("Cannot read CA cert: %v", err)
-	}
-
-	caKeyBytes, err := ioutil.ReadFile(path.Join(certsDir, "private/ca.key.pem"))
-	if err != nil {
-		logger.Fatalf("Cannot read CA key: %v", err)
-	}
-
-	caCertPB, _ := pem.Decode(caCertBytes)
-	caKeyPB, _ := pem.Decode(caKeyBytes)
-	caCert, err := x509.ParseCertificate(caCertPB.Bytes)
-	if err != nil {
-		logger.Fatalf("Cannot parse CA cert: %v", err)
-	}
-
-	caPrivKey, err := x509.ParsePKCS1PrivateKey(caKeyPB.Bytes)
-	if err != nil {
-		logger.Fatalf("Cannot parse CA key: %v", err)
-	}
-
-	// Generate a private key for new client cert.
-	certPrivKey, err := rsa.GenerateKey(rand.Reader, 4096)
-	if err != nil {
-		err := fmt.Errorf("cannot generate private key: %v", err)
-		return nil, err
-	}
-
-	// Prepare certificate template.
-	template := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject: pkix.Name{
-			CommonName:    "OpAMP Example Client",
-			Organization:  []string{"OpAMP Example"},
-			Country:       []string{"CA"},
-			Province:      []string{"ON"},
-			Locality:      []string{"City"},
-			StreetAddress: []string{""},
-			PostalCode:    []string{""},
-		},
-		IPAddresses: []net.IP{net.IPv4(127, 0, 0, 1)},
-		NotBefore:   time.Now(),
-		NotAfter:    time.Now().Add(time.Hour * 1000),
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:    x509.KeyUsageDigitalSignature,
-	}
-
-	// Create the client cert. Sign it using CA cert.
-	certBytes, err := x509.CreateCertificate(rand.Reader, template, caCert, &certPrivKey.PublicKey, caPrivKey)
-	if err != nil {
-		err := fmt.Errorf("cannot create certificate: %v", err)
-		return nil, err
-	}
-
-	publicKeyPEM := new(bytes.Buffer)
-	pem.Encode(publicKeyPEM, &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: certBytes,
-	})
-
-	privateKeyPEM := new(bytes.Buffer)
-	pem.Encode(privateKeyPEM, &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(certPrivKey),
-	})
-
-	// We have a client certificate with a public and private key.
-	certificate := &protobufs.TLSCertificate{
-		PublicKey:   publicKeyPEM.Bytes(),
-		PrivateKey:  privateKeyPEM.Bytes(),
-		CaPublicKey: caCertBytes,
-	}
-
-	return certificate, nil
 }
