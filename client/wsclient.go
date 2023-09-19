@@ -123,12 +123,6 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinterna
 	var resp *http.Response
 	conn, resp, err := c.dialer.DialContext(ctx, c.url.String(), c.requestHeader)
 	if err != nil {
-		// `DailContext` returns a mapped error for any context error, we remap it
-		// to the original context error.
-		// See https://github.com/golang/go/blob/561a5079057e3a660ab638e1ba957a96c4ff3fd1/src/net/net.go#L424-L435
-		if ctx.Err() == context.Canceled || ctx.Err() == context.DeadlineExceeded {
-			err = ctx.Err()
-		}
 		if c.common.Callbacks != nil && !c.common.IsStopping() {
 			c.common.Callbacks.OnConnectFailed(err)
 		}
