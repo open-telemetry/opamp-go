@@ -85,7 +85,41 @@ func (c *wsClient) Stop(ctx context.Context) error {
 	conn := c.conn
 	c.connMutex.RUnlock()
 
+	ticker := time.NewTicker(50 * time.Millisecond)
+
+	// Wait for all remaining messages to be sent. Continuing to attempt
+	// to send messages after calling Stop will eventually result in lost
+	// messages.
+	select {
+	case <-ticker.C:
+		if !c.sender.NextMessage().IsPending() {
+			break
+		}
+	case <-time.After(3 * time.Second):
+		break
+	}
+
+	ticker.Stop()
+
 	if conn != nil {
+		defaultCloseHandler := conn.CloseHandler()
+		closed := make(chan bool)
+
+		// The server should respond with a close message of its own, which will
+		// trigger this callback. At this point the close sequence has been
+		// completed and the TCP connection can be gracefully closed.
+		conn.SetCloseHandler(func(code int, text string) error {
+			closed <- true
+			return defaultCloseHandler(code, text)
+		})
+
+		message := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
+		conn.WriteControl(websocket.CloseMessage, message, time.Now().Add(time.Second))
+
+		select {
+		case <-time.After(3 * time.Second):
+		case <-closed:
+		}
 		_ = conn.Close()
 	}
 
@@ -193,9 +227,10 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 }
 
 // runOneCycle performs the following actions:
-//   1. connect (try until succeeds).
-//   2. send first status report.
-//   3. receive and process messages until error happens.
+//  1. connect (try until succeeds).
+//  2. send first status report.
+//  3. receive and process messages until error happens.
+//
 // If it encounters an error it closes the connection and returns.
 // Will stop and return if Stop() is called (ctx is cancelled, isStopping is set).
 func (c *wsClient) runOneCycle(ctx context.Context) {
