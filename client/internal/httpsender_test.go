@@ -3,13 +3,18 @@ package internal
 import (
 	"context"
 	"crypto/tls"
+	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
+	"github.com/open-telemetry/opamp-go/internal/testhelpers"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/stretchr/testify/assert"
 )
@@ -97,4 +102,74 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 	}
 
 	return cert, nil
+}
+
+func TestHTTPSenderRetryForFailedRequests(t *testing.T) {
+
+	srv, m := newMockServer(t)
+	address := testhelpers.GetAvailableLocalAddress()
+	var connectionAttempts int64
+
+	var buf []byte
+	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+		attempt := atomic.AddInt64(&connectionAttempts, 1)
+		if attempt == 1 {
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				t.Error("server doesn't support hijacking")
+				return
+			}
+			conn, _, err := hj.Hijack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			conn.Close()
+		} else {
+			buf, _ = io.ReadAll(r.Body)
+			w.WriteHeader(http.StatusOK)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	url := "http://" + address
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.AgentDescription = &protobufs.AgentDescription{
+			IdentifyingAttributes: []*protobufs.KeyValue{{
+				Key: "service.name",
+				Value: &protobufs.AnyValue{
+					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
+				},
+			}},
+		}
+	})
+	sender.callbacks = types.CallbacksStruct{
+		OnConnectFunc: func() {
+		},
+		OnConnectFailedFunc: func(_ error) {
+		},
+	}
+	sender.url = url
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		sender.sendRequestWithRetries(ctx)
+		wg.Done()
+	}()
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		l, err := net.Listen("tcp", address)
+		assert.NoError(t, err)
+		ts := httptest.NewUnstartedServer(m)
+		ts.Listener.Close()
+		ts.Listener = l
+		ts.Start()
+		srv.srv = ts
+		wg.Done()
+	}()
+	wg.Wait()
+	assert.True(t, len(buf) > 0)
+	assert.Contains(t, string(buf), "test-service")
+	cancel()
+	srv.Close()
 }

@@ -26,6 +26,23 @@ const defaultPollingIntervalMs = 30 * 1000 // default interval is 30 seconds.
 const headerContentEncoding = "Content-Encoding"
 const encodingTypeGZip = "gzip"
 
+type requestWrapper struct {
+	*http.Request
+
+	bodyReader func() io.ReadCloser
+}
+
+func bodyReader(buf []byte) func() io.ReadCloser {
+	return func() io.ReadCloser {
+		return io.NopCloser(bytes.NewReader(buf))
+	}
+}
+
+func (r *requestWrapper) rewind(ctx context.Context) {
+	r.Body = r.bodyReader()
+	r.Request = r.Request.WithContext(ctx)
+}
+
 // HTTPSender allows scheduling messages to send. Once run, it will loop through
 // a request/response cycle for each message to send and will process all received
 // responses using a receivedProcessor. If there are no pending messages to send
@@ -156,7 +173,8 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 		select {
 		case <-timer.C:
 			{
-				resp, err := h.client.Do(req)
+				req.rewind(ctx)
+				resp, err := h.client.Do(req.Request)
 				if err == nil {
 					switch resp.StatusCode {
 					case http.StatusOK:
@@ -198,7 +216,7 @@ func recalculateInterval(interval time.Duration, resp *http.Response) time.Durat
 	return interval
 }
 
-func (h *HTTPSender) prepareRequest(ctx context.Context) (*http.Request, error) {
+func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error) {
 	msgToSend := h.nextMessage.PopPending()
 	if msgToSend == nil || proto.Equal(msgToSend, &protobufs.AgentToServer{}) {
 		// There is no pending message or the message is empty.
@@ -211,7 +229,11 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*http.Request, error) 
 		return nil, err
 	}
 
-	var body io.Reader
+	r, err := http.NewRequestWithContext(ctx, OpAMPPlainHTTPMethod, h.url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req := requestWrapper{Request: r}
 
 	if h.compressionEnabled {
 		var buf bytes.Buffer
@@ -224,17 +246,16 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*http.Request, error) 
 			h.logger.Errorf("Failed to close the writer: %v", err)
 			return nil, err
 		}
-		body = &buf
+		req.bodyReader = bodyReader(buf.Bytes())
 	} else {
-		body = bytes.NewReader(data)
+		req.bodyReader = bodyReader(data)
 	}
-	req, err := http.NewRequestWithContext(ctx, OpAMPPlainHTTPMethod, h.url, body)
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header = h.requestHeader
-	return req, nil
+	return &req, nil
 }
 
 func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
