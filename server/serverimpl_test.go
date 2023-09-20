@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -722,4 +723,125 @@ func TestDecodeMessage(t *testing.T) {
 			assert.True(t, proto.Equal(msg, &decoded))
 		}
 	}
+}
+
+func TestConnectionAllowsConcurrentWrites(t *testing.T) {
+	srvConnVal := atomic.Value{}
+	callbacks := CallbacksStruct{
+		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
+				OnConnectedFunc: func(conn types.Connection) {
+					srvConnVal.Store(conn)
+				},
+			}}
+		},
+	}
+
+	// Start a Server.
+	settings := &StartSettings{Settings: Settings{Callbacks: callbacks}}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	// Connect to the Server.
+	conn, _, err := dialClient(settings)
+
+	// Verify that the connection is successful.
+	assert.NoError(t, err)
+	assert.NotNil(t, conn)
+
+	defer conn.Close()
+
+	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	select {
+	case <-timeout.Done():
+		t.Error("Client failed to connect before timeout")
+	default:
+		if _, ok := srvConnVal.Load().(types.Connection); ok == true {
+			break
+		}
+	}
+
+	cancel()
+
+	srvConn := srvConnVal.Load().(types.Connection)
+	for i := 0; i < 20; i++ {
+		go func() {
+			defer func() {
+				if recover() != nil {
+					require.Fail(t, "Sending to client panicked")
+				}
+			}()
+
+			srvConn.Send(context.Background(), &protobufs.ServerToAgent{})
+		}()
+	}
+}
+
+func BenchmarkSendToClient(b *testing.B) {
+	clientConnections := []*websocket.Conn{}
+	serverConnections := []types.Connection{}
+	srvConnectionsMutex := sync.Mutex{}
+	callbacks := CallbacksStruct{
+		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
+				OnConnectedFunc: func(conn types.Connection) {
+					srvConnectionsMutex.Lock()
+					serverConnections = append(serverConnections, conn)
+					srvConnectionsMutex.Unlock()
+				},
+			}}
+		},
+	}
+
+	// Start a Server.
+	settings := &StartSettings{
+		Settings:       Settings{Callbacks: callbacks},
+		ListenEndpoint: testhelpers.GetAvailableLocalAddress(),
+		ListenPath:     "/",
+	}
+	srv := New(&sharedinternal.NopLogger{})
+	err := srv.Start(*settings)
+
+	if err != nil {
+		b.Error(err)
+	}
+
+	defer srv.Stop(context.Background())
+
+	for i := 0; i < b.N; i++ {
+		conn, resp, err := dialClient(settings)
+
+		if err != nil || resp == nil || conn == nil {
+			b.Error("Could not establish connection:", err)
+		}
+
+		clientConnections = append(clientConnections, conn)
+	}
+
+	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	select {
+	case <-timeout.Done():
+		b.Error("Connections failed to establish in time")
+	default:
+		if len(serverConnections) == b.N {
+			break
+		}
+	}
+
+	cancel()
+
+	for _, conn := range serverConnections {
+		err := conn.Send(context.Background(), &protobufs.ServerToAgent{})
+
+		if err != nil {
+			b.Error(err)
+		}
+	}
+
+	for _, conn := range clientConnections {
+		conn.Close()
+	}
+
 }
