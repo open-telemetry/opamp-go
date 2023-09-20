@@ -89,7 +89,10 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 func (agent *Agent) connect() error {
 	agent.opampClient = client.NewWebSocket(agent.logger)
 
-	tlsConfig, err := internal.CreateClientTLSConfig(agent.opampClientCert, "../../certs")
+	tlsConfig, err := internal.CreateClientTLSConfig(
+		agent.opampClientCert,
+		"../../certs/certs/ca.cert.pem",
+	)
 	if err != nil {
 		return err
 	}

@@ -54,7 +54,11 @@ func (srv *Server) Start() {
 		},
 		ListenEndpoint: "127.0.0.1:4320",
 	}
-	tlsConfig, err := internal.CreateServerTLSConfig("../../certs")
+	tlsConfig, err := internal.CreateServerTLSConfig(
+		"../../certs/certs/ca.cert.pem",
+		"../../certs/server_certs/server.cert.pem",
+		"../../certs/server_certs/server.key.pem",
+	)
 	if err != nil {
 		srv.logger.Debugf("Could not load TLS config, working without TLS: %v", err.Error())
 	}
