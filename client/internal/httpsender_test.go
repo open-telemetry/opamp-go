@@ -157,7 +157,6 @@ func TestHTTPSenderRetryForFailedRequests(t *testing.T) {
 		wg.Done()
 	}()
 	go func() {
-		time.Sleep(200 * time.Millisecond)
 		l, err := net.Listen("tcp", address)
 		assert.NoError(t, err)
 		ts := httptest.NewUnstartedServer(m)
