@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"log"
 	"math/rand"
 	"os"
 	"runtime"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/open-telemetry/opamp-go/client"
 	"github.com/open-telemetry/opamp-go/client/types"
+	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -89,9 +89,17 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 func (agent *Agent) connect() error {
 	agent.opampClient = client.NewWebSocket(agent.logger)
 
+	tlsConfig, err := internal.CreateClientTLSConfig(
+		agent.opampClientCert,
+		"../../certs/certs/ca.cert.pem",
+	)
+	if err != nil {
+		return err
+	}
+
 	settings := types.StartSettings{
 		OpAMPServerURL: "wss://127.0.0.1:4320/v1/opamp",
-		TLSConfig:      createClientTLSConfig(agent.opampClientCert),
+		TLSConfig:      tlsConfig,
 		InstanceUid:    agent.instanceId.String(),
 		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func() {
@@ -120,7 +128,7 @@ func (agent *Agent) connect() error {
 			protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings,
 	}
 
-	err := agent.opampClient.SetAgentDescription(agent.agentDescription)
+	err = agent.opampClient.SetAgentDescription(agent.agentDescription)
 	if err != nil {
 		return err
 	}
@@ -135,29 +143,6 @@ func (agent *Agent) connect() error {
 	agent.logger.Debugf("OpAMP Client started.")
 
 	return nil
-}
-
-func createClientTLSConfig(clientCert *tls.Certificate) *tls.Config {
-	// Read the CA's public key. This is the CA that signs the server's certificate.
-	caCertBytes, err := os.ReadFile("../certs/certs/ca.cert.pem")
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	// Create a certificate pool and make our CA trusted.
-	caCertPool := x509.NewCertPool()
-	if ok := caCertPool.AppendCertsFromPEM(caCertBytes); !ok {
-		log.Fatalln("Cannot append ca.cert.pem")
-	}
-
-	cfg := &tls.Config{
-		RootCAs: caCertPool,
-	}
-	if clientCert != nil {
-		// If there is a client-side certificate use it for connection too.
-		cfg.Certificates = []tls.Certificate{*clientCert}
-	}
-	return cfg
 }
 
 func (agent *Agent) disconnect() {
