@@ -37,6 +37,8 @@ type wsClient struct {
 	sender *internal.WSSender
 }
 
+var _ OpAMPClient = &wsClient{}
+
 // NewWebSocket creates a new OpAMP Client that uses WebSocket transport.
 func NewWebSocket(logger types.Logger) *wsClient {
 	if logger == nil {
