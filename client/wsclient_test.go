@@ -203,7 +203,10 @@ func TestPerformsClosingHandshake(t *testing.T) {
 	}
 
 	require.Eventually(t, func() bool {
-		return client.conn != nil
+		client.connMutex.RLock()
+		conn := client.conn
+		client.connMutex.RUnlock()
+		return conn != nil
 	}, 2*time.Second, 250*time.Millisecond)
 
 	defHandler := wsConn.CloseHandler()
@@ -248,7 +251,10 @@ func TestHandlesNoCloseMessageFromServer(t *testing.T) {
 	}
 
 	require.Eventually(t, func() bool {
-		return client.conn != nil
+		client.connMutex.RLock()
+		conn := client.conn
+		client.connMutex.RUnlock()
+		return conn != nil
 	}, 2*time.Second, 250*time.Millisecond)
 
 	wsConn.SetCloseHandler(func(code int, _ string) error {
