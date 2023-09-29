@@ -751,20 +751,12 @@ func TestConnectionAllowsConcurrentWrites(t *testing.T) {
 
 	defer conn.Close()
 
-	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	require.Eventually(t, func() bool {
+		return srvConnVal.Load() != nil
+	}, 2*time.Second, 250*time.Millisecond)
 
-	select {
-	case <-timeout.Done():
-		t.Error("Client failed to connect before timeout")
-	default:
-		if _, ok := srvConnVal.Load().(types.Connection); ok == true {
-			break
-		}
-	}
-
-	cancel()
-
-	srvConn := srvConnVal.Load().(types.Connection)
+	srvConn, ok := srvConnVal.Load().(types.Connection)
+	require.True(t, ok, "The server connection is not a types.Connection")
 	for i := 0; i < 20; i++ {
 		go func() {
 			defer func() {
