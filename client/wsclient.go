@@ -41,7 +41,8 @@ type wsClient struct {
 
 	isStopped atomic.Bool
 
-	stopProcessors chan struct{}
+	stopProcessors    chan struct{}
+	processorsStopped chan struct{}
 }
 
 var _ OpAMPClient = &wsClient{}
@@ -54,9 +55,10 @@ func NewWebSocket(logger types.Logger) *wsClient {
 
 	sender := internal.NewSender(logger)
 	w := &wsClient{
-		common:         internal.NewClientCommon(logger, sender),
-		sender:         sender,
-		stopProcessors: make(chan struct{}),
+		common:            internal.NewClientCommon(logger, sender),
+		sender:            sender,
+		stopProcessors:    make(chan struct{}),
+		processorsStopped: make(chan struct{}),
 	}
 	return w
 }
@@ -100,6 +102,7 @@ func (c *wsClient) Stop(ctx context.Context) error {
 	if conn != nil {
 		// Shut down the sender and any other background processors.
 		c.stopProcessors <- struct{}{}
+		<-c.processorsStopped
 
 		defaultCloseHandler := conn.CloseHandler()
 		closed := make(chan struct{})
@@ -277,6 +280,8 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		select {
 		case <-c.stopProcessors:
 			procCancel()
+			c.sender.WaitToStop()
+			close(c.processorsStopped)
 		case <-procCtx.Done():
 		}
 	}()
