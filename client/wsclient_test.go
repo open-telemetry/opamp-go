@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -180,15 +181,20 @@ func TestVerifyWSCompress(t *testing.T) {
 	}
 }
 
+func TestHandlesStopBeforeStart(t *testing.T) {
+	client := NewWebSocket(nil)
+	require.Error(t, client.Stop(context.Background()))
+}
+
 func TestPerformsClosingHandshake(t *testing.T) {
 	srv := internal.StartMockServer(t)
 	var wsConn *websocket.Conn
-	connected := make(chan bool)
-	closed := make(chan bool)
+	connected := make(chan struct{})
+	closed := make(chan struct{})
 
 	srv.OnWSConnect = func(conn *websocket.Conn) {
 		wsConn = conn
-		connected <- true
+		connected <- struct{}{}
 	}
 
 	client := NewWebSocket(nil)
@@ -215,7 +221,56 @@ func TestPerformsClosingHandshake(t *testing.T) {
 		require.Equal(t, websocket.CloseNormalClosure, code, "Client sent non-normal closing code")
 
 		err := defHandler(code, "")
-		closed <- true
+		closed <- struct{}{}
+		return err
+	})
+
+	client.Stop(context.Background())
+
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "Connection never closed")
+	}
+}
+
+func TestHandlesSlowCloseMessageFromServer(t *testing.T) {
+	srv := internal.StartMockServer(t)
+	var wsConn *websocket.Conn
+	connected := make(chan struct{})
+	closed := make(chan struct{})
+
+	srv.OnWSConnect = func(conn *websocket.Conn) {
+		wsConn = conn
+		connected <- struct{}{}
+	}
+
+	client := NewWebSocket(nil)
+	startClient(t, types.StartSettings{
+		OpAMPServerURL: srv.GetHTTPTestServer().URL,
+	}, client)
+
+	select {
+	case <-connected:
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "Connection never established")
+	}
+
+	require.Eventually(t, func() bool {
+		client.connMutex.RLock()
+		conn := client.conn
+		client.connMutex.RUnlock()
+		return conn != nil
+	}, 2*time.Second, 250*time.Millisecond)
+
+	defHandler := wsConn.CloseHandler()
+
+	wsConn.SetCloseHandler(func(code int, _ string) error {
+		require.Equal(t, websocket.CloseNormalClosure, code, "Client sent non-normal closing code")
+
+		time.Sleep(4 * time.Second)
+		err := defHandler(code, "")
+		closed <- struct{}{}
 		return err
 	})
 
@@ -231,12 +286,12 @@ func TestPerformsClosingHandshake(t *testing.T) {
 func TestHandlesNoCloseMessageFromServer(t *testing.T) {
 	srv := internal.StartMockServer(t)
 	var wsConn *websocket.Conn
-	connected := make(chan bool)
-	closed := make(chan bool)
+	connected := make(chan struct{})
+	closed := make(chan struct{})
 
 	srv.OnWSConnect = func(conn *websocket.Conn) {
 		wsConn = conn
-		connected <- true
+		connected <- struct{}{}
 	}
 
 	client := NewWebSocket(nil)
@@ -264,12 +319,153 @@ func TestHandlesNoCloseMessageFromServer(t *testing.T) {
 
 	go func() {
 		client.Stop(context.Background())
-		closed <- true
+		closed <- struct{}{}
 	}()
 
 	select {
 	case <-closed:
 	case <-time.After(5 * time.Second):
 		require.Fail(t, "Connection never closed")
+	}
+}
+
+func TestHandlesConnectionError(t *testing.T) {
+	srv := internal.StartMockServer(t)
+	var wsConn *websocket.Conn
+	connected := make(chan struct{})
+
+	srv.OnWSConnect = func(conn *websocket.Conn) {
+		wsConn = conn
+		connected <- struct{}{}
+	}
+
+	client := NewWebSocket(nil)
+	startClient(t, types.StartSettings{
+		OpAMPServerURL: srv.GetHTTPTestServer().URL,
+	}, client)
+
+	select {
+	case <-connected:
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "Connection never established")
+	}
+
+	require.Eventually(t, func() bool {
+		client.connMutex.RLock()
+		conn := client.conn
+		client.connMutex.RUnlock()
+		return conn != nil
+	}, 2*time.Second, 250*time.Millisecond)
+
+	// Write an invalid message to the connection. The client
+	// will take this as an error and reconnect to the server.
+	writer, err := wsConn.NextWriter(websocket.BinaryMessage)
+	require.NoError(t, err)
+	n, err := writer.Write([]byte{99, 1, 2, 3, 4, 5})
+	require.NoError(t, err)
+	require.Equal(t, 6, n)
+	err = writer.Close()
+	require.NoError(t, err)
+
+	select {
+	case <-connected:
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "Connection never re-established")
+	}
+
+	require.Eventually(t, func() bool {
+		client.connMutex.RLock()
+		conn := client.conn
+		client.connMutex.RUnlock()
+		return conn != nil
+	}, 2*time.Second, 250*time.Millisecond)
+
+	err = client.Stop(context.Background())
+	require.NoError(t, err)
+}
+
+func TestDisallowsSendingAfterStopped(t *testing.T) {
+	srv := internal.StartMockServer(t)
+	var wsConn *websocket.Conn
+	connected := make(chan struct{})
+	closed := make(chan struct{})
+
+	srv.OnWSConnect = func(conn *websocket.Conn) {
+		wsConn = conn
+		connected <- struct{}{}
+	}
+
+	client := NewWebSocket(nil)
+	startClient(t, types.StartSettings{
+		OpAMPServerURL: srv.GetHTTPTestServer().URL,
+	}, client)
+
+	select {
+	case <-connected:
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "Connection never established")
+	}
+
+	require.Eventually(t, func() bool {
+		client.connMutex.RLock()
+		conn := client.conn
+		client.connMutex.RUnlock()
+		return conn != nil
+	}, 2*time.Second, 250*time.Millisecond)
+
+	wg := sync.WaitGroup{}
+	send := make(chan struct{})
+
+	defHandler := wsConn.CloseHandler()
+	wsConn.SetCloseHandler(func(code int, _ string) error {
+		close(send)
+		// Pause the stopping process to ensure that sends are disallowed while the client
+		// is stopping, not necessarily just after it has stopped.
+		wg.Wait()
+		err := defHandler(code, "")
+		closed <- struct{}{}
+		return err
+	})
+
+	wg.Add(5)
+	go func() {
+		err := client.Stop(context.Background())
+		require.NoError(t, err)
+	}()
+	go func() {
+		<-send
+		err := client.SetAgentDescription(&protobufs.AgentDescription{})
+		require.Error(t, err)
+		wg.Done()
+	}()
+	go func() {
+		<-send
+		err := client.SetHealth(&protobufs.AgentHealth{})
+		require.Error(t, err)
+		wg.Done()
+	}()
+	go func() {
+		<-send
+		err := client.UpdateEffectiveConfig(context.Background())
+		require.Error(t, err)
+		wg.Done()
+	}()
+	go func() {
+		<-send
+		err := client.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{})
+		require.Error(t, err)
+		wg.Done()
+	}()
+	go func() {
+		<-send
+		err := client.SetPackageStatuses(&protobufs.PackageStatuses{})
+		require.Error(t, err)
+		wg.Done()
+	}()
+
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Error("Connection failed to close")
 	}
 }

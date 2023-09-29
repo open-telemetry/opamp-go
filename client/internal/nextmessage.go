@@ -34,13 +34,6 @@ func (s *NextMessage) Update(modifier func(msg *protobufs.AgentToServer)) {
 	s.messageMutex.Unlock()
 }
 
-// IsPending returns whether there is a pending message to be sent.
-func (s *NextMessage) IsPending() bool {
-	s.messageMutex.Lock()
-	defer s.messageMutex.Unlock()
-	return s.messagePending
-}
-
 // PopPending returns the next message to be sent, if it is pending or nil otherwise.
 // Clears the "pending" flag.
 func (s *NextMessage) PopPending() *protobufs.AgentToServer {
