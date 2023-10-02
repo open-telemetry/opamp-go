@@ -246,6 +246,7 @@ func TestHandlesSlowCloseMessageFromServer(t *testing.T) {
 	}
 
 	client := NewWebSocket(nil)
+	client.connShutdownTimeout = 100 * time.Millisecond
 	startClient(t, types.StartSettings{
 		OpAMPServerURL: srv.GetHTTPTestServer().URL,
 	}, client)
@@ -268,7 +269,7 @@ func TestHandlesSlowCloseMessageFromServer(t *testing.T) {
 	wsConn.SetCloseHandler(func(code int, _ string) error {
 		require.Equal(t, websocket.CloseNormalClosure, code, "Client sent non-normal closing code")
 
-		time.Sleep(4 * time.Second)
+		time.Sleep(200 * time.Millisecond)
 		err := defHandler(code, "")
 		closed <- struct{}{}
 		return err
@@ -278,7 +279,7 @@ func TestHandlesSlowCloseMessageFromServer(t *testing.T) {
 
 	select {
 	case <-closed:
-	case <-time.After(2 * time.Second):
+	case <-time.After(1 * time.Second):
 		require.Fail(t, "Connection never closed")
 	}
 }
@@ -295,6 +296,7 @@ func TestHandlesNoCloseMessageFromServer(t *testing.T) {
 	}
 
 	client := NewWebSocket(nil)
+	client.connShutdownTimeout = 100 * time.Millisecond
 	startClient(t, types.StartSettings{
 		OpAMPServerURL: srv.GetHTTPTestServer().URL,
 	}, client)
@@ -324,7 +326,7 @@ func TestHandlesNoCloseMessageFromServer(t *testing.T) {
 
 	select {
 	case <-closed:
-	case <-time.After(5 * time.Second):
+	case <-time.After(1 * time.Second):
 		require.Fail(t, "Connection never closed")
 	}
 }

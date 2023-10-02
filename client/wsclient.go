@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
@@ -19,6 +20,7 @@ import (
 )
 
 var errStopping = errors.New("client is stopping or stopped, no more messages can be sent")
+var errEarlyStop = errors.New("context canceled before shutdown could complete")
 
 // wsClient is an OpAMP Client implementation for WebSocket transport.
 // See specification: https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#websocket-transport
@@ -41,8 +43,17 @@ type wsClient struct {
 
 	isStopped atomic.Bool
 
-	stopProcessors    chan struct{}
+	// Sends a signal to stop background processors that asynchronously use the
+	// WebSocket connection, e.g. WSSender.
+	stopProcessors chan struct{}
+
+	// Responds to a signal from stopProcessors indicating that all processors
+	// have been stopped.
 	processorsStopped chan struct{}
+
+	// Network connection timeout used for the WebSocket closing handshake.
+	// This field is currently only modified during testing.
+	connShutdownTimeout time.Duration
 }
 
 var _ OpAMPClient = &wsClient{}
@@ -55,10 +66,11 @@ func NewWebSocket(logger types.Logger) *wsClient {
 
 	sender := internal.NewSender(logger)
 	w := &wsClient{
-		common:            internal.NewClientCommon(logger, sender),
-		sender:            sender,
-		stopProcessors:    make(chan struct{}),
-		processorsStopped: make(chan struct{}),
+		common:              internal.NewClientCommon(logger, sender),
+		sender:              sender,
+		stopProcessors:      make(chan struct{}, 1),
+		processorsStopped:   make(chan struct{}, 1),
+		connShutdownTimeout: 10 * time.Second,
 	}
 	return w
 }
@@ -102,7 +114,12 @@ func (c *wsClient) Stop(ctx context.Context) error {
 	if conn != nil {
 		// Shut down the sender and any other background processors.
 		c.stopProcessors <- struct{}{}
-		<-c.processorsStopped
+		select {
+		case <-c.processorsStopped:
+		case <-ctx.Done():
+			_ = c.conn.Close()
+			return errEarlyStop
+		}
 
 		defaultCloseHandler := conn.CloseHandler()
 		closed := make(chan struct{})
@@ -117,14 +134,22 @@ func (c *wsClient) Stop(ctx context.Context) error {
 		})
 
 		message := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
-		conn.WriteControl(websocket.CloseMessage, message, time.Now().Add(time.Second))
+		err := conn.WriteControl(websocket.CloseMessage, message, time.Now().Add(c.connShutdownTimeout))
+
+		if err != nil {
+			_ = c.conn.Close()
+			return fmt.Errorf("could not write close message to WebSocket, connection closed without performing closing handshake: %w", err)
+		}
 
 		select {
-		case <-time.After(3 * time.Second):
-			_ = c.conn.Close()
 		case <-closed:
 			// runOneCycle will close the connection if the closing handshake completed,
 			// so there's no need to close it here.
+		case <-time.After(c.connShutdownTimeout):
+			_ = c.conn.Close()
+		case <-ctx.Done():
+			_ = c.conn.Close()
+			return errEarlyStop
 		}
 	}
 
@@ -260,8 +285,17 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		return
 	}
 
-	if c.common.IsStopping() {
+	defer func() {
+		// Close the connection.
 		_ = c.conn.Close()
+
+		// Unset the closed connection to indicate that it is closed.
+		c.connMutex.Lock()
+		c.conn = nil
+		c.connMutex.Unlock()
+	}()
+
+	if c.common.IsStopping() {
 		return
 	}
 
@@ -281,7 +315,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		case <-c.stopProcessors:
 			procCancel()
 			c.sender.WaitToStop()
-			close(c.processorsStopped)
+			c.processorsStopped <- struct{}{}
 		case <-procCtx.Done():
 		}
 	}()
@@ -291,7 +325,6 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 	if err := c.sender.Start(procCtx, c.conn); err != nil {
 		c.common.Logger.Errorf("Failed to send first status report: %v", err)
 		// We could not send the report, the only thing we can do is start over.
-		_ = c.conn.Close()
 		procCancel()
 		return
 	}
@@ -308,8 +341,8 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 	)
 	r.ReceiverLoop(ctx)
 
-	// If we exited receiverLoop it means there is a connection error or the connection
-	// has closed. We cannot read messages anymore, so clean up the connection.
+	// If we exited receiverLoop it means there is a connection error or the closing handshake
+	// has completed. We cannot read messages anymore, so clean up the connection.
 	// If there is a connection error we will need to start over.
 
 	// Stop the background processors.
@@ -317,12 +350,6 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 
 	// Wait for WSSender to stop.
 	c.sender.WaitToStop()
-
-	// Close the connection.
-	_ = c.conn.Close()
-
-	// Unset the closed connection to indicate that it is closed.
-	c.conn = nil
 }
 
 func (c *wsClient) runUntilStopped(ctx context.Context) {
