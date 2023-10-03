@@ -45,11 +45,11 @@ type wsClient struct {
 
 	// Sends a signal to stop background processors that asynchronously use the
 	// WebSocket connection, e.g. WSSender.
-	stopProcessors chan struct{}
+	stopBGProcessors chan struct{}
 
 	// Responds to a signal from stopProcessors indicating that all processors
 	// have been stopped.
-	processorsStopped chan struct{}
+	bgProcessorsStopped chan struct{}
 
 	// Network connection timeout used for the WebSocket closing handshake.
 	// This field is currently only modified during testing.
@@ -68,8 +68,8 @@ func NewWebSocket(logger types.Logger) *wsClient {
 	w := &wsClient{
 		common:              internal.NewClientCommon(logger, sender),
 		sender:              sender,
-		stopProcessors:      make(chan struct{}, 1),
-		processorsStopped:   make(chan struct{}, 1),
+		stopBGProcessors:    make(chan struct{}, 1),
+		bgProcessorsStopped: make(chan struct{}, 1),
 		connShutdownTimeout: 10 * time.Second,
 	}
 	return w
@@ -113,9 +113,9 @@ func (c *wsClient) Stop(ctx context.Context) error {
 
 	if conn != nil {
 		// Shut down the sender and any other background processors.
-		c.stopProcessors <- struct{}{}
+		c.stopBGProcessors <- struct{}{}
 		select {
-		case <-c.processorsStopped:
+		case <-c.bgProcessorsStopped:
 		case <-ctx.Done():
 			_ = c.conn.Close()
 			return errEarlyStop
@@ -273,11 +273,12 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 
 // runOneCycle performs the following actions:
 //  1. connect (try until succeeds).
-//  2. send first status report.
-//  3. receive and process messages until error happens.
+//  2. set up a background processor to send messages.
+//  3. send first status report.
+//  4. receive and process messages until an error occurs or the connection closes.
 //
 // If it encounters an error it closes the connection and returns.
-// Will stop and return if Stop() is called (ctx is cancelled, isStopping is set).
+// Will stop and return if Stop() is called.
 func (c *wsClient) runOneCycle(ctx context.Context) {
 	if err := c.ensureConnected(ctx); err != nil {
 		// Can't connect, so can't move forward. This currently happens when we
@@ -309,13 +310,15 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 	// Create a cancellable context for background processors.
 	procCtx, procCancel := context.WithCancel(ctx)
 
-	// Stop processors if we receive a signal to do so.
+	// Stop background processors if we receive a signal to do so.
+	// Note that the receiver does not respond to signals and
+	// will only stop when the connection closes or errors.
 	go func() {
 		select {
-		case <-c.stopProcessors:
+		case <-c.stopBGProcessors:
 			procCancel()
 			c.sender.WaitToStop()
-			c.processorsStopped <- struct{}{}
+			c.bgProcessorsStopped <- struct{}{}
 		case <-procCtx.Done():
 		}
 	}()
