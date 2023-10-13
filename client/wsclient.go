@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -41,15 +40,20 @@ type wsClient struct {
 	// The sender is responsible for sending portion of the OpAMP protocol.
 	sender *internal.WSSender
 
-	isStopped atomic.Bool
+	// Indicates whether the client is open for more messages to be sent.
+	// Should be protected by connectionOpenMutex.
+	connectionOpen bool
+	// Indicates the connection is being written to.
+	// A read lock on this mutex indicates that a message is being queued for writing.
+	// A write lock on this mutex indicates that the connection is being shut down.
+	connectionOpenMutex sync.RWMutex
 
-	// Sends a signal to stop background processors that asynchronously use the
-	// WebSocket connection, e.g. WSSender.
-	stopBGProcessors chan struct{}
-
-	// Responds to a signal from stopProcessors indicating that all processors
+	// Sends a signal to the background processors controller thread to stop
+	// all background processors.
+	stopBGProcessing chan struct{}
+	// Responds to a signal from stopBGProcessing indicating that all processors
 	// have been stopped.
-	bgProcessorsStopped chan struct{}
+	bgProcessingStopped chan struct{}
 
 	// Network connection timeout used for the WebSocket closing handshake.
 	// This field is currently only modified during testing.
@@ -68,8 +72,9 @@ func NewWebSocket(logger types.Logger) *wsClient {
 	w := &wsClient{
 		common:              internal.NewClientCommon(logger, sender),
 		sender:              sender,
-		stopBGProcessors:    make(chan struct{}, 1),
-		bgProcessorsStopped: make(chan struct{}, 1),
+		connectionOpen:      true,
+		stopBGProcessing:    make(chan struct{}, 1),
+		bgProcessingStopped: make(chan struct{}, 1),
 		connShutdownTimeout: 10 * time.Second,
 	}
 	return w
@@ -104,7 +109,11 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 }
 
 func (c *wsClient) Stop(ctx context.Context) error {
-	c.isStopped.Store(true)
+	// Prevent any additional writers from writing to the connection
+	// and stop reconnecting if the connection closes.
+	c.connectionOpenMutex.Lock()
+	c.connectionOpen = false
+	c.connectionOpenMutex.Unlock()
 
 	// Close connection if any.
 	c.connMutex.RLock()
@@ -113,13 +122,16 @@ func (c *wsClient) Stop(ctx context.Context) error {
 
 	if conn != nil {
 		// Shut down the sender and any other background processors.
-		c.stopBGProcessors <- struct{}{}
+		c.stopBGProcessing <- struct{}{}
 		select {
-		case <-c.bgProcessorsStopped:
+		case <-c.bgProcessingStopped:
 		case <-ctx.Done():
-			_ = c.conn.Close()
+			c.closeConnection()
 			return errEarlyStop
 		}
+
+		// At this point all other writers to the connection should be stopped.
+		// We can write to the connection without any risk of contention.
 
 		defaultCloseHandler := conn.CloseHandler()
 		closed := make(chan struct{})
@@ -133,11 +145,14 @@ func (c *wsClient) Stop(ctx context.Context) error {
 			return err
 		})
 
+		// Start the closing handshake by writing a close message to the server.
+		// If the server responds with its own close message, the connection reader will
+		// shut down and there will be no more reads from or writes to the connection.
 		message := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
 		err := conn.WriteControl(websocket.CloseMessage, message, time.Now().Add(c.connShutdownTimeout))
 
 		if err != nil {
-			_ = c.conn.Close()
+			c.closeConnection()
 			return fmt.Errorf("could not write close message to WebSocket, connection closed without performing closing handshake: %w", err)
 		}
 
@@ -146,9 +161,9 @@ func (c *wsClient) Stop(ctx context.Context) error {
 			// runOneCycle will close the connection if the closing handshake completed,
 			// so there's no need to close it here.
 		case <-time.After(c.connShutdownTimeout):
-			_ = c.conn.Close()
+			c.closeConnection()
 		case <-ctx.Done():
-			_ = c.conn.Close()
+			c.closeConnection()
 			return errEarlyStop
 		}
 	}
@@ -161,35 +176,45 @@ func (c *wsClient) AgentDescription() *protobufs.AgentDescription {
 }
 
 func (c *wsClient) SetAgentDescription(descr *protobufs.AgentDescription) error {
-	if c.isStopped.Load() {
+	c.connectionOpenMutex.RLock()
+	defer c.connectionOpenMutex.RUnlock()
+	if !c.connectionOpen {
 		return errStopping
 	}
 	return c.common.SetAgentDescription(descr)
 }
 
 func (c *wsClient) SetHealth(health *protobufs.AgentHealth) error {
-	if c.isStopped.Load() {
+	c.connectionOpenMutex.RLock()
+	defer c.connectionOpenMutex.RUnlock()
+	if !c.connectionOpen {
 		return errStopping
 	}
 	return c.common.SetHealth(health)
 }
 
 func (c *wsClient) UpdateEffectiveConfig(ctx context.Context) error {
-	if c.isStopped.Load() {
+	c.connectionOpenMutex.RLock()
+	defer c.connectionOpenMutex.RUnlock()
+	if !c.connectionOpen {
 		return errStopping
 	}
 	return c.common.UpdateEffectiveConfig(ctx)
 }
 
 func (c *wsClient) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) error {
-	if c.isStopped.Load() {
+	c.connectionOpenMutex.RLock()
+	defer c.connectionOpenMutex.RUnlock()
+	if !c.connectionOpen {
 		return errStopping
 	}
 	return c.common.SetRemoteConfigStatus(status)
 }
 
 func (c *wsClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) error {
-	if c.isStopped.Load() {
+	c.connectionOpenMutex.RLock()
+	defer c.connectionOpenMutex.RUnlock()
+	if !c.connectionOpen {
 		return errStopping
 	}
 	return c.common.SetPackageStatuses(statuses)
@@ -271,6 +296,21 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 	}
 }
 
+func (c *wsClient) closeConnection() {
+	c.connMutex.Lock()
+	defer c.connMutex.Unlock()
+
+	if c.conn == nil {
+		return
+	}
+
+	// Close the connection.
+	_ = c.conn.Close()
+
+	// Unset the field to indicate that the connection is closed.
+	c.conn = nil
+}
+
 // runOneCycle performs the following actions:
 //  1. connect (try until succeeds).
 //  2. set up a background processor to send messages.
@@ -286,15 +326,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		return
 	}
 
-	defer func() {
-		// Close the connection.
-		_ = c.conn.Close()
-
-		// Unset the closed connection to indicate that it is closed.
-		c.connMutex.Lock()
-		c.conn = nil
-		c.connMutex.Unlock()
-	}()
+	defer c.closeConnection()
 
 	if c.common.IsStopping() {
 		return
@@ -315,10 +347,10 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 	// will only stop when the connection closes or errors.
 	go func() {
 		select {
-		case <-c.stopBGProcessors:
+		case <-c.stopBGProcessing:
 			procCancel()
 			c.sender.WaitToStop()
-			c.bgProcessorsStopped <- struct{}{}
+			close(c.bgProcessingStopped)
 		case <-procCtx.Done():
 		}
 	}()
@@ -358,9 +390,13 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 func (c *wsClient) runUntilStopped(ctx context.Context) {
 	// Iterates until we detect that the client is stopping.
 	for {
-		if c.common.IsStopping() || c.isStopped.Load() {
+		c.connectionOpenMutex.RLock()
+		if c.common.IsStopping() || !c.connectionOpen {
+			c.connectionOpenMutex.RUnlock()
 			return
 		}
+		c.connectionOpenMutex.RUnlock()
+
 		c.runOneCycle(ctx)
 	}
 }
