@@ -17,7 +17,7 @@ var (
 
 // ClientSyncedState stores the state of the Agent messages that the OpAMP Client needs to
 // have access to synchronize to the Server. 4 messages can be stored in this store:
-// AgentDescription, AgentHealth, RemoteConfigStatus and PackageStatuses.
+// AgentDescription, ComponentHealth, RemoteConfigStatus and PackageStatuses.
 //
 // See OpAMP spec for more details on how state synchronization works:
 // https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#Agent-to-Server-state-synchronization
@@ -34,7 +34,7 @@ type ClientSyncedState struct {
 	mutex sync.Mutex
 
 	agentDescription   *protobufs.AgentDescription
-	health             *protobufs.AgentHealth
+	health             *protobufs.ComponentHealth
 	remoteConfigStatus *protobufs.RemoteConfigStatus
 	packageStatuses    *protobufs.PackageStatuses
 }
@@ -45,7 +45,7 @@ func (s *ClientSyncedState) AgentDescription() *protobufs.AgentDescription {
 	return s.agentDescription
 }
 
-func (s *ClientSyncedState) Health() *protobufs.AgentHealth {
+func (s *ClientSyncedState) Health() *protobufs.ComponentHealth {
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	return s.health
@@ -82,13 +82,13 @@ func (s *ClientSyncedState) SetAgentDescription(descr *protobufs.AgentDescriptio
 	return nil
 }
 
-// SetHealth sets the AgentHealth in the state.
-func (s *ClientSyncedState) SetHealth(health *protobufs.AgentHealth) error {
+// SetHealth sets the agent health in the state.
+func (s *ClientSyncedState) SetHealth(health *protobufs.ComponentHealth) error {
 	if health == nil {
-		return ErrAgentHealthMissing
+		return ErrHealthMissing
 	}
 
-	clone := proto.Clone(health).(*protobufs.AgentHealth)
+	clone := proto.Clone(health).(*protobufs.ComponentHealth)
 
 	defer s.mutex.Unlock()
 	s.mutex.Lock()

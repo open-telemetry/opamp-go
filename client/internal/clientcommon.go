@@ -15,7 +15,7 @@ import (
 var (
 	ErrAgentDescriptionMissing      = errors.New("AgentDescription is nil")
 	ErrAgentDescriptionNoAttributes = errors.New("AgentDescription has no attributes defined")
-	ErrAgentHealthMissing           = errors.New("AgentHealth is nil")
+	ErrHealthMissing                = errors.New("health is nil")
 	ErrReportsEffectiveConfigNotSet = errors.New("ReportsEffectiveConfig capability is not set")
 	ErrReportsRemoteConfigNotSet    = errors.New("ReportsRemoteConfig capability is not set")
 	ErrPackagesStateProviderNotSet  = errors.New("PackagesStateProvider must be set")
@@ -84,7 +84,7 @@ func (c *ClientCommon) PrepareStart(
 	}
 
 	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsHealth != 0 && c.ClientSyncedState.Health() == nil {
-		return ErrAgentHealthMissing
+		return ErrHealthMissing
 	}
 
 	// Prepare remote config status.
@@ -243,11 +243,11 @@ func (c *ClientCommon) SetAgentDescription(descr *protobufs.AgentDescription) er
 	return nil
 }
 
-// SetHealth sends a status update to the Server with the new AgentHealth
-// and remembers the AgentHealth in the client state so that it can be sent
+// SetHealth sends a status update to the Server with the new agent health
+// and remembers the health in the client state so that it can be sent
 // to the Server when the Server asks for it.
-func (c *ClientCommon) SetHealth(health *protobufs.AgentHealth) error {
-	// store the AgentHealth to send on reconnect
+func (c *ClientCommon) SetHealth(health *protobufs.ComponentHealth) error {
+	// store the health to send on reconnect
 	if err := c.ClientSyncedState.SetHealth(health); err != nil {
 		return err
 	}

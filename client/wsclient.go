@@ -100,7 +100,7 @@ func (c *wsClient) SetAgentDescription(descr *protobufs.AgentDescription) error 
 	return c.common.SetAgentDescription(descr)
 }
 
-func (c *wsClient) SetHealth(health *protobufs.AgentHealth) error {
+func (c *wsClient) SetHealth(health *protobufs.ComponentHealth) error {
 	return c.common.SetHealth(health)
 }
 
@@ -193,9 +193,10 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 }
 
 // runOneCycle performs the following actions:
-//   1. connect (try until succeeds).
-//   2. send first status report.
-//   3. receive and process messages until error happens.
+//  1. connect (try until succeeds).
+//  2. send first status report.
+//  3. receive and process messages until error happens.
+//
 // If it encounters an error it closes the connection and returns.
 // Will stop and return if Stop() is called (ctx is cancelled, isStopping is set).
 func (c *wsClient) runOneCycle(ctx context.Context) {

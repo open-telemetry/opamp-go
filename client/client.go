@@ -56,13 +56,13 @@ type OpAMPClient interface {
 	// AgentDescription returns the last value successfully set by SetAgentDescription().
 	AgentDescription() *protobufs.AgentDescription
 
-	// SetHealth sets the health status of the Agent. The AgentHealth will be included
+	// SetHealth sets the health status of the Agent. The health will be included
 	// in the next status report sent to the Server. MAY be called before or after Start().
 	// May be also called after Start().
 	// May be also called from OnMessage handler.
 	//
 	// nil health parameter is not allowed and will return an error.
-	SetHealth(health *protobufs.AgentHealth) error
+	SetHealth(health *protobufs.ComponentHealth) error
 
 	// UpdateEffectiveConfig fetches the current local effective config using
 	// GetEffectiveConfig callback and sends it to the Server.
