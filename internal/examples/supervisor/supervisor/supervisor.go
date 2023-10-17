@@ -165,7 +165,7 @@ func (s *Supervisor) startOpAMP() error {
 		return err
 	}
 
-	err = s.opampClient.SetHealth(&protobufs.AgentHealth{Healthy: false})
+	err = s.opampClient.SetHealth(&protobufs.ComponentHealth{Healthy: false})
 	if err != nil {
 		return err
 	}
@@ -413,7 +413,7 @@ func (s *Supervisor) startAgent() {
 	if err != nil {
 		errMsg := fmt.Sprintf("Cannot start the agent: %v", err)
 		s.logger.Errorf(errMsg)
-		s.opampClient.SetHealth(&protobufs.AgentHealth{Healthy: false, LastError: errMsg})
+		s.opampClient.SetHealth(&protobufs.ComponentHealth{Healthy: false, LastError: errMsg})
 		return
 	}
 	s.startedAt = time.Now()
@@ -448,7 +448,7 @@ func (s *Supervisor) healthCheck() {
 	}
 
 	// Prepare OpAMP health report.
-	health := &protobufs.AgentHealth{
+	health := &protobufs.ComponentHealth{
 		StartTimeUnixNano: uint64(s.startedAt.UnixNano()),
 	}
 
@@ -497,7 +497,7 @@ func (s *Supervisor) runAgentProcess() {
 				s.commander.Pid(), s.commander.ExitCode(),
 			)
 			s.logger.Debugf(errMsg)
-			s.opampClient.SetHealth(&protobufs.AgentHealth{Healthy: false, LastError: errMsg})
+			s.opampClient.SetHealth(&protobufs.ComponentHealth{Healthy: false, LastError: errMsg})
 
 			// TODO: decide why the agent stopped. If it was due to bad config, report it to server.
 
@@ -538,7 +538,7 @@ func (s *Supervisor) Shutdown() {
 	}
 	if s.opampClient != nil {
 		s.opampClient.SetHealth(
-			&protobufs.AgentHealth{
+			&protobufs.ComponentHealth{
 				Healthy: false, LastError: "Supervisor is shutdown",
 			},
 		)

@@ -82,7 +82,7 @@ func (c *httpClient) SetAgentDescription(descr *protobufs.AgentDescription) erro
 }
 
 // SetHealth implements OpAMPClient.SetHealth.
-func (c *httpClient) SetHealth(health *protobufs.AgentHealth) error {
+func (c *httpClient) SetHealth(health *protobufs.ComponentHealth) error {
 	return c.common.SetHealth(health)
 }
 
