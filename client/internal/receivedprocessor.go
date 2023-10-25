@@ -137,6 +137,19 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 			}
 		}
 
+		if msg.CustomCapabilities != nil {
+			msgData.CustomCapabilities = msg.CustomCapabilities
+		}
+
+		if msg.CustomMessage != nil {
+			// ensure that the agent supports the capability
+			if r.clientSyncedState.HasCustomCapability(msg.CustomMessage.Capability) {
+				msgData.CustomMessage = msg.CustomMessage
+			} else {
+				r.logger.Debugf(ctx, "Ignoring CustomMessage, agent does not have %s capability", msg.CustomMessage.Capability)
+			}
+		}
+
 		r.callbacks.OnMessage(ctx, msgData)
 
 		r.rcvOpampConnectionSettings(ctx, msg.ConnectionSettings)
@@ -176,8 +189,9 @@ func (r *receivedProcessor) rcvFlags(
 				msg.Health = r.clientSyncedState.Health()
 				msg.RemoteConfigStatus = r.clientSyncedState.RemoteConfigStatus()
 				msg.PackageStatuses = r.clientSyncedState.PackageStatuses()
+				msg.CustomCapabilities = r.clientSyncedState.CustomCapabilities()
 
-				// The logic for EffectiveConfig is similar to the previous 4 sub-messages however
+				// The logic for EffectiveConfig is similar to the previous 5 sub-messages however
 				// the EffectiveConfig is fetched using GetEffectiveConfig instead of
 				// from clientSyncedState. We do this to avoid keeping EffectiveConfig in-memory.
 				msg.EffectiveConfig = cfg

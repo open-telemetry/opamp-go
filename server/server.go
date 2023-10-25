@@ -18,6 +18,11 @@ type Settings struct {
 	// the compression is only effectively enabled if the client also supports compression.
 	// The data will be compressed in both directions.
 	EnableCompression bool
+
+	// Defines the custom capabilities of the Server. Each capability is a reverse FQDN with
+	// optional version information that uniquely identifies the custom capability and
+	// should match a capability specified in a supported CustomMessage.
+	CustomCapabilities []string
 }
 
 // StartSettings contains the settings for starting an OpAMP Server.

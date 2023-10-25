@@ -44,6 +44,13 @@ type StartSettings struct {
 	// be set in this field, it will be set automatically since it is required by OpAMP protocol.
 	Capabilities protobufs.AgentCapabilities
 
+	// Defines the custom capabilities of the Agent. Each capability is a reverse FQDN with
+	// optional version information that uniquely identifies the custom capability and
+	// should match a capability specified in a supported CustomMessage. The client will
+	// automatically ignore any CustomMessage that contains a custom capability that is not
+	// specified in this field.
+	CustomCapabilities []string
+
 	// EnableCompression can be set to true to enable the compression. Note that for WebSocket transport
 	// the compression is only effectively enabled if the Server also supports compression.
 	// The data will be compressed in both directions.

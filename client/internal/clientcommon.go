@@ -20,6 +20,8 @@ var (
 	ErrReportsRemoteConfigNotSet    = errors.New("ReportsRemoteConfig capability is not set")
 	ErrPackagesStateProviderNotSet  = errors.New("PackagesStateProvider must be set")
 	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
+	ErrCustomMessageMissing         = errors.New("CustomMessage is nil")
+	ErrCustomCapabilityNotSupported = errors.New("CustomCapability of CustomMessage is not supported")
 
 	errAlreadyStarted               = errors.New("already started")
 	errCannotStopNotStarted         = errors.New("cannot stop because not started")
@@ -60,9 +62,7 @@ type ClientCommon struct {
 
 // NewClientCommon creates a new ClientCommon.
 func NewClientCommon(logger types.Logger, sender Sender) ClientCommon {
-	return ClientCommon{
-		Logger: logger, sender: sender, stoppedSignal: make(chan struct{}, 1),
-	}
+	return ClientCommon{Logger: logger, sender: sender, stoppedSignal: make(chan struct{}, 1)}
 }
 
 // PrepareStart prepares the client state for the next Start() call.
@@ -78,6 +78,13 @@ func (c *ClientCommon) PrepareStart(
 
 	// According to OpAMP spec this capability MUST be set, since all Agents MUST report status.
 	c.Capabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
+
+	// Prepare custom capabilities.
+	if err := c.ClientSyncedState.SetCustomCapabilities(&protobufs.CustomCapabilities{
+		Capabilities: settings.CustomCapabilities,
+	}); err != nil {
+		return err
+	}
 
 	if c.ClientSyncedState.AgentDescription() == nil {
 		return ErrAgentDescriptionMissing
@@ -215,6 +222,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.RemoteConfigStatus = c.ClientSyncedState.RemoteConfigStatus()
 			msg.PackageStatuses = c.ClientSyncedState.PackageStatuses()
 			msg.Capabilities = uint64(c.Capabilities)
+			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()
 		},
 	)
 	return nil
@@ -367,5 +375,38 @@ func (c *ClientCommon) SetPackageStatuses(statuses *protobufs.PackageStatuses) e
 		c.sender.ScheduleSend()
 	}
 
+	return nil
+}
+
+// SetCustomCapabilities sends a message to the Server with the new custom capabilities.
+func (c *ClientCommon) SetCustomCapabilities(customCapabilities *protobufs.CustomCapabilities) error {
+	// store the health to send on reconnect
+	if err := c.ClientSyncedState.SetCustomCapabilities(customCapabilities); err != nil {
+		return err
+	}
+	c.sender.NextMessage().Update(
+		func(msg *protobufs.AgentToServer) {
+			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()
+		},
+	)
+	c.sender.ScheduleSend()
+	return nil
+}
+
+// SetCustomMessage sends the specified custom message to the server.
+func (c *ClientCommon) SetCustomMessage(message *protobufs.CustomMessage) error {
+	if message == nil {
+		return ErrCustomMessageMissing
+	}
+	if !c.ClientSyncedState.HasCustomCapability(message.Capability) {
+		return ErrCustomCapabilityNotSupported
+	}
+
+	c.sender.NextMessage().Update(
+		func(msg *protobufs.AgentToServer) {
+			msg.CustomMessage = message
+		},
+	)
+	c.sender.ScheduleSend()
 	return nil
 }

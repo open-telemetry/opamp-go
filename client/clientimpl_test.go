@@ -1549,3 +1549,222 @@ func TestMissingPackagesStateProvider(t *testing.T) {
 		assert.ErrorIs(t, client.Start(context.Background(), settings), internal.ErrAcceptsPackagesNotSet)
 	})
 }
+
+func TestReportCustomCapabilities(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+
+		// Start a Server.
+		srv := internal.StartMockServer(t)
+		srv.EnableExpectMode()
+
+		var clientRcvCustomMessage atomic.Value
+
+		// Start a client.
+		settings := types.StartSettings{
+			OpAMPServerURL:     "ws://" + srv.Endpoint,
+			CustomCapabilities: []string{"local.test.echo"},
+			Callbacks: types.CallbacksStruct{
+				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+					clientRcvCustomMessage.Store(msg.CustomMessage)
+				},
+			},
+		}
+		prepareClient(t, &settings, client)
+
+		clientCustomCapabilities := &protobufs.CustomCapabilities{
+			Capabilities: []string{"local.test.echo"},
+		}
+
+		// Client --->
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		// ---> Server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			assert.EqualValues(t, 0, msg.SequenceNum)
+			// The first status report after Start must have the CustomCapabilities.
+			assert.True(t, proto.Equal(clientCustomCapabilities, msg.CustomCapabilities))
+			return &protobufs.ServerToAgent{
+				InstanceUid: msg.InstanceUid,
+				CustomCapabilities: &protobufs.CustomCapabilities{
+					Capabilities: []string{"local.test.echo"},
+				},
+			}
+		})
+
+		clientEchoRequest := &protobufs.CustomMessage{
+			Capability: "local.test.echo",
+			Type:       "request",
+			Data:       []byte("data"),
+		}
+		serverEchoResponse := &protobufs.CustomMessage{
+			Capability: "local.test.echo",
+			Type:       "response",
+			Data:       []byte("data"),
+		}
+
+		// Client --->
+		// Send a custom message to the server
+		_ = client.SetCustomMessage(clientEchoRequest)
+
+		// ---> Server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// CustomCapabilities must not be sent again.
+			assert.Nil(t, msg.CustomCapabilities)
+
+			assert.EqualValues(t, 1, msg.SequenceNum)
+
+			// Send a custom message response and ask client for full state again.
+			return &protobufs.ServerToAgent{
+				InstanceUid:   msg.InstanceUid,
+				Flags:         uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState),
+				CustomMessage: serverEchoResponse,
+			}
+		})
+
+		// Verify response received
+		// Client --->
+		eventually(
+			t,
+			func() bool {
+				msg, ok := clientRcvCustomMessage.Load().(*protobufs.CustomMessage)
+				if !ok || msg == nil {
+					return false
+				}
+				return proto.Equal(serverEchoResponse, msg)
+			},
+		)
+
+		// Server has requested the client to report, so there will be another message.
+		// ---> Server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			assert.EqualValues(t, 2, msg.SequenceNum)
+
+			// CustomCapabilities should be sent since ReportFullState was requested
+			assert.True(t, proto.Equal(clientCustomCapabilities, msg.CustomCapabilities))
+			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+		})
+
+		// Shutdown the Server.
+		srv.Close()
+
+		// Shutdown the client.
+		err := client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
+// TestSetCustomMessage tests the SetCustomMessage method to ensure it returns errors
+// appropriately.
+func TestSetCustomMessage(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		settings := types.StartSettings{
+			Callbacks:          types.CallbacksStruct{},
+			CustomCapabilities: []string{"io.opentelemetry.supported"},
+		}
+		startClient(t, settings, client)
+
+		tests := []struct {
+			name          string
+			message       *protobufs.CustomMessage
+			expectedError error
+		}{
+			{
+				name:          "nil message is error",
+				message:       nil,
+				expectedError: internal.ErrCustomMessageMissing,
+			},
+			{
+				name: "unsupported message is error",
+				message: &protobufs.CustomMessage{
+					Capability: "io.opentelemetry.not-supported",
+				},
+				expectedError: internal.ErrCustomCapabilityNotSupported,
+			},
+			{
+				name: "supported capability is ok",
+				message: &protobufs.CustomMessage{
+					Capability: "io.opentelemetry.supported",
+				},
+				expectedError: nil,
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				assert.ErrorIs(t, client.SetCustomMessage(test.message), test.expectedError)
+			})
+		}
+	})
+}
+
+// TestCustomMessages tests the custom messages functionality.
+func TestCustomMessages(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+
+		// Start a Server.
+		srv := internal.StartMockServer(t)
+		var rcvCustomMessage atomic.Value
+		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			if msg.CustomMessage != nil {
+				rcvCustomMessage.Store(msg.CustomMessage)
+			}
+			return nil
+		}
+
+		// Start a client.
+		settings := types.StartSettings{
+			OpAMPServerURL:     "ws://" + srv.Endpoint,
+			CustomCapabilities: []string{"local.test.example"},
+		}
+		prepareClient(t, &settings, client)
+
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		// Send message 1
+		customMessage1 := &protobufs.CustomMessage{
+			Capability: "local.test.example",
+			Type:       "hello",
+			Data:       []byte("test message 1"),
+		}
+		assert.NoError(t, client.SetCustomMessage(customMessage1))
+
+		// Verify message 1 delivered
+		eventually(
+			t,
+			func() bool {
+				msg, ok := rcvCustomMessage.Load().(*protobufs.CustomMessage)
+				if !ok || msg == nil {
+					return false
+				}
+				return proto.Equal(customMessage1, msg)
+			},
+		)
+
+		// Send message 2
+		customMessage2 := &protobufs.CustomMessage{
+			Capability: "local.test.example",
+			Type:       "hello",
+			Data:       []byte("test message 2"),
+		}
+		assert.NoError(t, client.SetCustomMessage(customMessage2))
+
+		// Verify message 2 delivered
+		eventually(
+			t,
+			func() bool {
+				msg, ok := rcvCustomMessage.Load().(*protobufs.CustomMessage)
+				if !ok || msg == nil {
+					return false
+				}
+				return proto.Equal(customMessage2, msg)
+			},
+		)
+
+		// Shutdown the Server.
+		srv.Close()
+
+		// Shutdown the client.
+		err := client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}

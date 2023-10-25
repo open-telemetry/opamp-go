@@ -37,6 +37,13 @@ type MessageData struct {
 	// The Agent must save this identification and use it in the future instantiations
 	// of OpAMPClient.
 	AgentIdentification *protobufs.AgentIdentification
+
+	// CustomCapabilities contains a list of custom capabilities that are supported by the
+	// server.
+	CustomCapabilities *protobufs.CustomCapabilities
+
+	// CustomMessage contains a custom message sent by the server.
+	CustomMessage *protobufs.CustomMessage
 }
 
 // Callbacks is an interface for the Client to handle messages from the Server.

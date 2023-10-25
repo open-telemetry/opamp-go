@@ -241,7 +241,10 @@ func TestServerReceiveSendMessage(t *testing.T) {
 	}
 
 	// Start a Server.
-	settings := &StartSettings{Settings: Settings{Callbacks: callbacks}}
+	settings := &StartSettings{Settings: Settings{
+		Callbacks:          callbacks,
+		CustomCapabilities: []string{"local.test.capability"},
+	}}
 	srv := startServer(t, settings)
 	defer srv.Stop(context.Background())
 
@@ -280,6 +283,7 @@ func TestServerReceiveSendMessage(t *testing.T) {
 	// Verify the response.
 	assert.EqualValues(t, sendMsg.InstanceUid, response.InstanceUid)
 	assert.EqualValues(t, protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus, response.Capabilities)
+	assert.EqualValues(t, settings.CustomCapabilities, response.CustomCapabilities.Capabilities)
 }
 
 func TestServerReceiveSendMessageWithCompression(t *testing.T) {
@@ -412,7 +416,10 @@ func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
 	}
 
 	// Start a Server.
-	settings := &StartSettings{Settings: Settings{Callbacks: callbacks}}
+	settings := &StartSettings{Settings: Settings{
+		Callbacks:          callbacks,
+		CustomCapabilities: []string{"local.test.capability"},
+	}}
 	srv := startServer(t, settings)
 	defer srv.Stop(context.Background())
 
@@ -447,6 +454,7 @@ func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
 	// Verify the response.
 	assert.EqualValues(t, sendMsg.InstanceUid, response.InstanceUid)
 	assert.EqualValues(t, protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus, response.Capabilities)
+	assert.EqualValues(t, settings.CustomCapabilities, response.CustomCapabilities.Capabilities)
 
 	eventually(t, func() bool { return atomic.LoadInt32(&onCloseCalled) == 1 })
 }

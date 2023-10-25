@@ -105,6 +105,11 @@ func (c *httpClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) err
 	return c.common.SetPackageStatuses(statuses)
 }
 
+// SetCustomMessage implements OpAMPClient.SetCustomMessage.
+func (c *httpClient) SetCustomMessage(message *protobufs.CustomMessage) error {
+	return c.common.SetCustomMessage(message)
+}
+
 func (c *httpClient) runUntilStopped(ctx context.Context) {
 	// Start the HTTP sender. This will make request/responses with retries for
 	// failures and will wait with configured polling interval if there is nothing

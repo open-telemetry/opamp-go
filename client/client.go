@@ -89,4 +89,12 @@ type OpAMPClient interface {
 	// May be called before or after Start().
 	// May be also called from OnMessage handler.
 	RequestConnectionSettings(request *protobufs.ConnectionSettingsRequest) error
+
+	// SetCustomMessage sets the custom message that will be sent to the Server. May be
+	// called anytime after Start(), including from OnMessage handler.
+	//
+	// If the CustomMessage is nil or it specifies a capability that is not listed in the
+	// CustomCapabilities provided in the StartSettings for the client, it will return an
+	// error.
+	SetCustomMessage(message *protobufs.CustomMessage) error
 }
