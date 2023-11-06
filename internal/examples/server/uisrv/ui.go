@@ -121,7 +121,7 @@ func rotateInstanceClientCert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create a new certificate for the agent.
-	certificate, err := internal.CreateTLSCert("../../certs/certs/ca.cert.pem", "../../certs/certs/ca.key.pem")
+	certificate, err := internal.CreateTLSCert("../../certs/certs/ca.cert.pem", "../../certs/private/ca.key.pem")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		logger.Println(err)

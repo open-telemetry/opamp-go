@@ -243,6 +243,16 @@ func (c *ClientCommon) SetAgentDescription(descr *protobufs.AgentDescription) er
 	return nil
 }
 
+func (c *ClientCommon) RequestConnectionSettings(request *protobufs.ConnectionSettingsRequest) error {
+	c.sender.NextMessage().Update(
+		func(msg *protobufs.AgentToServer) {
+			msg.ConnectionSettingsRequest = request
+		},
+	)
+	c.sender.ScheduleSend()
+	return nil
+}
+
 // SetHealth sends a status update to the Server with the new agent health
 // and remembers the health in the client state so that it can be sent
 // to the Server when the Server asks for it.

@@ -81,6 +81,10 @@ func (c *httpClient) SetAgentDescription(descr *protobufs.AgentDescription) erro
 	return c.common.SetAgentDescription(descr)
 }
 
+func (c *httpClient) RequestConnectionSettings(request *protobufs.ConnectionSettingsRequest) error {
+	return c.common.RequestConnectionSettings(request)
+}
+
 // SetHealth implements OpAMPClient.SetHealth.
 func (c *httpClient) SetHealth(health *protobufs.ComponentHealth) error {
 	return c.common.SetHealth(health)

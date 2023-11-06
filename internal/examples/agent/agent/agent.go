@@ -1,9 +1,13 @@
 package agent
 
 import (
+	"bytes"
 	"context"
+	cryptorand "crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
 	"math/rand"
@@ -63,6 +67,9 @@ type Agent struct {
 	// The TLS certificate used for the OpAMP connection. Can be nil, meaning no client-side
 	// certificate is used.
 	opampClientCert *tls.Certificate
+
+	certRequested       bool
+	clientPrivateKeyPEM []byte
 }
 
 func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent {
@@ -132,6 +139,14 @@ func (agent *Agent) connect() error {
 	if err != nil {
 		return err
 	}
+
+	// This sets the request to create a client certificate before the OpAMP client
+	// is started, before the connection is established. However, this assumes the
+	// server supports "AcceptsConnectionRequest" capability.
+	// Alternatively the agent can perform this request after receiving the first
+	// message from the server (in onMessage), i.e. after the server capabilities
+	// become known and can be checked.
+	agent.requestClientCertificate()
 
 	agent.logger.Debugf("Starting OpAMP client...")
 
@@ -341,17 +356,96 @@ func (agent *Agent) Shutdown() {
 	}
 }
 
+// requestClientCertificate sets a request to be sent to the Server to create
+// a client certificate that the Agent can use in subsequent OpAMP connections.
+// This is the initiating step of the Client Signing Request (CSR) flow.
+func (agent *Agent) requestClientCertificate() {
+	if agent.certRequested {
+		// Request only once, for bootstrapping.
+		// TODO: the Agent may also for example check that the current certificate
+		// is approaching expiration date and re-requests a new certificate.
+		return
+	}
+
+	// Generate a keypair for new client cert.
+	clientCertKeyPair, err := rsa.GenerateKey(cryptorand.Reader, 4096)
+	if err != nil {
+		agent.logger.Errorf("Cannot generate keypair: %v", err)
+		return
+	}
+
+	// Encode the private key of the keypair as DER.
+	privateKeyDER := x509.MarshalPKCS1PrivateKey(clientCertKeyPair)
+
+	// Convert private key from DER to PEM.
+	privateKeyPEM := new(bytes.Buffer)
+	pem.Encode(
+		privateKeyPEM, &pem.Block{
+			Type:  "RSA PRIVATE KEY",
+			Bytes: privateKeyDER,
+		},
+	)
+	// Keep it. We will need it in later steps of the flow.
+	agent.clientPrivateKeyPEM = privateKeyPEM.Bytes()
+
+	// Create the CSR.
+	template := x509.CertificateRequest{
+		Subject: pkix.Name{
+			CommonName:   "OpAMP Example Client",
+			Organization: []string{"OpenTelemetry OpAMP Workgroup"},
+			Locality:     []string{"Agent-initiated"},
+			// Where do we put instance_uid?
+		},
+		SignatureAlgorithm: x509.SHA256WithRSA,
+	}
+
+	derBytes, err := x509.CreateCertificateRequest(cryptorand.Reader, &template, clientCertKeyPair)
+	if err != nil {
+		agent.logger.Errorf("Failed to create certificate request: %s", err)
+		return
+	}
+
+	// Convert CSR from DER to PEM format.
+	csrPEM := new(bytes.Buffer)
+	pem.Encode(
+		csrPEM, &pem.Block{
+			Type:  "CERTIFICATE REQUEST",
+			Bytes: derBytes,
+		},
+	)
+
+	// Send the request to the Server (immediately if already connected
+	// or upon next successful connection).
+	err = agent.opampClient.RequestConnectionSettings(
+		&protobufs.ConnectionSettingsRequest{
+			Opamp: &protobufs.OpAMPConnectionSettingsRequest{
+				CertificateRequest: &protobufs.CertificateRequest{
+					Csr: csrPEM.Bytes(),
+				},
+			},
+		},
+	)
+	if err != nil {
+		agent.logger.Errorf("Failed to send CSR to server: %s", err)
+		return
+	}
+
+	agent.certRequested = true
+}
+
 func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	configChanged := false
 	if msg.RemoteConfig != nil {
 		var err error
 		configChanged, err = agent.applyRemoteConfig(msg.RemoteConfig)
 		if err != nil {
-			agent.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
-				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
-				Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
-				ErrorMessage:         err.Error(),
-			})
+			agent.opampClient.SetRemoteConfigStatus(
+				&protobufs.RemoteConfigStatus{
+					LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
+					Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
+					ErrorMessage:         err.Error(),
+				},
+			)
 		} else {
 			agent.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
 				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
@@ -378,6 +472,15 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 			agent.logger.Errorf(err.Error())
 		}
 	}
+
+	// TODO: check that the Server has AcceptsConnectionSettingsRequest capability before
+	// requesting a certificate.
+	// This is actually a no-op since we already made the request when connecting
+	// (see connect()). However we keep this call here to demonstrate that requesting it
+	// in onMessage callback is also an option. This approach should be used if it is
+	// necessary to check for AcceptsConnectionSettingsRequest (if the Agent is
+	// not certain that the Server has this capability).
+	agent.requestClientCertificate()
 }
 
 func (agent *Agent) tryChangeOpAMPCert(cert *tls.Certificate) {
@@ -419,13 +522,33 @@ func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *pro
 }
 
 func (agent *Agent) getCertFromSettings(certificate *protobufs.TLSCertificate) (*tls.Certificate, error) {
-	// Parse the key pair to a certificate that can be used for network connections.
-	cert, err := tls.X509KeyPair(
-		certificate.PublicKey,
-		certificate.PrivateKey,
-	)
+	// Parse the key pair to a TLS certificate that can be used for network connections.
+
+	// There are 2 types of certificate creation flows in OpAMP: client-initiated CSR
+	// and server-initiated. In this example we demonstrate both flows.
+	// Real-world Agent implementations will probably choose and use only one of these flows.
+
+	var cert tls.Certificate
+	var err error
+	if certificate.PrivateKey == nil && agent.clientPrivateKeyPEM != nil {
+		// Client-initiated CSR flow. This is currently initiated when connecting
+		// to the Server for the first time (see requestClientCertificate()).
+		cert, err = tls.X509KeyPair(
+			certificate.PublicKey,     // We received the certificate from the Server.
+			agent.clientPrivateKeyPEM, // Private key was earlier locally generated.
+		)
+	} else {
+		// Server-initiated flow. This is currently initiated by user clicking a button in
+		// the Server UI.
+		// Both certificate and private key are from the Server.
+		cert, err = tls.X509KeyPair(
+			certificate.PublicKey,
+			certificate.PrivateKey,
+		)
+	}
+
 	if err != nil {
-		agent.logger.Errorf("Received invalid certificate offer: %s\n", err)
+		agent.logger.Errorf("Received invalid certificate offer: %s\n", err.Error())
 		return nil, err
 	}
 

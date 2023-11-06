@@ -682,7 +682,7 @@ func TestAgentIdentification(t *testing.T) {
 	})
 }
 
-func TestConnectionSettings(t *testing.T) {
+func TestServerOfferConnectionSettings(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		hash := []byte{1, 2, 3}
 		opampSettings := &protobufs.OpAMPConnectionSettings{DestinationEndpoint: "http://opamp.com"}
@@ -763,6 +763,64 @@ func TestConnectionSettings(t *testing.T) {
 		err := client.Stop(context.Background())
 		assert.NoError(t, err)
 	})
+}
+
+func TestClientRequestConnectionSettings(t *testing.T) {
+	testClients(
+		t, func(t *testing.T, client OpAMPClient) {
+			opampSettings := &protobufs.OpAMPConnectionSettings{DestinationEndpoint: "http://opamp.com"}
+
+			var srvReceivedRequest int64
+			// Start a Server.
+			srv := internal.StartMockServer(t)
+			srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				if msg != nil && msg.ConnectionSettingsRequest != nil {
+					atomic.AddInt64(&srvReceivedRequest, 1)
+					return &protobufs.ServerToAgent{
+						ConnectionSettings: &protobufs.ConnectionSettingsOffers{
+							Opamp: opampSettings,
+						},
+					}
+				}
+				return nil
+			}
+
+			var clientGotOpampSettings int64
+
+			// Start a client.
+			settings := types.StartSettings{
+				Callbacks: types.CallbacksStruct{
+					OnOpampConnectionSettingsFunc: func(
+						ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
+					) error {
+						assert.True(t, proto.Equal(opampSettings, settings))
+						atomic.AddInt64(&clientGotOpampSettings, 1)
+						return nil
+					},
+				},
+				Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings,
+			}
+			settings.OpAMPServerURL = "ws://" + srv.Endpoint
+			prepareClient(t, &settings, client)
+
+			assert.NoError(t, client.Start(context.Background(), settings))
+
+			client.RequestConnectionSettings(&protobufs.ConnectionSettingsRequest{})
+
+			// Wait until server receives the request.
+			eventually(t, func() bool { return atomic.LoadInt64(&srvReceivedRequest) == 1 })
+
+			// Wait until client receives the server's response.
+			eventually(t, func() bool { return atomic.LoadInt64(&clientGotOpampSettings) == 1 })
+
+			// Shutdown the Server.
+			srv.Close()
+
+			// Shutdown the client.
+			err := client.Stop(context.Background())
+			assert.NoError(t, err)
+		},
+	)
 }
 
 func TestReportAgentDescription(t *testing.T) {
