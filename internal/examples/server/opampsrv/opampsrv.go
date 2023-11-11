@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
+	"path"
 
 	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/examples/server/data"
@@ -54,10 +56,18 @@ func (srv *Server) Start() {
 		},
 		ListenEndpoint: "127.0.0.1:4320",
 	}
+
+	rootDir, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	certPath := path.Join(rootDir, "../certs/certs")
+	serverCertPath := path.Join(rootDir, "../certs/server_certs")
+
 	tlsConfig, err := internal.CreateServerTLSConfig(
-		"../../certs/certs/ca.cert.pem",
-		"../../certs/server_certs/server.cert.pem",
-		"../../certs/server_certs/server.key.pem",
+		certPath+"/ca.cert.pem",
+		serverCertPath+"/server.cert.pem",
+		serverCertPath+"/server.key.pem",
 	)
 	if err != nil {
 		srv.logger.Debugf("Could not load TLS config, working without TLS: %v", err.Error())

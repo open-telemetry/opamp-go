@@ -19,7 +19,7 @@ var srv *http.Server
 var logger = log.New(log.Default().Writer(), "[UI] ", log.Default().Flags()|log.Lmsgprefix|log.Lmicroseconds)
 
 func Start(rootDir string) {
-	htmlDir = path.Join(rootDir, "uisrv/html")
+	htmlDir = path.Join(rootDir, "server/uisrv/html")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", renderRoot)
