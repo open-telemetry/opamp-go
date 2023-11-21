@@ -89,7 +89,6 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 }
 
 func (c *wsClient) Stop(ctx context.Context) error {
-	// stop the runner
 	return c.common.Stop(ctx)
 }
 
@@ -220,10 +219,15 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 // runOneCycle performs the following actions:
 //  1. connect (try until succeeds).
 //  2. send first status report.
-//  3. receive and process messages until error happens.
+//  3. start the sender to wait for scheduled message and send it to the server.
+//  4. start the receiver to receive and process messages until error happens.
+//  5. wait until either sender or receiver stops.
 //
-// If it encounters an error it closes the connection and returns.
-// Will stop and return if Stop() is called (ctx is cancelled, isStopping is set).
+// runOneCycle will close the connection it created before it return.
+//
+// When Stop() is called (ctx is cancelled, isStopping is set), wsClient will shutdown gracefully:
+//  1. sender will be cancelled by the ctx, send the close message to server and return the error via sender.Err().
+//  2. runOneCycle will handle that error and wait for the close message from server until timeout.
 func (c *wsClient) runOneCycle(ctx context.Context) {
 	if err := c.ensureConnected(ctx); err != nil {
 		// Can't connect, so can't move forward. This currently happens when we
@@ -270,7 +274,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 
 	select {
 	case <-c.sender.IsStopped():
-		// sender will send close message to initiate
+		// sender will send close message to initiate the close handshake
 		if err := c.sender.Err(); err != nil && err != websocket.ErrCloseSent {
 			c.common.Logger.Debugf("failed to send close message, close without the handshake.")
 			break
