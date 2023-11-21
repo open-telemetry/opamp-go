@@ -221,7 +221,7 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 //  2. send first status report.
 //  3. start the sender to wait for scheduled message and send it to the server.
 //  4. start the receiver to receive and process messages until error happens.
-//  5. wait until either sender or receiver stops.
+//  5. wait until both sender and receiver are stopped.
 //
 // runOneCycle will close the connection it created before it return.
 //
@@ -286,12 +286,16 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 			c.common.Logger.Debugf("shutdown handshake complete.")
 		case <-time.After(defaultShutdownTimeout):
 			c.common.Logger.Debugf("timeout waiting for close message.")
+			// not receive close message from the server, close the connection to force the receive loop to stop
+			_ = c.conn.Close()
+			<-r.IsStopped()
 		}
 	case <-r.IsStopped():
 		// If we exited receiverLoop it means there is a connection error, we cannot
 		// read messages anymore. We need to start over.
 
-		// TODO: handle close message from server.
+		stopSender()
+		<-c.sender.IsStopped()
 	}
 }
 

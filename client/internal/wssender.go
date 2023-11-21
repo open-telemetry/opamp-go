@@ -44,6 +44,7 @@ func (s *WSSender) Start(ctx context.Context, conn *websocket.Conn) error {
 
 	// Run the sender in the background.
 	s.stopped = make(chan struct{})
+	s.err = nil
 	go s.run(ctx)
 
 	return err
