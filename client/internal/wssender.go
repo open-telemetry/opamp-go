@@ -49,13 +49,6 @@ func (s *WSSender) Start(ctx context.Context, conn *websocket.Conn) error {
 	return err
 }
 
-// WaitToStop blocks until the sender is stopped. To stop the sender cancel the context
-// that was passed to Start().
-func (s *WSSender) WaitToStop() error {
-	<-s.stopped
-	return s.err
-}
-
 func (s *WSSender) IsStopped() <-chan struct{} {
 	return s.stopped
 }
