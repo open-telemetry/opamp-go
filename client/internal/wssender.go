@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -11,13 +12,19 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
+const (
+	defaultSendCloseMessageTimeout = 5 * time.Second
+)
+
 // WSSender implements the WebSocket client's sending portion of OpAMP protocol.
 type WSSender struct {
 	SenderCommon
 	conn   *websocket.Conn
 	logger types.Logger
+
 	// Indicates that the sender has fully stopped.
 	stopped chan struct{}
+	err     error
 }
 
 // NewSender creates a new Sender that uses WebSocket to send
@@ -44,8 +51,17 @@ func (s *WSSender) Start(ctx context.Context, conn *websocket.Conn) error {
 
 // WaitToStop blocks until the sender is stopped. To stop the sender cancel the context
 // that was passed to Start().
-func (s *WSSender) WaitToStop() {
+func (s *WSSender) WaitToStop() error {
 	<-s.stopped
+	return s.err
+}
+
+func (s *WSSender) IsStopped() <-chan struct{} {
+	return s.stopped
+}
+
+func (s *WSSender) Err() error {
+	return s.err
 }
 
 func (s *WSSender) run(ctx context.Context) {
@@ -56,11 +72,20 @@ out:
 			s.sendNextMessage(ctx)
 
 		case <-ctx.Done():
+			s.err = s.sendCloseMessage()
 			break out
 		}
 	}
 
 	close(s.stopped)
+}
+
+func (s *WSSender) sendCloseMessage() error {
+	return s.conn.WriteControl(
+		websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Normal closure"),
+		time.Now().Add(defaultSendCloseMessageTimeout),
+	)
 }
 
 func (s *WSSender) sendNextMessage(ctx context.Context) error {

@@ -18,6 +18,10 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
+const (
+	defaultShutdownTimeout = 5 * time.Second
+)
+
 // wsClient is an OpAMP Client implementation for WebSocket transport.
 // See specification: https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#websocket-transport
 type wsClient struct {
@@ -85,15 +89,7 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 }
 
 func (c *wsClient) Stop(ctx context.Context) error {
-	// Close connection if any.
-	c.connMutex.RLock()
-	conn := c.conn
-	c.connMutex.RUnlock()
-
-	if conn != nil {
-		_ = conn.Close()
-	}
-
+	// stop the runner
 	return c.common.Stop(ctx)
 }
 
@@ -234,9 +230,10 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		// are being stopped.
 		return
 	}
+	// Close the underlying connection.
+	defer c.conn.Close()
 
 	if c.common.IsStopping() {
-		_ = c.conn.Close()
 		return
 	}
 
@@ -248,15 +245,14 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 	}
 
 	// Create a cancellable context for background processors.
-	procCtx, procCancel := context.WithCancel(ctx)
+	senderCtx, stopSender := context.WithCancel(ctx)
+	defer stopSender()
 
 	// Connected successfully. Start the sender. This will also send the first
 	// status report.
-	if err := c.sender.Start(procCtx, c.conn); err != nil {
-		c.common.Logger.Errorf(procCtx, "Failed to send first status report: %v", err)
+	if err := c.sender.Start(senderCtx, c.conn); err != nil {
+		c.common.Logger.Errorf(senderCtx, "Failed to send first status report: %v", err)
 		// We could not send the report, the only thing we can do is start over.
-		_ = c.conn.Close()
-		procCancel()
 		return
 	}
 
@@ -270,19 +266,29 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		c.common.PackagesStateProvider,
 		c.common.Capabilities,
 	)
-	r.ReceiverLoop(ctx)
+	r.Start(ctx)
 
-	// Stop the background processors.
-	procCancel()
+	select {
+	case <-c.sender.IsStopped():
+		// sender will send close message to initiate
+		if err := c.sender.Err(); err != nil && err != websocket.ErrCloseSent {
+			c.common.Logger.Debugf("failed to send close message, close without the handshake.")
+			break
+		}
 
-	// If we exited receiverLoop it means there is a connection error, we cannot
-	// read messages anymore. We need to start over.
+		c.common.Logger.Debugf("waiting for close message from server.")
+		select {
+		case <-r.IsStopped():
+			c.common.Logger.Debugf("shutdown handshake complete.")
+		case <-time.After(defaultShutdownTimeout):
+			c.common.Logger.Debugf("timeout waiting for close message.")
+		}
+	case <-r.IsStopped():
+		// If we exited receiverLoop it means there is a connection error, we cannot
+		// read messages anymore. We need to start over.
 
-	// Close the connection to unblock the WSSender as well.
-	_ = c.conn.Close()
-
-	// Wait for WSSender to stop.
-	c.sender.WaitToStop()
+		// TODO: handle close message from server.
+	}
 }
 
 func (c *wsClient) runUntilStopped(ctx context.Context) {
