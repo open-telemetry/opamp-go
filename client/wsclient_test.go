@@ -9,9 +9,11 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/internal"
@@ -261,4 +263,209 @@ func TestRedirectWS(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	}
+}
+
+func TestHandlesStopBeforeStart(t *testing.T) {
+	client := NewWebSocket(nil)
+	require.Error(t, client.Stop(context.Background()))
+}
+
+func TestPerformsClosingHandshake(t *testing.T) {
+	srv := internal.StartMockServer(t)
+	var wsConn *websocket.Conn
+	connected := make(chan struct{})
+	closed := make(chan struct{})
+
+	srv.OnWSConnect = func(conn *websocket.Conn) {
+		wsConn = conn
+		connected <- struct{}{}
+	}
+
+	client := NewWebSocket(nil)
+	startClient(t, types.StartSettings{
+		OpAMPServerURL: srv.GetHTTPTestServer().URL,
+	}, client)
+
+	select {
+	case <-connected:
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "Connection never established")
+	}
+
+	require.Eventually(t, func() bool {
+		client.connMutex.RLock()
+		conn := client.conn
+		client.connMutex.RUnlock()
+		return conn != nil
+	}, 2*time.Second, 250*time.Millisecond)
+
+	defHandler := wsConn.CloseHandler()
+
+	wsConn.SetCloseHandler(func(code int, _ string) error {
+		require.Equal(t, websocket.CloseNormalClosure, code, "Client sent non-normal closing code")
+
+		err := defHandler(code, "")
+		closed <- struct{}{}
+		return err
+	})
+
+	client.Stop(context.Background())
+
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "Connection never closed")
+	}
+}
+
+func TestHandlesSlowCloseMessageFromServer(t *testing.T) {
+	srv := internal.StartMockServer(t)
+	var wsConn *websocket.Conn
+	connected := make(chan struct{})
+	closed := make(chan struct{})
+
+	srv.OnWSConnect = func(conn *websocket.Conn) {
+		wsConn = conn
+		connected <- struct{}{}
+	}
+
+	client := NewWebSocket(nil)
+	client.connShutdownTimeout = 100 * time.Millisecond
+	startClient(t, types.StartSettings{
+		OpAMPServerURL: srv.GetHTTPTestServer().URL,
+	}, client)
+
+	select {
+	case <-connected:
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "Connection never established")
+	}
+
+	require.Eventually(t, func() bool {
+		client.connMutex.RLock()
+		conn := client.conn
+		client.connMutex.RUnlock()
+		return conn != nil
+	}, 2*time.Second, 250*time.Millisecond)
+
+	defHandler := wsConn.CloseHandler()
+
+	wsConn.SetCloseHandler(func(code int, _ string) error {
+		require.Equal(t, websocket.CloseNormalClosure, code, "Client sent non-normal closing code")
+
+		time.Sleep(200 * time.Millisecond)
+		err := defHandler(code, "")
+		closed <- struct{}{}
+		return err
+	})
+
+	client.Stop(context.Background())
+
+	select {
+	case <-closed:
+	case <-time.After(1 * time.Second):
+		require.Fail(t, "Connection never closed")
+	}
+}
+
+func TestHandlesNoCloseMessageFromServer(t *testing.T) {
+	srv := internal.StartMockServer(t)
+	var wsConn *websocket.Conn
+	connected := make(chan struct{})
+	closed := make(chan struct{})
+
+	srv.OnWSConnect = func(conn *websocket.Conn) {
+		wsConn = conn
+		connected <- struct{}{}
+	}
+
+	client := NewWebSocket(nil)
+	client.connShutdownTimeout = 100 * time.Millisecond
+	startClient(t, types.StartSettings{
+		OpAMPServerURL: srv.GetHTTPTestServer().URL,
+	}, client)
+
+	select {
+	case <-connected:
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "Connection never established")
+	}
+
+	require.Eventually(t, func() bool {
+		client.connMutex.RLock()
+		conn := client.conn
+		client.connMutex.RUnlock()
+		return conn != nil
+	}, 2*time.Second, 250*time.Millisecond)
+
+	wsConn.SetCloseHandler(func(code int, _ string) error {
+		// Don't send close message
+		return nil
+	})
+
+	go func() {
+		client.Stop(context.Background())
+		closed <- struct{}{}
+	}()
+
+	select {
+	case <-closed:
+	case <-time.After(1 * time.Second):
+		require.Fail(t, "Connection never closed")
+	}
+}
+
+func TestHandlesConnectionError(t *testing.T) {
+	srv := internal.StartMockServer(t)
+	var wsConn *websocket.Conn
+	connected := make(chan struct{})
+
+	srv.OnWSConnect = func(conn *websocket.Conn) {
+		wsConn = conn
+		connected <- struct{}{}
+	}
+
+	client := NewWebSocket(nil)
+	startClient(t, types.StartSettings{
+		OpAMPServerURL: srv.GetHTTPTestServer().URL,
+	}, client)
+
+	select {
+	case <-connected:
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "Connection never established")
+	}
+
+	require.Eventually(t, func() bool {
+		client.connMutex.RLock()
+		conn := client.conn
+		client.connMutex.RUnlock()
+		return conn != nil
+	}, 2*time.Second, 250*time.Millisecond)
+
+	// Write an invalid message to the connection. The client
+	// will take this as an error and reconnect to the server.
+	writer, err := wsConn.NextWriter(websocket.BinaryMessage)
+	require.NoError(t, err)
+	n, err := writer.Write([]byte{99, 1, 2, 3, 4, 5})
+	require.NoError(t, err)
+	require.Equal(t, 6, n)
+	err = writer.Close()
+	require.NoError(t, err)
+
+	select {
+	case <-connected:
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "Connection never re-established")
+	}
+
+	require.Eventually(t, func() bool {
+		client.connMutex.RLock()
+		conn := client.conn
+		client.connMutex.RUnlock()
+		return conn != nil
+	}, 2*time.Second, 250*time.Millisecond)
+
+	err = client.Stop(context.Background())
+	require.NoError(t, err)
 }
