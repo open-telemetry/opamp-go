@@ -626,9 +626,9 @@ func TestAgentIdentification(t *testing.T) {
 		newInstanceUid := ulid.MustNew(
 			ulid.Timestamp(time.Now()), ulid.Monotonic(rand.New(rand.NewSource(0)), 0),
 		)
-		var rcvAgentInstanceUid atomic.Value
+		rcvAgentInstanceUids := make(chan string, 10)
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			rcvAgentInstanceUid.Store(msg.InstanceUid)
+			rcvAgentInstanceUids <- msg.InstanceUid
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
 				AgentIdentification: &protobufs.AgentIdentification{
@@ -649,11 +649,12 @@ func TestAgentIdentification(t *testing.T) {
 		eventually(
 			t,
 			func() bool {
-				instanceUid, ok := rcvAgentInstanceUid.Load().(string)
-				if !ok {
-					return false
+				select {
+				case instanceUid := <-rcvAgentInstanceUids:
+					return instanceUid == oldInstanceUid
+				default:
 				}
-				return instanceUid == oldInstanceUid
+				return false
 			},
 		)
 
@@ -665,11 +666,12 @@ func TestAgentIdentification(t *testing.T) {
 		eventually(
 			t,
 			func() bool {
-				instanceUid, ok := rcvAgentInstanceUid.Load().(string)
-				if !ok {
-					return false
+				select {
+				case instanceUid := <-rcvAgentInstanceUids:
+					return instanceUid == newInstanceUid.String()
+				default:
 				}
-				return instanceUid == newInstanceUid.String()
+				return false
 			},
 		)
 
