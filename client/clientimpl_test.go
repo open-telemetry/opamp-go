@@ -638,7 +638,17 @@ func TestAgentIdentification(t *testing.T) {
 		}
 
 		// Start a client.
-		settings := types.StartSettings{}
+		hasRecvServerResponse := make(chan struct{}, 1)
+		settings := types.StartSettings{
+			Callbacks: types.CallbacksStruct{
+				OnMessageFunc: func(_ context.Context, _ *types.MessageData) {
+					select {
+					case hasRecvServerResponse <- struct{}{}:
+					default:
+					}
+				},
+			},
+		}
 		settings.OpAMPServerURL = "ws://" + srv.Endpoint
 		prepareClient(t, &settings, client)
 
@@ -657,6 +667,9 @@ func TestAgentIdentification(t *testing.T) {
 				return false
 			},
 		)
+
+		// Wait for the server response.
+		<-hasRecvServerResponse
 
 		// Send a dummy message
 		_ = client.SetAgentDescription(createAgentDescr())
