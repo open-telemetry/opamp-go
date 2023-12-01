@@ -9,6 +9,7 @@ import (
 	"github.com/open-telemetry/opamp-go/server/types"
 )
 
+// Settings contains the settings for attaching an OpAMP Server.
 type Settings struct {
 	// Callbacks that the Server will call after successful Attach/Start.
 	Callbacks types.Callbacks
@@ -19,6 +20,7 @@ type Settings struct {
 	EnableCompression bool
 }
 
+// StartSettings contains the settings for starting an OpAMP Server.
 type StartSettings struct {
 	Settings
 
@@ -37,6 +39,7 @@ type HTTPHandlerFunc func(http.ResponseWriter, *http.Request)
 
 type ConnContext func(ctx context.Context, c net.Conn) context.Context
 
+// OpAMPServer is an interface representing the server side of the OpAMP protocol.
 type OpAMPServer interface {
 	// Attach prepares the OpAMP Server to begin handling requests from an existing
 	// http.Server. The returned HTTPHandlerFunc and ConnContext should be added as a
