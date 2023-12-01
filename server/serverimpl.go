@@ -44,6 +44,7 @@ type server struct {
 
 var _ OpAMPServer = (*server)(nil)
 
+// New creates a new OpAMP Server.
 func New(logger types.Logger) *server {
 	if logger == nil {
 		logger = &internal.NopLogger{}
