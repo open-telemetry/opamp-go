@@ -28,8 +28,8 @@ func startServer(t *testing.T, settings *StartSettings) *server {
 	srv := New(&sharedinternal.NopLogger{})
 	require.NotNil(t, srv)
 	if settings.ListenEndpoint == "" {
-		// Find an avaiable port to listne on.
-		settings.ListenEndpoint = testhelpers.GetAvailableLocalAddress()
+		// allocate an ephemeral port to listne on.
+		settings.ListenEndpoint = "127.0.0.1:0"
 	}
 	if settings.ListenPath == "" {
 		settings.ListenPath = "/"
@@ -40,8 +40,8 @@ func startServer(t *testing.T, settings *StartSettings) *server {
 	return srv
 }
 
-func dialClient(serverSettings *StartSettings) (*websocket.Conn, *http.Response, error) {
-	srvUrl := "ws://" + serverSettings.ListenEndpoint + serverSettings.ListenPath
+func dialClient(addr string, serverSettings *StartSettings) (*websocket.Conn, *http.Response, error) {
+	srvUrl := "ws://" + addr + serverSettings.ListenPath
 	dailer := websocket.DefaultDialer
 	dailer.EnableCompression = serverSettings.EnableCompression
 	return websocket.DefaultDialer.Dial(srvUrl, nil)
@@ -75,7 +75,7 @@ func TestServerStartRejectConnection(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	// Try to connect to the Server.
-	conn, resp, err := dialClient(settings)
+	conn, resp, err := dialClient(srv.Addr().String(), settings)
 
 	// Verify that the connection is rejected and rejection data is available to the client.
 	assert.Nil(t, conn)
@@ -113,7 +113,7 @@ func TestServerStartAcceptConnection(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	// Connect to the Server.
-	conn, resp, err := dialClient(settings)
+	conn, resp, err := dialClient(srv.Addr().String(), settings)
 
 	// Verify that the connection is successful.
 	assert.NoError(t, err)
@@ -158,7 +158,7 @@ func TestDisconnectWSConnection(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	// Connect to the Server.
-	conn, _, err := dialClient(settings)
+	conn, _, err := dialClient(srv.Addr().String(), settings)
 
 	// Verify that the connection is successful.
 	assert.NoError(t, err)
@@ -204,7 +204,7 @@ func TestServerReceiveSendMessage(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	// Connect using a WebSocket client.
-	conn, _, _ := dialClient(settings)
+	conn, _, _ := dialClient(srv.Addr().String(), settings)
 	require.NotNil(t, conn)
 	defer conn.Close()
 
@@ -279,13 +279,11 @@ func TestServerReceiveSendMessageWithCompression(t *testing.T) {
 
 			// We use a transparent TCP proxy to be able to count the actual bytes transferred so that
 			// we can test the number of actual bytes vs number of expected bytes with and without compression.
-			proxy := testhelpers.NewProxy(settings.ListenEndpoint)
+			proxy := testhelpers.NewProxy(srv.Addr().String())
 			assert.NoError(t, proxy.Start())
 
-			serverSettings := *settings
-			serverSettings.ListenEndpoint = proxy.IncomingEndpoint()
 			// Connect using a WebSocket client.
-			conn, _, _ := dialClient(&serverSettings)
+			conn, _, _ := dialClient(proxy.IncomingEndpoint(), settings)
 			require.NotNil(t, conn)
 			defer conn.Close()
 
@@ -380,7 +378,7 @@ func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
 	}
 	b, err := proto.Marshal(&sendMsg)
 	require.NoError(t, err)
-	resp, err := http.Post("http://"+settings.ListenEndpoint+settings.ListenPath, contentTypeProtobuf, bytes.NewReader(b))
+	resp, err := http.Post("http://"+srv.Addr().String()+settings.ListenPath, contentTypeProtobuf, bytes.NewReader(b))
 	require.NoError(t, err)
 
 	// Wait until Server receives the message.
@@ -585,7 +583,7 @@ func TestServerHonoursClientRequestContentEncoding(t *testing.T) {
 	b, err = compressGzip(b)
 	require.NoError(t, err)
 
-	req, err := http.NewRequest("POST", "http://"+settings.ListenEndpoint+settings.ListenPath, bytes.NewReader(b))
+	req, err := http.NewRequest("POST", "http://"+srv.Addr().String()+settings.ListenPath, bytes.NewReader(b))
 	req.Header.Set(headerContentType, contentTypeProtobuf)
 	req.Header.Set(headerContentEncoding, contentEncodingGzip)
 	resp, err := hc.Do(req)
@@ -657,7 +655,7 @@ func TestServerHonoursAcceptEncoding(t *testing.T) {
 	}
 	b, err := proto.Marshal(&sendMsg)
 	require.NoError(t, err)
-	req, err := http.NewRequest("POST", "http://"+settings.ListenEndpoint+settings.ListenPath, bytes.NewReader(b))
+	req, err := http.NewRequest("POST", "http://"+srv.Addr().String()+settings.ListenPath, bytes.NewReader(b))
 	req.Header.Set(headerContentType, contentTypeProtobuf)
 	req.Header.Set(headerAcceptEncoding, contentEncodingGzip)
 	resp, err := hc.Do(req)
@@ -743,7 +741,7 @@ func TestConnectionAllowsConcurrentWrites(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	// Connect to the Server.
-	conn, _, err := dialClient(settings)
+	conn, _, err := dialClient(srv.Addr().String(), settings)
 
 	// Verify that the connection is successful.
 	assert.NoError(t, err)
@@ -797,7 +795,7 @@ func BenchmarkSendToClient(b *testing.B) {
 	// Start a Server.
 	settings := &StartSettings{
 		Settings:       Settings{Callbacks: callbacks},
-		ListenEndpoint: testhelpers.GetAvailableLocalAddress(),
+		ListenEndpoint: "127.0.0.1:0",
 		ListenPath:     "/",
 	}
 	srv := New(&sharedinternal.NopLogger{})
@@ -810,7 +808,7 @@ func BenchmarkSendToClient(b *testing.B) {
 	defer srv.Stop(context.Background())
 
 	for i := 0; i < b.N; i++ {
-		conn, resp, err := dialClient(settings)
+		conn, resp, err := dialClient(srv.Addr().String(), settings)
 
 		if err != nil || resp == nil || conn == nil {
 			b.Error("Could not establish connection:", err)

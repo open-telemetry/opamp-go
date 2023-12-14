@@ -40,6 +40,9 @@ type server struct {
 	// The listening HTTP Server after successful Start() call. Nil if Start()
 	// is not called or was not successful.
 	httpServer *http.Server
+
+	// The network address Server is listening on. Nil if not started.
+	addr net.Addr
 }
 
 var _ OpAMPServer = (*server)(nil)
@@ -118,6 +121,7 @@ func (s *server) startHttpServer(listenAddr string, serveFunc func(l net.Listene
 	if err != nil {
 		return err
 	}
+	s.addr = ln.Addr()
 
 	// Begin serving connections in the background.
 	go func() {
@@ -141,6 +145,10 @@ func (s *server) Stop(ctx context.Context) error {
 		return s.httpServer.Shutdown(ctx)
 	}
 	return nil
+}
+
+func (s *server) Addr() net.Addr {
+	return s.addr
 }
 
 func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
