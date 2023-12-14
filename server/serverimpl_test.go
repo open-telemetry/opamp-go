@@ -57,6 +57,48 @@ func TestServerStartStop(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestServerAddrWithNonZeroPort(t *testing.T) {
+	srv := New(&sharedinternal.NopLogger{})
+	require.NotNil(t, srv)
+
+	// Nil if not started
+	assert.Nil(t, srv.Addr())
+
+	addr := testhelpers.GetAvailableLocalAddress()
+
+	err := srv.Start(StartSettings{
+		ListenEndpoint: addr,
+		ListenPath:     "/",
+	})
+	assert.NoError(t, err)
+
+	assert.Equal(t, addr, srv.Addr().String())
+
+	err = srv.Stop(context.Background())
+	assert.NoError(t, err)
+}
+
+func TestServerAddrWithZeroPort(t *testing.T) {
+	srv := New(&sharedinternal.NopLogger{})
+	require.NotNil(t, srv)
+
+	// Nil if not started
+	assert.Nil(t, srv.Addr())
+
+	err := srv.Start(StartSettings{
+		ListenEndpoint: "127.0.0.1:0",
+		ListenPath:     "/",
+	})
+	assert.NoError(t, err)
+
+	// should be listening on an non-zero ephemeral port
+	assert.NotEqual(t, "127.0.0.1:0", srv.Addr().String())
+	assert.Regexp(t, `^127.0.0.1:\d+`, srv.Addr().String())
+
+	err = srv.Stop(context.Background())
+	assert.NoError(t, err)
+}
+
 func TestServerStartRejectConnection(t *testing.T) {
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {

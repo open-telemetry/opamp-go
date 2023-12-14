@@ -62,4 +62,9 @@ type OpAMPServer interface {
 	// Stop accepting new connections and close all current connections. This should
 	// block until all connections are closed.
 	Stop(ctx context.Context) error
+
+	// Addr returns the network address Server is listening on. Nil if not started.
+	// Typically used to fetch the port when ListenEndpoint's port is specified as 0 to
+	// allocate an ephemeral port.
+	Addr() net.Addr
 }
