@@ -217,7 +217,7 @@ func (r *receivedProcessor) rcvAgentIdentification(agentId *protobufs.AgentIdent
 
 	err := r.sender.SetInstanceUid(agentId.NewInstanceUid)
 	if err != nil {
-		r.logger.Errorf("error while setting instance uid: %v", err)
+		r.logger.Errorf("Error while setting instance uid: %v", err)
 		return err
 	}
 
