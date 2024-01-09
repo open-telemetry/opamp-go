@@ -42,6 +42,7 @@ Approvers ([@open-telemetry/opamp-go-approvers](https://github.com/orgs/open-tel
 
 - [Alex Boten](https://github.com/codeboten), Lightstep
 - [Anthony Mirabella](https://github.com/Aneurysm9), AWS
+- [Evan Bradley](https://github.com/evan-bradley), Dynatrace
 - [Srikanth Chekuri](https://github.com/srikanthccv), signoz.io
 
 Emeritus Approvers
