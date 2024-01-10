@@ -224,9 +224,9 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 // runOneCycle performs the following actions:
 //  1. connect (try until succeeds).
 //  2. send first status report.
-//  3. start the sender to wait for scheduled message and send it to the server.
-//  4. start the receiver to receive and process messages until error happens.
-//  5. wait until both sender and receiver are stopped.
+//  3. start the sender to wait for scheduled messages and send them to the server.
+//  4. start the receiver to receive and process messages until an error happens.
+//  5. wait until both the sender and receiver are stopped.
 //
 // runOneCycle will close the connection it created before it return.
 //
