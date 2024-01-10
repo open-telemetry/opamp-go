@@ -14,11 +14,29 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
+var _ types.Logger = &TestLogger{}
+
 type TestLogger struct {
 	*testing.T
 }
 
+func (logger TestLogger) Infof(format string, v ...interface{}) {
+	logger.Logf(format, v...)
+}
+
 func (logger TestLogger) Debugf(format string, v ...interface{}) {
+	logger.Logf(format, v...)
+}
+
+func (logger TestLogger) InfofContext(ctx context.Context, format string, v ...interface{}) {
+	logger.Logf(format, v...)
+}
+
+func (logger TestLogger) DebugfContext(ctx context.Context, format string, v ...interface{}) {
+	logger.Logf(format, v...)
+}
+
+func (logger TestLogger) ErrorfContext(ctx context.Context, format string, v ...interface{}) {
 	logger.Logf(format, v...)
 }
 

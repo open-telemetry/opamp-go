@@ -101,17 +101,17 @@ func (s *packagesSyncer) initStatuses() error {
 func (s *packagesSyncer) doSync(ctx context.Context) {
 	hash, err := s.localState.AllPackagesHash()
 	if err != nil {
-		s.logger.Errorf("Package syncing failed: %V", err)
+		s.logger.ErrorfContext(ctx, "Package syncing failed: %V", err)
 		return
 	}
 	if bytes.Compare(hash, s.available.AllPackagesHash) == 0 {
-		s.logger.Debugf("All packages are already up to date.")
+		s.logger.DebugfContext(ctx, "All packages are already up to date.")
 		return
 	}
 
 	failed := false
 	if err := s.deleteUnneededLocalPackages(); err != nil {
-		s.logger.Errorf("Cannot delete unneeded packages: %v", err)
+		s.logger.ErrorfContext(ctx, "Cannot delete unneeded packages: %v", err)
 		failed = true
 	}
 
@@ -119,7 +119,7 @@ func (s *packagesSyncer) doSync(ctx context.Context) {
 	for name, pkg := range s.available.Packages {
 		err := s.syncPackage(ctx, name, pkg)
 		if err != nil {
-			s.logger.Errorf("Cannot sync package %s: %v", name, err)
+			s.logger.ErrorfContext(ctx, "Cannot sync package %s: %v", name, err)
 			failed = true
 		}
 	}
@@ -128,12 +128,12 @@ func (s *packagesSyncer) doSync(ctx context.Context) {
 		// Update the "all" hash on success, so that next time Sync() does not thing,
 		// unless a new hash is received from the Server.
 		if err := s.localState.SetAllPackagesHash(s.available.AllPackagesHash); err != nil {
-			s.logger.Errorf("SetAllPackagesHash failed: %v", err)
+			s.logger.ErrorfContext(ctx, "SetAllPackagesHash failed: %v", err)
 		} else {
-			s.logger.Debugf("All packages are synced and up to date.")
+			s.logger.DebugfContext(ctx, "All packages are synced and up to date.")
 		}
 	} else {
-		s.logger.Errorf("Package syncing was not successful.")
+		s.logger.ErrorfContext(ctx, "Package syncing was not successful.")
 	}
 
 	_ = s.reportStatuses(true)
@@ -165,7 +165,7 @@ func (s *packagesSyncer) syncPackage(
 	mustCreate := !pkgLocal.Exists
 	if pkgLocal.Exists {
 		if bytes.Equal(pkgLocal.Hash, pkgAvail.Hash) {
-			s.logger.Debugf("Package %s hash is unchanged, skipping", pkgName)
+			s.logger.DebugfContext(ctx, "Package %s hash is unchanged, skipping", pkgName)
 			return nil
 		}
 		if pkgLocal.Type != pkgAvail.Type {
@@ -256,7 +256,7 @@ func (s *packagesSyncer) shouldDownloadFile(
 
 // downloadFile downloads the file from the server.
 func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file *protobufs.DownloadableFile) error {
-	s.logger.Debugf("Downloading package %s file from %s", pkgName, file.DownloadUrl)
+	s.logger.DebugfContext(ctx, "Downloading package %s file from %s", pkgName, file.DownloadUrl)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", file.DownloadUrl, nil)
 	if err != nil {
