@@ -13,7 +13,3 @@ func (l *Logger) Debugf(format string, v ...interface{}) {
 func (l *Logger) Errorf(format string, v ...interface{}) {
 	l.Logger.Printf(format, v...)
 }
-
-func (l *Logger) Fatalf(format string, v ...interface{}) {
-	l.Logger.Fatalf(format, v...)
-}

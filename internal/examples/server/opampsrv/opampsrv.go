@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/examples/server/data"
@@ -65,7 +66,8 @@ func (srv *Server) Start() {
 	settings.TLSConfig = tlsConfig
 
 	if err := srv.opampSrv.Start(settings); err != nil {
-		srv.logger.Fatalf("OpAMP server start fail: %v", err.Error())
+		srv.logger.Errorf("OpAMP server start fail: %v", err.Error())
+		os.Exit(1)
 	}
 }
 
