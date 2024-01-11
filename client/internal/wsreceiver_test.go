@@ -20,24 +20,16 @@ type TestLogger struct {
 	*testing.T
 }
 
-func (logger TestLogger) Infof(format string, v ...interface{}) {
+func (logger TestLogger) Infof(ctx context.Context, format string, v ...interface{}) {
 	logger.Logf(format, v...)
 }
 
-func (logger TestLogger) Debugf(format string, v ...interface{}) {
+func (logger TestLogger) Debugf(ctx context.Context, format string, v ...interface{}) {
 	logger.Logf(format, v...)
 }
 
-func (logger TestLogger) InfofContext(ctx context.Context, format string, v ...interface{}) {
-	logger.Logf(format, v...)
-}
-
-func (logger TestLogger) DebugfContext(ctx context.Context, format string, v ...interface{}) {
-	logger.Logf(format, v...)
-}
-
-func (logger TestLogger) ErrorfContext(ctx context.Context, format string, v ...interface{}) {
-	logger.Logf(format, v...)
+func (logger TestLogger) Errorf(ctx context.Context, format string, v ...interface{}) {
+	logger.Fatalf(format, v...)
 }
 
 type commandAction int

@@ -101,17 +101,17 @@ func (s *packagesSyncer) initStatuses() error {
 func (s *packagesSyncer) doSync(ctx context.Context) {
 	hash, err := s.localState.AllPackagesHash()
 	if err != nil {
-		s.logger.ErrorfContext(ctx, "Package syncing failed: %V", err)
+		s.logger.Errorf(ctx, "Package syncing failed: %V", err)
 		return
 	}
 	if bytes.Compare(hash, s.available.AllPackagesHash) == 0 {
-		s.logger.DebugfContext(ctx, "All packages are already up to date.")
+		s.logger.Debugf(ctx, "All packages are already up to date.")
 		return
 	}
 
 	failed := false
-	if err := s.deleteUnneededLocalPackages(); err != nil {
-		s.logger.ErrorfContext(ctx, "Cannot delete unneeded packages: %v", err)
+	if err := s.deleteUnneededLocalPackages(ctx); err != nil {
+		s.logger.Errorf(ctx, "Cannot delete unneeded packages: %v", err)
 		failed = true
 	}
 
@@ -119,7 +119,7 @@ func (s *packagesSyncer) doSync(ctx context.Context) {
 	for name, pkg := range s.available.Packages {
 		err := s.syncPackage(ctx, name, pkg)
 		if err != nil {
-			s.logger.ErrorfContext(ctx, "Cannot sync package %s: %v", name, err)
+			s.logger.Errorf(ctx, "Cannot sync package %s: %v", name, err)
 			failed = true
 		}
 	}
@@ -128,15 +128,15 @@ func (s *packagesSyncer) doSync(ctx context.Context) {
 		// Update the "all" hash on success, so that next time Sync() does not thing,
 		// unless a new hash is received from the Server.
 		if err := s.localState.SetAllPackagesHash(s.available.AllPackagesHash); err != nil {
-			s.logger.ErrorfContext(ctx, "SetAllPackagesHash failed: %v", err)
+			s.logger.Errorf(ctx, "SetAllPackagesHash failed: %v", err)
 		} else {
-			s.logger.DebugfContext(ctx, "All packages are synced and up to date.")
+			s.logger.Debugf(ctx, "All packages are synced and up to date.")
 		}
 	} else {
-		s.logger.ErrorfContext(ctx, "Package syncing was not successful.")
+		s.logger.Errorf(ctx, "Package syncing was not successful.")
 	}
 
-	_ = s.reportStatuses(true)
+	_ = s.reportStatuses(ctx, true)
 }
 
 // syncPackage downloads the package from the server and installs it.
@@ -165,7 +165,7 @@ func (s *packagesSyncer) syncPackage(
 	mustCreate := !pkgLocal.Exists
 	if pkgLocal.Exists {
 		if bytes.Equal(pkgLocal.Hash, pkgAvail.Hash) {
-			s.logger.DebugfContext(ctx, "Package %s hash is unchanged, skipping", pkgName)
+			s.logger.Debugf(ctx, "Package %s hash is unchanged, skipping", pkgName)
 			return nil
 		}
 		if pkgLocal.Type != pkgAvail.Type {
@@ -183,7 +183,7 @@ func (s *packagesSyncer) syncPackage(
 
 	// Report that we are beginning to install it.
 	status.Status = protobufs.PackageStatusEnum_PackageStatusEnum_Installing
-	_ = s.reportStatuses(true)
+	_ = s.reportStatuses(ctx, true)
 
 	if mustCreate {
 		// Make sure the package exists.
@@ -213,7 +213,7 @@ func (s *packagesSyncer) syncPackage(
 		status.Status = protobufs.PackageStatusEnum_PackageStatusEnum_InstallFailed
 		status.ErrorMessage = err.Error()
 	}
-	_ = s.reportStatuses(true)
+	_ = s.reportStatuses(ctx, true)
 
 	return err
 }
@@ -224,7 +224,7 @@ func (s *packagesSyncer) syncPackage(
 func (s *packagesSyncer) syncPackageFile(
 	ctx context.Context, pkgName string, file *protobufs.DownloadableFile,
 ) error {
-	shouldDownload, err := s.shouldDownloadFile(pkgName, file)
+	shouldDownload, err := s.shouldDownloadFile(ctx, pkgName, file)
 	if err == nil && shouldDownload {
 		err = s.downloadFile(ctx, pkgName, file)
 	}
@@ -233,21 +233,18 @@ func (s *packagesSyncer) syncPackageFile(
 }
 
 // shouldDownloadFile returns true if the file should be downloaded.
-func (s *packagesSyncer) shouldDownloadFile(
-	packageName string,
-	file *protobufs.DownloadableFile,
-) (bool, error) {
+func (s *packagesSyncer) shouldDownloadFile(ctx context.Context, packageName string, file *protobufs.DownloadableFile) (bool, error) {
 	fileContentHash, err := s.localState.FileContentHash(packageName)
 
 	if err != nil {
 		err := fmt.Errorf("cannot calculate checksum of %s: %v", packageName, err)
-		s.logger.Errorf(err.Error())
+		s.logger.Errorf(ctx, err.Error())
 		return true, nil
 	} else {
 		// Compare the checksum of the file we have with what
 		// we are offered by the server.
 		if bytes.Compare(fileContentHash, file.ContentHash) != 0 {
-			s.logger.Debugf("Package %s: file hash mismatch, will download.", packageName)
+			s.logger.Debugf(ctx, "Package %s: file hash mismatch, will download.", packageName)
 			return true, nil
 		}
 	}
@@ -256,7 +253,7 @@ func (s *packagesSyncer) shouldDownloadFile(
 
 // downloadFile downloads the file from the server.
 func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file *protobufs.DownloadableFile) error {
-	s.logger.DebugfContext(ctx, "Downloading package %s file from %s", pkgName, file.DownloadUrl)
+	s.logger.Debugf(ctx, "Downloading package %s file from %s", pkgName, file.DownloadUrl)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", file.DownloadUrl, nil)
 	if err != nil {
@@ -286,7 +283,7 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 // deleteUnneededLocalPackages deletes local packages that are not
 // needed anymore. This is done by comparing the local package state
 // with the server's package state.
-func (s *packagesSyncer) deleteUnneededLocalPackages() error {
+func (s *packagesSyncer) deleteUnneededLocalPackages(ctx context.Context) error {
 	// Read the list of packages we have locally.
 	localPackages, err := s.localState.Packages()
 	if err != nil {
@@ -297,7 +294,7 @@ func (s *packagesSyncer) deleteUnneededLocalPackages() error {
 	for _, localPkg := range localPackages {
 		// Do we have a package that is not offered?
 		if _, offered := s.available.Packages[localPkg]; !offered {
-			s.logger.Debugf("Package %s is no longer needed, deleting.", localPkg)
+			s.logger.Debugf(ctx, "Package %s is no longer needed, deleting.", localPkg)
 			err := s.localState.DeletePackage(localPkg)
 			if err != nil {
 				lastErr = err
@@ -318,16 +315,16 @@ func (s *packagesSyncer) deleteUnneededLocalPackages() error {
 // reportStatuses saves the last reported statuses to provider and client state.
 // If sendImmediately is true, the statuses are scheduled to be
 // sent to the server.
-func (s *packagesSyncer) reportStatuses(sendImmediately bool) error {
+func (s *packagesSyncer) reportStatuses(ctx context.Context, sendImmediately bool) error {
 	// Save it in the user-supplied state provider.
 	if err := s.localState.SetLastReportedStatuses(s.statuses); err != nil {
-		s.logger.Errorf("Cannot save last reported statuses: %v", err)
+		s.logger.Errorf(ctx, "Cannot save last reported statuses: %v", err)
 		return err
 	}
 
 	// Also save it in our internal state (will be needed if the Server asks for it).
 	if err := s.clientSyncedState.SetPackageStatuses(s.statuses); err != nil {
-		s.logger.Errorf("Cannot save client state: %v", err)
+		s.logger.Errorf(ctx, "Cannot save client state: %v", err)
 		return err
 	}
 	s.sender.NextMessage().Update(

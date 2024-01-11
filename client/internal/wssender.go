@@ -33,7 +33,7 @@ func NewSender(logger types.Logger) *WSSender {
 // earlier. To stop the WSSender cancel the ctx.
 func (s *WSSender) Start(ctx context.Context, conn *websocket.Conn) error {
 	s.conn = conn
-	err := s.sendNextMessage()
+	err := s.sendNextMessage(ctx)
 
 	// Run the sender in the background.
 	s.stopped = make(chan struct{})
@@ -53,7 +53,7 @@ out:
 	for {
 		select {
 		case <-s.hasPendingMessage:
-			s.sendNextMessage()
+			s.sendNextMessage(ctx)
 
 		case <-ctx.Done():
 			break out
@@ -63,18 +63,18 @@ out:
 	close(s.stopped)
 }
 
-func (s *WSSender) sendNextMessage() error {
+func (s *WSSender) sendNextMessage(ctx context.Context) error {
 	msgToSend := s.nextMessage.PopPending()
 	if msgToSend != nil && !proto.Equal(msgToSend, &protobufs.AgentToServer{}) {
 		// There is a pending message and the message has some fields populated.
-		return s.sendMessage(msgToSend)
+		return s.sendMessage(ctx, msgToSend)
 	}
 	return nil
 }
 
-func (s *WSSender) sendMessage(msg *protobufs.AgentToServer) error {
+func (s *WSSender) sendMessage(ctx context.Context, msg *protobufs.AgentToServer) error {
 	if err := internal.WriteWSMessage(s.conn, msg); err != nil {
-		s.logger.Errorf("Cannot write WS message: %v", err)
+		s.logger.Errorf(ctx, "Cannot write WS message: %v", err)
 		// TODO: check if it is a connection error then propagate error back to Client and reconnect.
 		return err
 	}

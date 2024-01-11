@@ -148,10 +148,10 @@ func NewMetricReporter(
 	return reporter, nil
 }
 
-func (reporter *MetricReporter) processCpuTimeFunc(_ context.Context, result metric.Float64ObserverResult) {
+func (reporter *MetricReporter) processCpuTimeFunc(ctx context.Context, result metric.Float64ObserverResult) {
 	times, err := reporter.process.Times()
 	if err != nil {
-		reporter.logger.Errorf("Cannot get process CPU times: %v", err)
+		reporter.logger.Errorf(ctx, "Cannot get process CPU times: %v", err)
 	}
 
 	// Report process CPU times, but also add some randomness to make it interesting for demo.
@@ -160,10 +160,10 @@ func (reporter *MetricReporter) processCpuTimeFunc(_ context.Context, result met
 	result.Observe(math.Min(times.Iowait+rand.Float64(), 1), attribute.String("state", "wait"))
 }
 
-func (reporter *MetricReporter) processMemoryPhysicalFunc(_ context.Context, result metric.Int64ObserverResult) {
+func (reporter *MetricReporter) processMemoryPhysicalFunc(ctx context.Context, result metric.Int64ObserverResult) {
 	memory, err := reporter.process.MemoryInfo()
 	if err != nil {
-		reporter.logger.Errorf("Cannot get process memory information: %v", err)
+		reporter.logger.Errorf(ctx, "Cannot get process memory information: %v", err)
 		return
 	}
 
