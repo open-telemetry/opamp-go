@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -174,4 +176,37 @@ func TestDecodeMessage(t *testing.T) {
 			assert.True(t, proto.Equal(msg, &decoded))
 		}
 	}
+}
+
+func TestReceiverLoopStop(t *testing.T) {
+
+	srv := StartMockServer(t)
+
+	conn, _, err := websocket.DefaultDialer.DialContext(
+		context.Background(),
+		"ws://"+srv.Endpoint,
+		nil,
+	)
+	require.NoError(t, err)
+
+	var receiverLoppStopped bool
+
+	callbacks := types.CallbacksStruct{}
+	clientSyncedState := ClientSyncedState{
+		remoteConfigStatus: &protobufs.RemoteConfigStatus{},
+	}
+	sender := WSSender{}
+	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
+	receiver := NewWSReceiver(TestLogger{t}, callbacks, conn, &sender, &clientSyncedState, nil, capabilities)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		receiver.ReceiverLoop(ctx)
+		receiverLoppStopped = true
+	}()
+	cancel()
+
+	assert.Eventually(t, func() bool {
+		return receiverLoppStopped
+	}, 2*time.Second, 100*time.Millisecond, "ReceiverLoop should stop when context is cancelled")
 }
