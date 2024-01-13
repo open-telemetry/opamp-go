@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -189,7 +190,7 @@ func TestReceiverLoopStop(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	var receiverLoppStopped bool
+	var receiverLoopStopped atomic.Bool
 
 	callbacks := types.CallbacksStruct{}
 	clientSyncedState := ClientSyncedState{
@@ -202,11 +203,11 @@ func TestReceiverLoopStop(t *testing.T) {
 
 	go func() {
 		receiver.ReceiverLoop(ctx)
-		receiverLoppStopped = true
+		receiverLoopStopped.Store(true)
 	}()
 	cancel()
 
 	assert.Eventually(t, func() bool {
-		return receiverLoppStopped
+		return receiverLoopStopped.Load()
 	}, 2*time.Second, 100*time.Millisecond, "ReceiverLoop should stop when context is cancelled")
 }
