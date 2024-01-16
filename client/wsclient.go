@@ -288,9 +288,9 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		c.common.Logger.Debugf("Waiting for receiver to stop.")
 		select {
 		case <-r.IsStopped():
-			c.common.Logger.Debugf("shutdown handshake complete.")
+			c.common.Logger.Debugf(Receiver stopped.")
 		case <-time.After(c.connShutdownTimeout):
-			c.common.Logger.Debugf("timeout waiting for close message.")
+			c.common.Logger.Debugf("Timeout waiting for receiver to stop.")
 			// Close the connection to force the receive loop to stop.
 			_ = c.conn.Close()
 			<-r.IsStopped()
