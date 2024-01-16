@@ -50,10 +50,12 @@ func (s *WSSender) Start(ctx context.Context, conn *websocket.Conn) error {
 	return err
 }
 
+// IsStopped returns a channel that's closed when the sender is stopped.
 func (s *WSSender) IsStopped() <-chan struct{} {
 	return s.stopped
 }
 
+// Err returns the error of sending close message.
 func (s *WSSender) Err() error {
 	return s.err
 }
