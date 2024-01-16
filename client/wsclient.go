@@ -281,7 +281,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 	case <-c.sender.IsStopped():
 		// sender will send close message to initiate the close handshake
 		if err := c.sender.Err(); err != nil && err != websocket.ErrCloseSent {
-			c.common.Logger.Debugf("failed to send close message, close without the handshake.")
+			c.common.Logger.Debugf("Error stopping the sender: %v", err)
 			break
 		}
 
