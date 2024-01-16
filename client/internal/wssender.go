@@ -68,7 +68,9 @@ out:
 			s.sendNextMessage(ctx)
 
 		case <-ctx.Done():
-			s.err = s.sendCloseMessage()
+			if err := s.sendCloseMessage(); err != nil && err != websocket.ErrCloseSent {
+				s.err = err
+			}
 			break out
 		}
 	}
