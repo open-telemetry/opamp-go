@@ -285,7 +285,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 			break
 		}
 
-		c.common.Logger.Debugf("waiting for close message from server.")
+		c.common.Logger.Debugf("Waiting for receiver to stop.")
 		select {
 		case <-r.IsStopped():
 			c.common.Logger.Debugf("shutdown handshake complete.")
