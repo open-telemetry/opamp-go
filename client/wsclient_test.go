@@ -292,12 +292,12 @@ func TestPerformsClosingHandshake(t *testing.T) {
 		require.Fail(t, "Connection never established")
 	}
 
-	require.Eventually(t, func() bool {
+	eventually(t, func() bool {
 		client.connMutex.RLock()
 		conn := client.conn
 		client.connMutex.RUnlock()
 		return conn != nil
-	}, 2*time.Second, 250*time.Millisecond)
+	})
 
 	defHandler := wsConn.CloseHandler()
 
