@@ -149,7 +149,9 @@ func (s *packagesSyncer) syncPackage(
 	status := s.statuses.Packages[pkgName]
 	if status == nil {
 		// This package has no status. Create one.
-		status = &protobufs.PackageStatus{}
+		status = &protobufs.PackageStatus{
+			Name: pkgName,
+		}
 		s.statuses.Packages[pkgName] = status
 	}
 	status.ServerOfferedVersion = pkgAvail.Version
