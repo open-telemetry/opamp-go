@@ -129,7 +129,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 		}
 
 		if msg.AgentIdentification != nil {
-			err := r.rcvAgentIdentification(msg.AgentIdentification)
+			err := r.rcvAgentIdentification(ctx, msg.AgentIdentification)
 			if err == nil {
 				msgData.AgentIdentification = msg.AgentIdentification
 			}
@@ -146,7 +146,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 
 	err := msg.GetErrorResponse()
 	if err != nil {
-		r.processErrorResponse(err)
+		r.processErrorResponse(ctx, err)
 	}
 }
 
@@ -203,21 +203,21 @@ func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, sett
 	}
 }
 
-func (r *receivedProcessor) processErrorResponse(body *protobufs.ServerErrorResponse) {
+func (r *receivedProcessor) processErrorResponse(ctx context.Context, body *protobufs.ServerErrorResponse) {
 	// TODO: implement this.
-	r.logger.Errorf(context.Background(), "received an error from server: %s", body.ErrorMessage)
+	r.logger.Errorf(ctx, "received an error from server: %s", body.ErrorMessage)
 }
 
-func (r *receivedProcessor) rcvAgentIdentification(agentId *protobufs.AgentIdentification) error {
+func (r *receivedProcessor) rcvAgentIdentification(ctx context.Context, agentId *protobufs.AgentIdentification) error {
 	if agentId.NewInstanceUid == "" {
 		err := errors.New("empty instance uid is not allowed")
-		r.logger.Debugf(context.Background(), err.Error())
+		r.logger.Debugf(ctx, err.Error())
 		return err
 	}
 
 	err := r.sender.SetInstanceUid(agentId.NewInstanceUid)
 	if err != nil {
-		r.logger.Errorf(context.Background(), "Error while setting instance uid: %v", err)
+		r.logger.Errorf(ctx, "Error while setting instance uid: %v", err)
 		return err
 	}
 

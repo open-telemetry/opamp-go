@@ -316,7 +316,7 @@ service:
 	s.agentConfigOwnMetricsSection.Store(cfg)
 
 	// Need to recalculate the Agent config so that the metric config is included in it.
-	configChanged, err := s.recalcEffectiveConfig()
+	configChanged, err := s.recalcEffectiveConfig(ctx)
 	if err != nil {
 		return
 	}
@@ -327,7 +327,7 @@ service:
 // composeEffectiveConfig composes the effective config from multiple sources:
 // 1) the remote config from OpAMP Server, 2) the own metrics config section,
 // 3) the local override config that is hard-coded in the Supervisor.
-func (s *Supervisor) composeEffectiveConfig(config *protobufs.AgentRemoteConfig) (configChanged bool, err error) {
+func (s *Supervisor) composeEffectiveConfig(ctx context.Context, config *protobufs.AgentRemoteConfig) (configChanged bool, err error) {
 	var k = koanf.New(".")
 
 	// Begin with empty config. We will merge received configs on top of it.
@@ -387,7 +387,7 @@ func (s *Supervisor) composeEffectiveConfig(config *protobufs.AgentRemoteConfig)
 	newEffectiveConfig := string(effectiveConfigBytes)
 	configChanged = false
 	if s.effectiveConfig.Load().(string) != newEffectiveConfig {
-		s.logger.Debugf(context.Background(), "Effective config changed.")
+		s.logger.Debugf(ctx, "Effective config changed.")
 		s.effectiveConfig.Store(newEffectiveConfig)
 		configChanged = true
 	}
@@ -397,11 +397,11 @@ func (s *Supervisor) composeEffectiveConfig(config *protobufs.AgentRemoteConfig)
 
 // Recalculate the Agent's effective config and if the config changes signal to the
 // background goroutine that the config needs to be applied to the Agent.
-func (s *Supervisor) recalcEffectiveConfig() (configChanged bool, err error) {
+func (s *Supervisor) recalcEffectiveConfig(ctx context.Context) (configChanged bool, err error) {
 
-	configChanged, err = s.composeEffectiveConfig(s.remoteConfig)
+	configChanged, err = s.composeEffectiveConfig(ctx, s.remoteConfig)
 	if err != nil {
-		s.logger.Errorf(context.Background(), "Error composing effective config. Ignoring received config: %v", err)
+		s.logger.Errorf(ctx, "Error composing effective config. Ignoring received config: %v", err)
 		return configChanged, err
 	}
 
@@ -553,7 +553,7 @@ func (s *Supervisor) onMessage(ctx context.Context, msg *types.MessageData) {
 		s.logger.Debugf(ctx, "Received remote config from server, hash=%x.", s.remoteConfig.ConfigHash)
 
 		var err error
-		configChanged, err = s.recalcEffectiveConfig()
+		configChanged, err = s.recalcEffectiveConfig(ctx)
 		if err != nil {
 			s.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
 				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
