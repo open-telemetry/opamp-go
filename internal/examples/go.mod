@@ -15,7 +15,7 @@ require (
 	go.opentelemetry.io/otel/metric v0.26.0
 	go.opentelemetry.io/otel/sdk v1.3.0
 	go.opentelemetry.io/otel/sdk/metric v0.26.0
-	google.golang.org/protobuf v1.27.1
+	google.golang.org/protobuf v1.32.0
 )
 
 require (
