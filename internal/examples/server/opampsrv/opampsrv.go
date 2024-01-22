@@ -66,7 +66,7 @@ func (srv *Server) Start() {
 	settings.TLSConfig = tlsConfig
 
 	if err := srv.opampSrv.Start(settings); err != nil {
-		srv.logger.Errorf("OpAMP server start fail: %v", err.Error())
+		srv.logger.Errorf(context.Background(), "OpAMP server start fail: %v", err.Error())
 		os.Exit(1)
 	}
 }

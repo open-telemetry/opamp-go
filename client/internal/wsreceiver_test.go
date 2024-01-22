@@ -20,10 +20,6 @@ type TestLogger struct {
 	*testing.T
 }
 
-func (logger TestLogger) Infof(ctx context.Context, format string, v ...interface{}) {
-	logger.Logf(format, v...)
-}
-
 func (logger TestLogger) Debugf(ctx context.Context, format string, v ...interface{}) {
 	logger.Logf(format, v...)
 }

@@ -13,10 +13,6 @@ type Logger struct {
 	logger *log.Logger
 }
 
-func (l *Logger) Infof(ctx context.Context, format string, v ...interface{}) {
-	l.logger.Printf(format, v...)
-}
-
 func (l *Logger) Debugf(ctx context.Context, format string, v ...interface{}) {
 	l.logger.Printf(format, v...)
 }
