@@ -79,7 +79,7 @@ func (srv *Server) onDisconnect(conn types.Connection) {
 	srv.agents.RemoveConnection(conn)
 }
 
-func (srv *Server) onMessage(conn types.Connection, msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+func (srv *Server) onMessage(ctx context.Context, conn types.Connection, msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 	instanceId := data.InstanceId(msg.InstanceUid)
 
 	agent := srv.agents.FindOrCreateAgent(instanceId, conn)
