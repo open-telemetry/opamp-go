@@ -50,7 +50,7 @@ out:
 		var message protobufs.ServerToAgent
 		if err := r.receiveMessage(&message); err != nil {
 			if ctx.Err() == nil && !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-				r.logger.Errorf("Unexpected error while receiving: %v", err)
+				r.logger.Errorf(ctx, "Unexpected error while receiving: %v", err)
 			}
 			break out
 		} else {

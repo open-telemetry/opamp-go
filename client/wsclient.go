@@ -131,7 +131,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 			c.common.Callbacks.OnConnectFailed(err)
 		}
 		if resp != nil {
-			c.common.Logger.Errorf("Server responded with status=%v", resp.Status)
+			c.common.Logger.Errorf(ctx, "Server responded with status=%v", resp.Status)
 			duration := sharedinternal.ExtractRetryAfterHeader(resp)
 			return err, duration
 		}
@@ -168,10 +168,10 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 			{
 				if err, retryAfter := c.tryConnectOnce(ctx); err != nil {
 					if errors.Is(err, context.Canceled) {
-						c.common.Logger.Debugf("Client is stopped, will not try anymore.")
+						c.common.Logger.Debugf(ctx, "Client is stopped, will not try anymore.")
 						return err
 					} else {
-						c.common.Logger.Errorf("Connection failed (%v), will retry.", err)
+						c.common.Logger.Errorf(ctx, "Connection failed (%v), will retry.", err)
 					}
 					// Retry again a bit later.
 
@@ -189,7 +189,7 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 			}
 
 		case <-ctx.Done():
-			c.common.Logger.Debugf("Client is stopped, will not try anymore.")
+			c.common.Logger.Debugf(ctx, "Client is stopped, will not try anymore.")
 			timer.Stop()
 			return ctx.Err()
 		}
@@ -218,7 +218,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 	// Prepare the first status report.
 	err := c.common.PrepareFirstMessage(ctx)
 	if err != nil {
-		c.common.Logger.Errorf("cannot prepare the first message:%v", err)
+		c.common.Logger.Errorf(ctx, "cannot prepare the first message:%v", err)
 		return
 	}
 
@@ -228,7 +228,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 	// Connected successfully. Start the sender. This will also send the first
 	// status report.
 	if err := c.sender.Start(procCtx, c.conn); err != nil {
-		c.common.Logger.Errorf("Failed to send first status report: %v", err)
+		c.common.Logger.Errorf(procCtx, "Failed to send first status report: %v", err)
 		// We could not send the report, the only thing we can do is start over.
 		_ = c.conn.Close()
 		procCancel()

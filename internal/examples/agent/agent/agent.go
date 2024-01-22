@@ -81,12 +81,12 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 	}
 
 	agent.createAgentIdentity()
-	agent.logger.Debugf("Agent starting, id=%v, type=%s, version=%s.",
+	agent.logger.Debugf(context.Background(), "Agent starting, id=%v, type=%s, version=%s.",
 		agent.instanceId.String(), agentType, agentVersion)
 
 	agent.loadLocalConfig()
 	if err := agent.connect(); err != nil {
-		agent.logger.Errorf("Cannot connect OpAMP client: %v", err)
+		agent.logger.Errorf(context.Background(), "Cannot connect OpAMP client: %v", err)
 		return nil
 	}
 
@@ -110,13 +110,13 @@ func (agent *Agent) connect() error {
 		InstanceUid:    agent.instanceId.String(),
 		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func() {
-				agent.logger.Debugf("Connected to the server.")
+				agent.logger.Debugf(context.Background(), "Connected to the server.")
 			},
 			OnConnectFailedFunc: func(err error) {
-				agent.logger.Errorf("Failed to connect to the server: %v", err)
+				agent.logger.Errorf(context.Background(), "Failed to connect to the server: %v", err)
 			},
 			OnErrorFunc: func(err *protobufs.ServerErrorResponse) {
-				agent.logger.Errorf("Server returned an error response: %v", err.ErrorMessage)
+				agent.logger.Errorf(context.Background(), "Server returned an error response: %v", err.ErrorMessage)
 			},
 			SaveRemoteConfigStatusFunc: func(_ context.Context, status *protobufs.RemoteConfigStatus) {
 				agent.remoteConfigStatus = status
@@ -148,20 +148,20 @@ func (agent *Agent) connect() error {
 	// become known and can be checked.
 	agent.requestClientCertificate()
 
-	agent.logger.Debugf("Starting OpAMP client...")
+	agent.logger.Debugf(context.Background(), "Starting OpAMP client...")
 
 	err = agent.opampClient.Start(context.Background(), settings)
 	if err != nil {
 		return err
 	}
 
-	agent.logger.Debugf("OpAMP Client started.")
+	agent.logger.Debugf(context.Background(), "OpAMP Client started.")
 
 	return nil
 }
 
 func (agent *Agent) disconnect() {
-	agent.logger.Debugf("Disconnecting from server...")
+	agent.logger.Debugf(context.Background(), "Disconnecting from server...")
 	agent.opampClient.Stop(context.Background())
 }
 
@@ -210,7 +210,7 @@ func (agent *Agent) createAgentIdentity() {
 }
 
 func (agent *Agent) updateAgentIdentity(instanceId ulid.ULID) {
-	agent.logger.Debugf("Agent identify is being changed from id=%v to id=%v",
+	agent.logger.Debugf(context.Background(), "Agent identify is being changed from id=%v to id=%v",
 		agent.instanceId.String(),
 		instanceId.String())
 	agent.instanceId = instanceId
@@ -246,7 +246,7 @@ func (agent *Agent) composeEffectiveConfig() *protobufs.EffectiveConfig {
 func (agent *Agent) initMeter(settings *protobufs.TelemetryConnectionSettings) {
 	reporter, err := NewMetricReporter(agent.logger, settings, agent.agentType, agent.agentVersion, agent.instanceId)
 	if err != nil {
-		agent.logger.Errorf("Cannot collect metrics: %v", err)
+		agent.logger.Errorf(context.Background(), "Cannot collect metrics: %v", err)
 		return
 	}
 
@@ -287,7 +287,7 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 		return false, nil
 	}
 
-	agent.logger.Debugf("Received remote config from server, hash=%x.", config.ConfigHash)
+	agent.logger.Debugf(context.Background(), "Received remote config from server, hash=%x.", config.ConfigHash)
 
 	// Begin with local config. We will later merge received configs on top of it.
 	var k = koanf.New(".")
@@ -341,7 +341,7 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 	newEffectiveConfig := string(effectiveConfigBytes)
 	configChanged = false
 	if agent.effectiveConfig != newEffectiveConfig {
-		agent.logger.Debugf("Effective config changed. Need to report to server.")
+		agent.logger.Debugf(context.Background(), "Effective config changed. Need to report to server.")
 		agent.effectiveConfig = newEffectiveConfig
 		configChanged = true
 	}
@@ -350,7 +350,7 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 }
 
 func (agent *Agent) Shutdown() {
-	agent.logger.Debugf("Agent shutting down...")
+	agent.logger.Debugf(context.Background(), "Agent shutting down...")
 	if agent.opampClient != nil {
 		_ = agent.opampClient.Stop(context.Background())
 	}
@@ -370,7 +370,7 @@ func (agent *Agent) requestClientCertificate() {
 	// Generate a keypair for new client cert.
 	clientCertKeyPair, err := rsa.GenerateKey(cryptorand.Reader, 4096)
 	if err != nil {
-		agent.logger.Errorf("Cannot generate keypair: %v", err)
+		agent.logger.Errorf(context.Background(), "Cannot generate keypair: %v", err)
 		return
 	}
 
@@ -401,7 +401,7 @@ func (agent *Agent) requestClientCertificate() {
 
 	derBytes, err := x509.CreateCertificateRequest(cryptorand.Reader, &template, clientCertKeyPair)
 	if err != nil {
-		agent.logger.Errorf("Failed to create certificate request: %s", err)
+		agent.logger.Errorf(context.Background(), "Failed to create certificate request: %s", err)
 		return
 	}
 
@@ -426,7 +426,7 @@ func (agent *Agent) requestClientCertificate() {
 		},
 	)
 	if err != nil {
-		agent.logger.Errorf("Failed to send CSR to server: %s", err)
+		agent.logger.Errorf(context.Background(), "Failed to send CSR to server: %s", err)
 		return
 	}
 
@@ -461,7 +461,7 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	if msg.AgentIdentification != nil {
 		newInstanceId, err := ulid.Parse(msg.AgentIdentification.NewInstanceUid)
 		if err != nil {
-			agent.logger.Errorf(err.Error())
+			agent.logger.Errorf(ctx, err.Error())
 		}
 		agent.updateAgentIdentity(newInstanceId)
 	}
@@ -469,7 +469,7 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	if configChanged {
 		err := agent.opampClient.UpdateEffectiveConfig(ctx)
 		if err != nil {
-			agent.logger.Errorf(err.Error())
+			agent.logger.Errorf(context.Background(), err.Error())
 		}
 	}
 
@@ -483,22 +483,22 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	agent.requestClientCertificate()
 }
 
-func (agent *Agent) tryChangeOpAMPCert(cert *tls.Certificate) {
-	agent.logger.Debugf("Reconnecting to verify offered client certificate.\n")
+func (agent *Agent) tryChangeOpAMPCert(ctx context.Context, cert *tls.Certificate) {
+	agent.logger.Debugf(ctx, "Reconnecting to verify offered client certificate.\n")
 
 	agent.disconnect()
 
 	agent.opampClientCert = cert
 	if err := agent.connect(); err != nil {
-		agent.logger.Errorf("Cannot connect using offered certificate: %s. Ignoring the offer\n", err)
+		agent.logger.Errorf(ctx, "Cannot connect using offered certificate: %s. Ignoring the offer\n", err)
 		agent.opampClientCert = nil
 
 		if err := agent.connect(); err != nil {
-			agent.logger.Errorf("Unable to reconnect after restoring client certificate: %v\n", err)
+			agent.logger.Errorf(ctx, "Unable to reconnect after restoring client certificate: %v\n", err)
 		}
 	}
 
-	agent.logger.Debugf("Successfully connected to server. Accepting new client certificate.\n")
+	agent.logger.Debugf(ctx, "Successfully connected to server. Accepting new client certificate.\n")
 
 	// TODO: we can also persist the successfully accepted certificate and use it when the
 	// agent connects to the server after the restart.
@@ -506,7 +506,7 @@ func (agent *Agent) tryChangeOpAMPCert(cert *tls.Certificate) {
 
 func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *protobufs.OpAMPConnectionSettings) error {
 	if settings == nil || settings.Certificate == nil {
-		agent.logger.Debugf("Received nil certificate offer, ignoring.\n")
+		agent.logger.Debugf(ctx, "Received nil certificate offer, ignoring.\n")
 		return nil
 	}
 
@@ -516,7 +516,7 @@ func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *pro
 	}
 
 	// TODO: also use settings.DestinationEndpoint and settings.Headers for future connections.
-	go agent.tryChangeOpAMPCert(cert)
+	go agent.tryChangeOpAMPCert(ctx, cert)
 
 	return nil
 }
@@ -548,7 +548,7 @@ func (agent *Agent) getCertFromSettings(certificate *protobufs.TLSCertificate) (
 	}
 
 	if err != nil {
-		agent.logger.Errorf("Received invalid certificate offer: %s\n", err.Error())
+		agent.logger.Errorf(context.Background(), "Received invalid certificate offer: %s\n", err.Error())
 		return nil, err
 	}
 
@@ -556,10 +556,10 @@ func (agent *Agent) getCertFromSettings(certificate *protobufs.TLSCertificate) (
 		caCertPB, _ := pem.Decode(certificate.CaPublicKey)
 		caCert, err := x509.ParseCertificate(caCertPB.Bytes)
 		if err != nil {
-			agent.logger.Errorf("Cannot parse CA cert: %v", err)
+			agent.logger.Errorf(context.Background(), "Cannot parse CA cert: %v", err)
 			return nil, err
 		}
-		agent.logger.Debugf("Received offer signed by CA: %v", caCert.Subject)
+		agent.logger.Debugf(context.Background(), "Received offer signed by CA: %v", caCert.Subject)
 		// TODO: we can verify the CA's identity here (to match our CA as we know it).
 	}
 
