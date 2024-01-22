@@ -130,7 +130,9 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 
 		if msg.AgentIdentification != nil {
 			err := r.rcvAgentIdentification(ctx, msg.AgentIdentification)
-			if err == nil {
+			if err != nil {
+				r.logger.Errorf(ctx, "Failed to set agent ID: %v", err)
+			} else {
 				msgData.AgentIdentification = msg.AgentIdentification
 			}
 		}
