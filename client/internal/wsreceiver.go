@@ -43,23 +43,22 @@ func NewWSReceiver(
 
 // ReceiverLoop runs the receiver loop. To stop the receiver cancel the context.
 func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
+	type receivedMessage struct {
+		message *protobufs.ServerToAgent
+		err     error
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			result := make(chan struct {
-				message *protobufs.ServerToAgent
-				err     error
-			}, 1)
+			result := make(chan receivedMessage, 1)
 
 			go func() {
 				var message protobufs.ServerToAgent
 				err := r.receiveMessage(&message)
-				result <- struct {
-					message *protobufs.ServerToAgent
-					err     error
-				}{&message, err}
+				result <- receivedMessage{&message, err}
 			}()
 
 			select {
