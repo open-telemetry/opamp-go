@@ -43,22 +43,38 @@ func NewWSReceiver(
 
 // ReceiverLoop runs the receiver loop. To stop the receiver cancel the context.
 func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
-	runContext, cancelFunc := context.WithCancel(ctx)
-
-out:
-	for {
-		var message protobufs.ServerToAgent
-		if err := r.receiveMessage(&message); err != nil {
-			if ctx.Err() == nil && !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-				r.logger.Errorf(ctx, "Unexpected error while receiving: %v", err)
-			}
-			break out
-		} else {
-			r.processor.ProcessReceivedMessage(runContext, &message)
-		}
+	type receivedMessage struct {
+		message *protobufs.ServerToAgent
+		err     error
 	}
 
-	cancelFunc()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			result := make(chan receivedMessage, 1)
+
+			go func() {
+				var message protobufs.ServerToAgent
+				err := r.receiveMessage(&message)
+				result <- receivedMessage{&message, err}
+			}()
+
+			select {
+			case <-ctx.Done():
+				return
+			case res := <-result:
+				if res.err != nil {
+					if !websocket.IsCloseError(res.err, websocket.CloseNormalClosure) {
+						r.logger.Errorf(ctx, "Unexpected error while receiving: %v", res.err)
+					}
+					return
+				}
+				r.processor.ProcessReceivedMessage(ctx, res.message)
+			}
+		}
+	}
 }
 
 func (r *wsReceiver) receiveMessage(msg *protobufs.ServerToAgent) error {
