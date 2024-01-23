@@ -68,7 +68,7 @@ func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 			case res := <-result:
 				if res.err != nil {
 					if !websocket.IsCloseError(res.err, websocket.CloseNormalClosure) {
-						r.logger.Errorf("Unexpected error while receiving: %v", res.err)
+						r.logger.Errorf(ctx, "Unexpected error while receiving: %v", res.err)
 					}
 					return
 				}

@@ -130,7 +130,7 @@ func (s *server) startHttpServer(listenAddr string, serveFunc func(l net.Listene
 		// ErrServerClosed is expected after successful Stop(), so we won't log that
 		// particular error.
 		if err != nil && err != http.ErrServerClosed {
-			s.logger.Errorf("Error running HTTP Server: %v", err)
+			s.logger.Errorf(context.Background(), "Error running HTTP Server: %v", err)
 		}
 	}()
 
@@ -179,7 +179,7 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 	// No, it is a WebSocket. Upgrade it.
 	conn, err := s.wsUpgrader.Upgrade(w, req, nil)
 	if err != nil {
-		s.logger.Errorf("Cannot upgrade HTTP connection to WebSocket: %v", err)
+		s.logger.Errorf(context.Background(), "Cannot upgrade HTTP connection to WebSocket: %v", err)
 		return
 	}
 
@@ -196,7 +196,7 @@ func (s *server) handleWSConnection(wsConn *websocket.Conn, connectionCallbacks 
 		defer func() {
 			err := wsConn.Close()
 			if err != nil {
-				s.logger.Errorf("error closing the WebSocket connection: %v", err)
+				s.logger.Errorf(context.Background(), "error closing the WebSocket connection: %v", err)
 			}
 		}()
 
@@ -215,15 +215,15 @@ func (s *server) handleWSConnection(wsConn *websocket.Conn, connectionCallbacks 
 		mt, bytes, err := wsConn.ReadMessage()
 		if err != nil {
 			if !websocket.IsUnexpectedCloseError(err) {
-				s.logger.Errorf("Cannot read a message from WebSocket: %v", err)
+				s.logger.Errorf(context.Background(), "Cannot read a message from WebSocket: %v", err)
 				break
 			}
 			// This is a normal closing of the WebSocket connection.
-			s.logger.Debugf("Agent disconnected: %v", err)
+			s.logger.Debugf(context.Background(), "Agent disconnected: %v", err)
 			break
 		}
 		if mt != websocket.BinaryMessage {
-			s.logger.Errorf("Received unexpected message type from WebSocket: %v", mt)
+			s.logger.Errorf(context.Background(), "Received unexpected message type from WebSocket: %v", mt)
 			continue
 		}
 
@@ -231,7 +231,7 @@ func (s *server) handleWSConnection(wsConn *websocket.Conn, connectionCallbacks 
 		var request protobufs.AgentToServer
 		err = internal.DecodeWSMessage(bytes, &request)
 		if err != nil {
-			s.logger.Errorf("Cannot decode message from WebSocket: %v", err)
+			s.logger.Errorf(context.Background(), "Cannot decode message from WebSocket: %v", err)
 			continue
 		}
 
@@ -242,7 +242,7 @@ func (s *server) handleWSConnection(wsConn *websocket.Conn, connectionCallbacks 
 			}
 			err = agentConn.Send(context.Background(), response)
 			if err != nil {
-				s.logger.Errorf("Cannot send message to WebSocket: %v", err)
+				s.logger.Errorf(context.Background(), "Cannot send message to WebSocket: %v", err)
 			}
 		}
 	}
@@ -288,7 +288,7 @@ func compressGzip(data []byte) ([]byte, error) {
 func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter, connectionCallbacks serverTypes.ConnectionCallbacks) {
 	bytes, err := s.readReqBody(req)
 	if err != nil {
-		s.logger.Debugf("Cannot read HTTP body: %v", err)
+		s.logger.Debugf(context.Background(), "Cannot read HTTP body: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -297,7 +297,7 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	var request protobufs.AgentToServer
 	err = proto.Unmarshal(bytes, &request)
 	if err != nil {
-		s.logger.Debugf("Cannot decode message from HTTP Body: %v", err)
+		s.logger.Debugf(context.Background(), "Cannot decode message from HTTP Body: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -340,7 +340,7 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	if req.Header.Get(headerAcceptEncoding) == contentEncodingGzip {
 		bytes, err = compressGzip(bytes)
 		if err != nil {
-			s.logger.Errorf("Cannot compress response: %v", err)
+			s.logger.Errorf(context.Background(), "Cannot compress response: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -349,6 +349,6 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	_, err = w.Write(bytes)
 
 	if err != nil {
-		s.logger.Debugf("Cannot send HTTP response: %v", err)
+		s.logger.Debugf(context.Background(), "Cannot send HTTP response: %v", err)
 	}
 }

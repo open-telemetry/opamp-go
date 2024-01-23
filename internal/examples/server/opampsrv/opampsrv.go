@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/examples/server/data"
@@ -60,11 +61,14 @@ func (srv *Server) Start() {
 		"../../certs/server_certs/server.key.pem",
 	)
 	if err != nil {
-		srv.logger.Debugf("Could not load TLS config, working without TLS: %v", err.Error())
+		srv.logger.Debugf(context.Background(), "Could not load TLS config, working without TLS: %v", err.Error())
 	}
 	settings.TLSConfig = tlsConfig
 
-	srv.opampSrv.Start(settings)
+	if err := srv.opampSrv.Start(settings); err != nil {
+		srv.logger.Errorf(context.Background(), "OpAMP server start fail: %v", err.Error())
+		os.Exit(1)
+	}
 }
 
 func (srv *Server) Stop() {
