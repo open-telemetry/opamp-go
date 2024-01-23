@@ -160,9 +160,9 @@ func (agent *Agent) connect() error {
 	return nil
 }
 
-func (agent *Agent) disconnect() {
-	agent.logger.Debugf(context.Background(), "Disconnecting from server...")
-	agent.opampClient.Stop(context.Background())
+func (agent *Agent) disconnect(ctx context.Context) {
+	agent.logger.Debugf(ctx, "Disconnecting from server...")
+	agent.opampClient.Stop(ctx)
 }
 
 func (agent *Agent) createAgentIdentity() {
@@ -209,8 +209,8 @@ func (agent *Agent) createAgentIdentity() {
 	}
 }
 
-func (agent *Agent) updateAgentIdentity(instanceId ulid.ULID) {
-	agent.logger.Debugf(context.Background(), "Agent identify is being changed from id=%v to id=%v",
+func (agent *Agent) updateAgentIdentity(ctx context.Context, instanceId ulid.ULID) {
+	agent.logger.Debugf(ctx, "Agent identify is being changed from id=%v to id=%v",
 		agent.instanceId.String(),
 		instanceId.String())
 	agent.instanceId = instanceId
@@ -463,13 +463,13 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 		if err != nil {
 			agent.logger.Errorf(ctx, err.Error())
 		}
-		agent.updateAgentIdentity(newInstanceId)
+		agent.updateAgentIdentity(ctx, newInstanceId)
 	}
 
 	if configChanged {
 		err := agent.opampClient.UpdateEffectiveConfig(ctx)
 		if err != nil {
-			agent.logger.Errorf(context.Background(), err.Error())
+			agent.logger.Errorf(ctx, err.Error())
 		}
 	}
 
@@ -486,7 +486,7 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 func (agent *Agent) tryChangeOpAMPCert(ctx context.Context, cert *tls.Certificate) {
 	agent.logger.Debugf(ctx, "Reconnecting to verify offered client certificate.\n")
 
-	agent.disconnect()
+	agent.disconnect(ctx)
 
 	agent.opampClientCert = cert
 	if err := agent.connect(); err != nil {

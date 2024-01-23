@@ -137,7 +137,7 @@ func TestServerStartAcceptConnection(t *testing.T) {
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(conn types.Connection) {
+				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
 					srvConn = conn
 					atomic.StoreInt32(&connectedCalled, 1)
 				},
@@ -225,7 +225,7 @@ func TestServerReceiveSendMessage(t *testing.T) {
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				OnMessageFunc: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 					// Remember received message.
 					rcvMsg.Store(message)
 
@@ -292,7 +292,7 @@ func TestServerReceiveSendMessageWithCompression(t *testing.T) {
 			callbacks := CallbacksStruct{
 				OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 					return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-						OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+						OnMessageFunc: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 							// Remember received message.
 							rcvMsg.Store(message)
 
@@ -390,10 +390,10 @@ func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(conn types.Connection) {
+				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
 					atomic.StoreInt32(&onConnectedCalled, 1)
 				},
-				OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				OnMessageFunc: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 					// Remember received message.
 					rcvMsg.Store(message)
 
@@ -458,7 +458,7 @@ func TestServerAttachAcceptConnection(t *testing.T) {
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(conn types.Connection) {
+				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
 					atomic.StoreInt32(&connectedCalled, 1)
 					srvConn = conn
 				},
@@ -508,11 +508,11 @@ func TestServerAttachSendMessagePlainHTTP(t *testing.T) {
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(conn types.Connection) {
+				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
 					atomic.StoreInt32(&connectedCalled, 1)
 					srvConn = conn
 				},
-				OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				OnMessageFunc: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 					// Remember received message.
 					rcvMsg.Store(message)
 
@@ -590,10 +590,10 @@ func TestServerHonoursClientRequestContentEncoding(t *testing.T) {
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(conn types.Connection) {
+				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
 					atomic.StoreInt32(&onConnectedCalled, 1)
 				},
-				OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				OnMessageFunc: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 					// Remember received message.
 					rcvMsg.Store(message)
 
@@ -667,10 +667,10 @@ func TestServerHonoursAcceptEncoding(t *testing.T) {
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(conn types.Connection) {
+				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
 					atomic.StoreInt32(&onConnectedCalled, 1)
 				},
-				OnMessageFunc: func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				OnMessageFunc: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 					// Remember received message.
 					rcvMsg.Store(message)
 
@@ -772,7 +772,7 @@ func TestConnectionAllowsConcurrentWrites(t *testing.T) {
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(conn types.Connection) {
+				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
 					srvConnVal.Store(conn)
 				},
 			}}
@@ -827,7 +827,7 @@ func BenchmarkSendToClient(b *testing.B) {
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(conn types.Connection) {
+				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
 					srvConnectionsMutex.Lock()
 					serverConnections = append(serverConnections, conn)
 					srvConnectionsMutex.Unlock()

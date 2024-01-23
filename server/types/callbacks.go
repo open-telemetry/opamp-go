@@ -1,6 +1,7 @@
 package types
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -38,16 +39,16 @@ type ConnectionCallbacks interface {
 	// The following callbacks will never be called concurrently for the same
 	// connection. They may be called concurrently for different connections.
 
-	// OnConnected is called when and incoming OpAMP connection is successfully
+	// OnConnected is called when an incoming OpAMP connection is successfully
 	// established after OnConnecting() returns.
-	OnConnected(conn Connection)
+	OnConnected(ctx context.Context, conn Connection)
 
 	// OnMessage is called when a message is received from the connection. Can happen
 	// only after OnConnected(). Must return a ServerToAgent message that will be sent
 	// as a response to the Agent.
 	// For plain HTTP requests once OnMessage returns and the response is sent
 	// to the Agent the OnConnectionClose message will be called immediately.
-	OnMessage(conn Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent
+	OnMessage(ctx context.Context, conn Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent
 
 	// OnConnectionClose is called when the OpAMP connection is closed.
 	OnConnectionClose(conn Connection)

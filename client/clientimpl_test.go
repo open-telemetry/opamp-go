@@ -627,12 +627,24 @@ func TestAgentIdentification(t *testing.T) {
 			ulid.Timestamp(time.Now()), ulid.Monotonic(rand.New(rand.NewSource(0)), 0),
 		)
 		var rcvAgentInstanceUid atomic.Value
+		var sentInvalidId atomic.Bool
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			rcvAgentInstanceUid.Store(msg.InstanceUid)
+			if sentInvalidId.Load() {
+				return &protobufs.ServerToAgent{
+					InstanceUid: msg.InstanceUid,
+					AgentIdentification: &protobufs.AgentIdentification{
+						// If we sent the invalid one first, send a valid one now
+						NewInstanceUid: newInstanceUid.String(),
+					},
+				}
+			}
+			sentInvalidId.Store(true)
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
 				AgentIdentification: &protobufs.AgentIdentification{
-					NewInstanceUid: newInstanceUid.String(),
+					// Start by sending an invalid id forcing an error.
+					NewInstanceUid: "",
 				},
 			}
 		}
@@ -658,6 +670,21 @@ func TestAgentIdentification(t *testing.T) {
 		)
 
 		// Send a dummy message
+		_ = client.SetAgentDescription(createAgentDescr())
+
+		// Verify that the old instance id was not overridden
+		eventually(
+			t,
+			func() bool {
+				instanceUid, ok := rcvAgentInstanceUid.Load().(string)
+				if !ok {
+					return false
+				}
+				return instanceUid == oldInstanceUid
+			},
+		)
+
+		// Send a dummy message again to get the _new_ id
 		_ = client.SetAgentDescription(createAgentDescr())
 
 		// When it was sent, the new instance uid should have been used, which should
