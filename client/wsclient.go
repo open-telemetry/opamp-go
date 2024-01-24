@@ -282,6 +282,10 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		// sender will send close message to initiate the close handshake
 		if err := c.sender.StoppingErr(); err != nil {
 			c.common.Logger.Debugf("Error stopping the sender: %v", err)
+
+			// Close the connection to stop the receiver.
+			_ = c.conn.Close()
+			<-r.IsStopped()
 			break
 		}
 
