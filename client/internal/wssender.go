@@ -55,8 +55,10 @@ func (s *WSSender) IsStopped() <-chan struct{} {
 	return s.stopped
 }
 
-// Err returns the error of sending close message.
-func (s *WSSender) Err() error {
+// StoppingErr returns an error if there was a problem with stopping the sender.
+// If stopping was successful will return nil.
+// StoppingErr() can be called only after IsStopped() is signalled.
+func (s *WSSender) StoppingErr() error {
 	return s.err
 }
 

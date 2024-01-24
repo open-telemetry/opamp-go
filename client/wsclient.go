@@ -280,7 +280,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 	select {
 	case <-c.sender.IsStopped():
 		// sender will send close message to initiate the close handshake
-		if err := c.sender.Err(); err != nil {
+		if err := c.sender.StoppingErr(); err != nil {
 			c.common.Logger.Debugf("Error stopping the sender: %v", err)
 			break
 		}
