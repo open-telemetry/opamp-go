@@ -128,7 +128,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 	conn, resp, err := c.dialer.DialContext(ctx, c.url.String(), c.requestHeader)
 	if err != nil {
 		if c.common.Callbacks != nil && !c.common.IsStopping() {
-			c.common.Callbacks.OnConnectFailed(err)
+			c.common.Callbacks.OnConnectFailed(ctx, err)
 		}
 		if resp != nil {
 			c.common.Logger.Errorf(ctx, "Server responded with status=%v", resp.Status)
@@ -143,7 +143,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 	c.conn = conn
 	c.connMutex.Unlock()
 	if c.common.Callbacks != nil {
-		c.common.Callbacks.OnConnect()
+		c.common.Callbacks.OnConnect(ctx)
 	}
 
 	return nil, sharedinternal.OptionalDuration{Defined: false}

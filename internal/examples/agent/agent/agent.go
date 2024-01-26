@@ -109,14 +109,14 @@ func (agent *Agent) connect() error {
 		TLSConfig:      tlsConfig,
 		InstanceUid:    agent.instanceId.String(),
 		Callbacks: types.CallbacksStruct{
-			OnConnectFunc: func() {
-				agent.logger.Debugf(context.Background(), "Connected to the server.")
+			OnConnectFunc: func(ctx context.Context) {
+				agent.logger.Debugf(ctx, "Connected to the server.")
 			},
-			OnConnectFailedFunc: func(err error) {
-				agent.logger.Errorf(context.Background(), "Failed to connect to the server: %v", err)
+			OnConnectFailedFunc: func(ctx context.Context, err error) {
+				agent.logger.Errorf(ctx, "Failed to connect to the server: %v", err)
 			},
-			OnErrorFunc: func(err *protobufs.ServerErrorResponse) {
-				agent.logger.Errorf(context.Background(), "Server returned an error response: %v", err.ErrorMessage)
+			OnErrorFunc: func(ctx context.Context, err *protobufs.ServerErrorResponse) {
+				agent.logger.Errorf(ctx, "Server returned an error response: %v", err.ErrorMessage)
 			},
 			SaveRemoteConfigStatusFunc: func(_ context.Context, status *protobufs.RemoteConfigStatus) {
 				agent.remoteConfigStatus = status

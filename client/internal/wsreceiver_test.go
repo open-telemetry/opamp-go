@@ -72,7 +72,7 @@ func TestServerToAgentCommand(t *testing.T) {
 			action := none
 
 			callbacks := types.CallbacksStruct{
-				OnCommandFunc: func(command *protobufs.ServerToAgentCommand) error {
+				OnCommandFunc: func(ctx context.Context, command *protobufs.ServerToAgentCommand) error {
 					switch command.Type {
 					case protobufs.CommandType_CommandType_Restart:
 						action = restart
@@ -132,7 +132,7 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 		calledOnMessageConfig := false
 
 		callbacks := types.CallbacksStruct{
-			OnCommandFunc: func(command *protobufs.ServerToAgentCommand) error {
+			OnCommandFunc: func(ctx context.Context, command *protobufs.ServerToAgentCommand) error {
 				calledCommand = true
 				return nil
 			},
