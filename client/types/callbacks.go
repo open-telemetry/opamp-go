@@ -40,6 +40,7 @@ type MessageData struct {
 }
 
 // Callbacks is an interface for the Client to handle messages from the Server.
+// Callbacks are expected to honour the context passed to them, meaning they should be aware of cancellations.
 type Callbacks interface {
 	// OnConnect is called when the connection is successfully established to the Server.
 	// May be called after Start() is called and every time a connection is established to the Server.
