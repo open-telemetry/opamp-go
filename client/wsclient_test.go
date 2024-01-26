@@ -31,10 +31,10 @@ func TestDisconnectWSByServer(t *testing.T) {
 	var connectErr atomic.Value
 	settings := types.StartSettings{
 		Callbacks: types.CallbacksStruct{
-			OnConnectFunc: func() {
+			OnConnectFunc: func(ctx context.Context) {
 				atomic.StoreInt64(&connected, 1)
 			},
-			OnConnectFailedFunc: func(err error) {
+			OnConnectFailedFunc: func(ctx context.Context, err error) {
 				connectErr.Store(err)
 			},
 		},

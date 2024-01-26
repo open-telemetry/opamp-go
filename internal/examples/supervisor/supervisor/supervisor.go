@@ -140,14 +140,14 @@ func (s *Supervisor) startOpAMP() error {
 		},
 		InstanceUid: s.instanceId.String(),
 		Callbacks: types.CallbacksStruct{
-			OnConnectFunc: func() {
-				s.logger.Debugf(context.Background(), "Connected to the server.")
+			OnConnectFunc: func(ctx context.Context) {
+				s.logger.Debugf(ctx, "Connected to the server.")
 			},
-			OnConnectFailedFunc: func(err error) {
-				s.logger.Errorf(context.Background(), "Failed to connect to the server: %v", err)
+			OnConnectFailedFunc: func(ctx context.Context, err error) {
+				s.logger.Errorf(ctx, "Failed to connect to the server: %v", err)
 			},
-			OnErrorFunc: func(err *protobufs.ServerErrorResponse) {
-				s.logger.Errorf(context.Background(), "Server returned an error response: %v", err.ErrorMessage)
+			OnErrorFunc: func(ctx context.Context, err *protobufs.ServerErrorResponse) {
+				s.logger.Errorf(ctx, "Server returned an error response: %v", err.ErrorMessage)
 			},
 			GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 				return s.createEffectiveConfigMsg(), nil

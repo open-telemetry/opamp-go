@@ -161,7 +161,7 @@ func TestOnConnectFail(t *testing.T) {
 		var connectErr atomic.Value
 		settings := createNoServerSettings()
 		settings.Callbacks = types.CallbacksStruct{
-			OnConnectFailedFunc: func(err error) {
+			OnConnectFailedFunc: func(ctx context.Context, err error) {
 				connectErr.Store(err)
 			},
 		}
@@ -238,7 +238,7 @@ func TestConnectWithServer(t *testing.T) {
 		var connected int64
 		settings := types.StartSettings{
 			Callbacks: types.CallbacksStruct{
-				OnConnectFunc: func() {
+				OnConnectFunc: func(ctx context.Context) {
 					atomic.StoreInt64(&connected, 1)
 				},
 			},
@@ -276,11 +276,11 @@ func TestConnectWithServer503(t *testing.T) {
 		var connectErr atomic.Value
 		settings := types.StartSettings{
 			Callbacks: types.CallbacksStruct{
-				OnConnectFunc: func() {
+				OnConnectFunc: func(ctx context.Context) {
 					atomic.StoreInt64(&clientConnected, 1)
 					assert.Fail(t, "Client should not be able to connect")
 				},
-				OnConnectFailedFunc: func(err error) {
+				OnConnectFailedFunc: func(ctx context.Context, err error) {
 					connectErr.Store(err)
 				},
 			},
@@ -405,7 +405,7 @@ func TestFirstStatusReport(t *testing.T) {
 		var connected, remoteConfigReceived int64
 		settings := types.StartSettings{
 			Callbacks: types.CallbacksStruct{
-				OnConnectFunc: func() {
+				OnConnectFunc: func(ctx context.Context) {
 					atomic.AddInt64(&connected, 1)
 				},
 				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
@@ -458,7 +458,7 @@ func TestIncludesDetailsOnReconnect(t *testing.T) {
 	var connected int64
 	settings := types.StartSettings{
 		Callbacks: types.CallbacksStruct{
-			OnConnectFunc: func() {
+			OnConnectFunc: func(ctx context.Context) {
 				atomic.AddInt64(&connected, 1)
 			},
 		},

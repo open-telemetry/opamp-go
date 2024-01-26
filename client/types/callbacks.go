@@ -40,23 +40,24 @@ type MessageData struct {
 }
 
 // Callbacks is an interface for the Client to handle messages from the Server.
+// Callbacks are expected to honour the context passed to them, meaning they should be aware of cancellations.
 type Callbacks interface {
 	// OnConnect is called when the connection is successfully established to the Server.
 	// May be called after Start() is called and every time a connection is established to the Server.
 	// For WebSocket clients this is called after the handshake is completed without any error.
 	// For HTTP clients this is called for any request if the response status is OK.
-	OnConnect()
+	OnConnect(ctx context.Context)
 
 	// OnConnectFailed is called when the connection to the Server cannot be established.
 	// May be called after Start() is called and tries to connect to the Server.
 	// May also be called if the connection is lost and reconnection attempt fails.
-	OnConnectFailed(err error)
+	OnConnectFailed(ctx context.Context, err error)
 
 	// OnError is called when the Server reports an error in response to some previously
 	// sent request. Useful for logging purposes. The Agent should not attempt to process
 	// the error by reconnecting or retrying previous operations. The client handles the
 	// ErrorResponse_UNAVAILABLE case internally by performing retries as necessary.
-	OnError(err *protobufs.ServerErrorResponse)
+	OnError(ctx context.Context, err *protobufs.ServerErrorResponse)
 
 	// OnMessage is called when the Agent receives a message that needs processing.
 	// See MessageData definition for the data that may be available for processing.
@@ -94,9 +95,7 @@ type Callbacks interface {
 	// verified and accepted (OnOpampConnectionSettingsOffer and connection using
 	// new settings succeeds). The Agent should store the settings and use them
 	// in the future. Old connection settings should be forgotten.
-	OnOpampConnectionSettingsAccepted(
-		settings *protobufs.OpAMPConnectionSettings,
-	)
+	OnOpampConnectionSettingsAccepted(ctx context.Context, settings *protobufs.OpAMPConnectionSettings)
 
 	// For all methods that accept a context parameter the caller may cancel the
 	// context if processing takes too long. In that case the method should return
@@ -115,15 +114,15 @@ type Callbacks interface {
 	GetEffectiveConfig(ctx context.Context) (*protobufs.EffectiveConfig, error)
 
 	// OnCommand is called when the Server requests that the connected Agent perform a command.
-	OnCommand(command *protobufs.ServerToAgentCommand) error
+	OnCommand(ctx context.Context, command *protobufs.ServerToAgentCommand) error
 }
 
 // CallbacksStruct is a struct that implements Callbacks interface and allows
 // to override only the methods that are needed. If a method is not overridden then it is a no-op.
 type CallbacksStruct struct {
-	OnConnectFunc       func()
-	OnConnectFailedFunc func(err error)
-	OnErrorFunc         func(err *protobufs.ServerErrorResponse)
+	OnConnectFunc       func(ctx context.Context)
+	OnConnectFailedFunc func(ctx context.Context, err error)
+	OnErrorFunc         func(ctx context.Context, err *protobufs.ServerErrorResponse)
 
 	OnMessageFunc func(ctx context.Context, msg *MessageData)
 
@@ -132,10 +131,11 @@ type CallbacksStruct struct {
 		settings *protobufs.OpAMPConnectionSettings,
 	) error
 	OnOpampConnectionSettingsAcceptedFunc func(
+		ctx context.Context,
 		settings *protobufs.OpAMPConnectionSettings,
 	)
 
-	OnCommandFunc func(command *protobufs.ServerToAgentCommand) error
+	OnCommandFunc func(ctx context.Context, command *protobufs.ServerToAgentCommand) error
 
 	SaveRemoteConfigStatusFunc func(ctx context.Context, status *protobufs.RemoteConfigStatus)
 	GetEffectiveConfigFunc     func(ctx context.Context) (*protobufs.EffectiveConfig, error)
@@ -144,23 +144,23 @@ type CallbacksStruct struct {
 var _ Callbacks = (*CallbacksStruct)(nil)
 
 // OnConnect implements Callbacks.OnConnect.
-func (c CallbacksStruct) OnConnect() {
+func (c CallbacksStruct) OnConnect(ctx context.Context) {
 	if c.OnConnectFunc != nil {
-		c.OnConnectFunc()
+		c.OnConnectFunc(ctx)
 	}
 }
 
 // OnConnectFailed implements Callbacks.OnConnectFailed.
-func (c CallbacksStruct) OnConnectFailed(err error) {
+func (c CallbacksStruct) OnConnectFailed(ctx context.Context, err error) {
 	if c.OnConnectFailedFunc != nil {
-		c.OnConnectFailedFunc(err)
+		c.OnConnectFailedFunc(ctx, err)
 	}
 }
 
 // OnError implements Callbacks.OnError.
-func (c CallbacksStruct) OnError(err *protobufs.ServerErrorResponse) {
+func (c CallbacksStruct) OnError(ctx context.Context, err *protobufs.ServerErrorResponse) {
 	if c.OnErrorFunc != nil {
-		c.OnErrorFunc(err)
+		c.OnErrorFunc(ctx, err)
 	}
 }
 
@@ -197,16 +197,16 @@ func (c CallbacksStruct) OnOpampConnectionSettings(
 }
 
 // OnOpampConnectionSettingsAccepted implements Callbacks.OnOpampConnectionSettingsAccepted.
-func (c CallbacksStruct) OnOpampConnectionSettingsAccepted(settings *protobufs.OpAMPConnectionSettings) {
+func (c CallbacksStruct) OnOpampConnectionSettingsAccepted(ctx context.Context, settings *protobufs.OpAMPConnectionSettings) {
 	if c.OnOpampConnectionSettingsAcceptedFunc != nil {
-		c.OnOpampConnectionSettingsAcceptedFunc(settings)
+		c.OnOpampConnectionSettingsAcceptedFunc(ctx, settings)
 	}
 }
 
 // OnCommand implements Callbacks.OnCommand.
-func (c CallbacksStruct) OnCommand(command *protobufs.ServerToAgentCommand) error {
+func (c CallbacksStruct) OnCommand(ctx context.Context, command *protobufs.ServerToAgentCommand) error {
 	if c.OnCommandFunc != nil {
-		return c.OnCommandFunc(command)
+		return c.OnCommandFunc(ctx, command)
 	}
 	return nil
 }

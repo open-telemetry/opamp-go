@@ -56,7 +56,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 		// to process.
 		if msg.Command != nil {
 			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand) {
-				r.rcvCommand(msg.Command)
+				r.rcvCommand(ctx, msg.Command)
 				// If a command message exists, other messages will be ignored
 				return
 			} else {
@@ -198,7 +198,7 @@ func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, sett
 		err := r.callbacks.OnOpampConnectionSettings(ctx, settings.Opamp)
 		if err == nil {
 			// TODO: verify connection using new settings.
-			r.callbacks.OnOpampConnectionSettingsAccepted(settings.Opamp)
+			r.callbacks.OnOpampConnectionSettingsAccepted(ctx, settings.Opamp)
 		}
 	} else {
 		r.logger.Debugf(ctx, "Ignoring Opamp, agent does not have AcceptsOpAMPConnectionSettings capability")
@@ -206,8 +206,9 @@ func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, sett
 }
 
 func (r *receivedProcessor) processErrorResponse(ctx context.Context, body *protobufs.ServerErrorResponse) {
-	// TODO: implement this.
-	r.logger.Errorf(ctx, "received an error from server: %s", body.ErrorMessage)
+	if body != nil {
+		r.callbacks.OnError(ctx, body)
+	}
 }
 
 func (r *receivedProcessor) rcvAgentIdentification(ctx context.Context, agentId *protobufs.AgentIdentification) error {
@@ -226,8 +227,8 @@ func (r *receivedProcessor) rcvAgentIdentification(ctx context.Context, agentId 
 	return nil
 }
 
-func (r *receivedProcessor) rcvCommand(command *protobufs.ServerToAgentCommand) {
+func (r *receivedProcessor) rcvCommand(ctx context.Context, command *protobufs.ServerToAgentCommand) {
 	if command != nil {
-		r.callbacks.OnCommand(command)
+		r.callbacks.OnCommand(ctx, command)
 	}
 }

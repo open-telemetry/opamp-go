@@ -179,7 +179,7 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 					switch resp.StatusCode {
 					case http.StatusOK:
 						// We consider it connected if we receive 200 status from the Server.
-						h.callbacks.OnConnect()
+						h.callbacks.OnConnect(ctx)
 						return resp, nil
 
 					case http.StatusTooManyRequests, http.StatusServiceUnavailable:
@@ -195,7 +195,7 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 				}
 
 				h.logger.Errorf(ctx, "Failed to do HTTP request (%v), will retry", err)
-				h.callbacks.OnConnectFailed(err)
+				h.callbacks.OnConnectFailed(ctx, err)
 			}
 
 		case <-ctx.Done():
