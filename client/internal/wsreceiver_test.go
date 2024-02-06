@@ -212,6 +212,7 @@ func TestReceiverLoopStop(t *testing.T) {
 		receiverLoopStopped.Store(true)
 	}()
 	cancel()
+	conn.Close()
 
 	assert.Eventually(t, func() bool {
 		return receiverLoopStopped.Load()
