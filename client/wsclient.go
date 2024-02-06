@@ -120,7 +120,7 @@ func (c *wsClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) error
 	return c.common.SetPackageStatuses(statuses)
 }
 
-func (c *wsClient) SetCustomMessage(message *protobufs.CustomMessage) error {
+func (c *wsClient) SetCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error) {
 	return c.common.SetCustomMessage(message)
 }
 

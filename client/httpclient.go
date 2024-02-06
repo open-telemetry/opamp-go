@@ -106,7 +106,7 @@ func (c *httpClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) err
 }
 
 // SetCustomMessage implements OpAMPClient.SetCustomMessage.
-func (c *httpClient) SetCustomMessage(message *protobufs.CustomMessage) error {
+func (c *httpClient) SetCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error) {
 	return c.common.SetCustomMessage(message)
 }
 

@@ -1604,7 +1604,7 @@ func TestReportCustomCapabilities(t *testing.T) {
 
 		// Client --->
 		// Send a custom message to the server
-		_ = client.SetCustomMessage(clientEchoRequest)
+		_, _ = client.SetCustomMessage(clientEchoRequest)
 
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
@@ -1671,14 +1671,14 @@ func TestSetCustomMessage(t *testing.T) {
 			{
 				name:          "nil message is error",
 				message:       nil,
-				expectedError: internal.ErrCustomMessageMissing,
+				expectedError: types.ErrCustomMessageMissing,
 			},
 			{
 				name: "unsupported message is error",
 				message: &protobufs.CustomMessage{
 					Capability: "io.opentelemetry.not-supported",
 				},
-				expectedError: internal.ErrCustomCapabilityNotSupported,
+				expectedError: types.ErrCustomCapabilityNotSupported,
 			},
 			{
 				name: "supported capability is ok",
@@ -1691,7 +1691,8 @@ func TestSetCustomMessage(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
-				assert.ErrorIs(t, client.SetCustomMessage(test.message), test.expectedError)
+				_, err := client.SetCustomMessage(test.message)
+				assert.ErrorIs(t, err, test.expectedError)
 			})
 		}
 	})
@@ -1726,7 +1727,8 @@ func TestCustomMessages(t *testing.T) {
 			Type:       "hello",
 			Data:       []byte("test message 1"),
 		}
-		assert.NoError(t, client.SetCustomMessage(customMessage1))
+		_, err := client.SetCustomMessage(customMessage1)
+		assert.NoError(t, err)
 
 		// Verify message 1 delivered
 		eventually(
@@ -1746,7 +1748,8 @@ func TestCustomMessages(t *testing.T) {
 			Type:       "hello",
 			Data:       []byte("test message 2"),
 		}
-		assert.NoError(t, client.SetCustomMessage(customMessage2))
+		_, err = client.SetCustomMessage(customMessage2)
+		assert.NoError(t, err)
 
 		// Verify message 2 delivered
 		eventually(
@@ -1764,7 +1767,80 @@ func TestCustomMessages(t *testing.T) {
 		srv.Close()
 
 		// Shutdown the client.
-		err := client.Stop(context.Background())
+		err = client.Stop(context.Background())
 		assert.NoError(t, err)
+	})
+}
+
+func TestSetCustomMessageConflict(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a Server.
+		srv := internal.StartMockServer(t)
+		var rcvCustomMessage atomic.Value
+		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			if msg.CustomMessage != nil {
+				rcvCustomMessage.Store(msg.CustomMessage)
+			}
+			return nil
+		}
+
+		// Start a client.
+		settings := types.StartSettings{
+			OpAMPServerURL:     "ws://" + srv.Endpoint,
+			CustomCapabilities: []string{"local.test.example"},
+		}
+		prepareClient(t, &settings, client)
+
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		customMessage1 := &protobufs.CustomMessage{
+			Capability: "local.test.example",
+			Type:       "hello",
+			Data:       []byte("test message 1"),
+		}
+		customMessage2 := &protobufs.CustomMessage{
+			Capability: "local.test.example",
+			Type:       "hello",
+			Data:       []byte("test message 2"),
+		}
+
+		_, err := client.SetCustomMessage(customMessage1)
+		assert.NoError(t, err)
+
+		// Sending another message immediately should fail with ErrCustomMessagePending.
+		sendingChan, err := client.SetCustomMessage(customMessage2)
+		assert.ErrorIs(t, err, types.ErrCustomMessagePending)
+		assert.NotNil(t, sendingChan)
+
+		// Receive the first custom message
+		eventually(
+			t,
+			func() bool {
+				msg, ok := rcvCustomMessage.Load().(*protobufs.CustomMessage)
+				if !ok || msg == nil {
+					return false
+				}
+				return proto.Equal(customMessage1, msg)
+			},
+		)
+
+		// Wait for the sending channel to be closed.
+		<-sendingChan
+
+		// Now sending the second message should work.
+		_, err = client.SetCustomMessage(customMessage2)
+		assert.NoError(t, err)
+
+		// Receive the second custom message
+		eventually(
+			t,
+			func() bool {
+				msg, ok := rcvCustomMessage.Load().(*protobufs.CustomMessage)
+				if !ok || msg == nil {
+					return false
+				}
+				return proto.Equal(customMessage2, msg)
+			},
+		)
 	})
 }

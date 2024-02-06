@@ -20,8 +20,6 @@ var (
 	ErrReportsRemoteConfigNotSet    = errors.New("ReportsRemoteConfig capability is not set")
 	ErrPackagesStateProviderNotSet  = errors.New("PackagesStateProvider must be set")
 	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
-	ErrCustomMessageMissing         = errors.New("CustomMessage is nil")
-	ErrCustomCapabilityNotSupported = errors.New("CustomCapability of CustomMessage is not supported")
 
 	errAlreadyStarted               = errors.New("already started")
 	errCannotStopNotStarted         = errors.New("cannot stop because not started")
@@ -394,19 +392,30 @@ func (c *ClientCommon) SetCustomCapabilities(customCapabilities *protobufs.Custo
 }
 
 // SetCustomMessage sends the specified custom message to the server.
-func (c *ClientCommon) SetCustomMessage(message *protobufs.CustomMessage) error {
+func (c *ClientCommon) SetCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error) {
 	if message == nil {
-		return ErrCustomMessageMissing
+		return nil, types.ErrCustomMessageMissing
 	}
 	if !c.ClientSyncedState.HasCustomCapability(message.Capability) {
-		return ErrCustomCapabilityNotSupported
+		return nil, types.ErrCustomCapabilityNotSupported
 	}
 
-	c.sender.NextMessage().Update(
+	hasCustomMessage := false
+	sendingChan := c.sender.NextMessage().Update(
 		func(msg *protobufs.AgentToServer) {
-			msg.CustomMessage = message
+			if msg.CustomMessage != nil {
+				hasCustomMessage = true
+			} else {
+				msg.CustomMessage = message
+			}
 		},
 	)
+
+	if hasCustomMessage {
+		return sendingChan, types.ErrCustomMessagePending
+	}
+
 	c.sender.ScheduleSend()
-	return nil
+
+	return sendingChan, nil
 }
