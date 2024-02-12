@@ -29,7 +29,7 @@ type wsClient struct {
 	requestHeader http.Header
 
 	// Websocket dialer and connection.
-	dialer    websocket.Dialer
+	dialer    *websocket.Dialer
 	conn      *websocket.Conn
 	connMutex sync.RWMutex
 
@@ -57,7 +57,7 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 	}
 
 	// Prepare connection settings.
-	c.dialer = *websocket.DefaultDialer
+	c.dialer = websocket.DefaultDialer
 
 	var err error
 	c.url, err = url.Parse(settings.OpAMPServerURL)
@@ -131,8 +131,26 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 			c.common.Callbacks.OnConnectFailed(ctx, err)
 		}
 		if resp != nil {
-			c.common.Logger.Errorf(ctx, "Server responded with status=%v", resp.Status)
 			duration := sharedinternal.ExtractRetryAfterHeader(resp)
+			if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+				// very liberal handling of 3xx that largely ignores HTTP semantics
+				redirect, err := resp.Location()
+				if err != nil {
+					c.common.Logger.Errorf(ctx, "3xx redirect, but no valid location: %s", err)
+					return err, duration
+				}
+				if redirect.Scheme == "http" || redirect.Scheme == "" {
+					redirect.Scheme = "ws"
+				} else if redirect.Scheme == "https" {
+					redirect.Scheme = "wss"
+				}
+				c.common.Logger.Debugf(ctx, "%d redirect to %s", resp.StatusCode, redirect)
+				// Set the URL to the redirect, so that it connects to it on the
+				// next cycle.
+				c.url = redirect
+			} else {
+				c.common.Logger.Errorf(ctx, "Server responded with status=%v", resp.Status)
+			}
 			return err, duration
 		}
 		return err, sharedinternal.OptionalDuration{Defined: false}
