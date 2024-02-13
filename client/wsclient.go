@@ -141,7 +141,8 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 					c.common.Logger.Errorf(ctx, "%d redirect, but no valid location: %s", resp.StatusCode, err)
 					return err, duration
 				}
-				if redirect.Scheme == "http" || redirect.Scheme == "" {
+				// rewrite the scheme for the sake of tolerance
+				if redirect.Scheme == "http" {
 					redirect.Scheme = "ws"
 				} else if redirect.Scheme == "https" {
 					redirect.Scheme = "wss"
