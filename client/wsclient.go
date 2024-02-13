@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
@@ -136,6 +137,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 				// very liberal handling of 3xx that largely ignores HTTP semantics
 				redirect, err := resp.Location()
 				if err != nil {
+					fmt.Println("error in location", err)
 					c.common.Logger.Errorf(ctx, "%d redirect, but no valid location: %s", resp.StatusCode, err)
 					return err, duration
 				}
@@ -148,6 +150,9 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 				// Set the URL to the redirect, so that it connects to it on the
 				// next cycle.
 				c.url = redirect
+
+				// don't delay in following the redirect
+				duration = sharedinternal.ZeroDuration
 			} else {
 				c.common.Logger.Errorf(ctx, "Server responded with status=%v", resp.Status)
 			}

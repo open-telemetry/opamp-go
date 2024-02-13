@@ -17,6 +17,12 @@ type OptionalDuration struct {
 	Defined bool
 }
 
+// ZeroDuration represents a zero length duration that is defined.
+var ZeroDuration = OptionalDuration{
+	Duration: 0,
+	Defined:  true,
+}
+
 func parseDelaySeconds(s string) (time.Duration, error) {
 	n, err := strconv.Atoi(s)
 
