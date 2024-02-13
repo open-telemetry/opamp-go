@@ -29,7 +29,7 @@ type wsClient struct {
 	requestHeader http.Header
 
 	// Websocket dialer and connection.
-	dialer    *websocket.Dialer
+	dialer    websocket.Dialer
 	conn      *websocket.Conn
 	connMutex sync.RWMutex
 
@@ -57,7 +57,7 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 	}
 
 	// Prepare connection settings.
-	c.dialer = websocket.DefaultDialer
+	c.dialer = *websocket.DefaultDialer
 
 	var err error
 	c.url, err = url.Parse(settings.OpAMPServerURL)
