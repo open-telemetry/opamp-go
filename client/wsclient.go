@@ -136,7 +136,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 				// very liberal handling of 3xx that largely ignores HTTP semantics
 				redirect, err := resp.Location()
 				if err != nil {
-					c.common.Logger.Errorf(ctx, "3xx redirect, but no valid location: %s", err)
+					c.common.Logger.Errorf(ctx, "%d redirect, but no valid location: %s", resp.StatusCode, err)
 					return err, duration
 				}
 				if redirect.Scheme == "http" || redirect.Scheme == "" {
