@@ -28,8 +28,13 @@ func NewNextMessage() NextMessage {
 	}
 }
 
-// Update applies the specified modifier function to the next message that
-// will be sent and marks the message as pending to be sent.
+// Update applies the specified modifier function to the next message that will be sent
+// and marks the message as pending to be sent.
+//
+// The messageSendingChannel returned by this function is closed when the modified message
+// is popped in PopPending before being sent to the server. After this channel is closed,
+// additional calls to Update will be applied to the next message and will return a
+// channel corresponding to that message.
 func (s *NextMessage) Update(modifier func(msg *protobufs.AgentToServer)) (messageSendingChannel chan struct{}) {
 	s.messageMutex.Lock()
 	modifier(s.nextMessage)

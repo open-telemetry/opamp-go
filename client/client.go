@@ -90,16 +90,16 @@ type OpAMPClient interface {
 	// May be also called from OnMessage handler.
 	RequestConnectionSettings(request *protobufs.ConnectionSettingsRequest) error
 
-	// SetCustomMessage sets the custom message that will be sent to the Server. May be
-	// called anytime after Start(), including from OnMessage handler.
+	// SendCustomMessage sends the custom message to the Server. May be called anytime after
+	// Start(), including from OnMessage handler.
 	//
 	// If the CustomMessage is nil, ErrCustomMessageMissing will be returned. If the message
 	// specifies a capability that is not listed in the CustomCapabilities provided in the
 	// StartSettings for the client, ErrCustomCapabilityNotSupported will be returned.
 	//
-	// Only one message can be set at a time. If a message has already been set, it will
-	// return ErrCustomMessagePending. To ensure that it is safe to set another
-	// CustomMessage, the caller should wait for the channel to be closed before attempting
-	// to set another custom message.
-	SetCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error)
+	// Only one message can be sent at a time. If a message has already been sent, it will
+	// return ErrCustomMessagePending. To ensure that it is safe to send another
+	// CustomMessage, the caller should wait for the returned channel to be closed before
+	// attempting to send another custom message.
+	SendCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error)
 }

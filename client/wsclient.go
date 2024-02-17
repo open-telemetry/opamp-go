@@ -120,8 +120,8 @@ func (c *wsClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) error
 	return c.common.SetPackageStatuses(statuses)
 }
 
-func (c *wsClient) SetCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error) {
-	return c.common.SetCustomMessage(message)
+func (c *wsClient) SendCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error) {
+	return c.common.SendCustomMessage(message)
 }
 
 // Try to connect once. Returns an error if connection fails and optional retryAfter

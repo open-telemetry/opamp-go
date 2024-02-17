@@ -391,8 +391,8 @@ func (c *ClientCommon) SetCustomCapabilities(customCapabilities *protobufs.Custo
 	return nil
 }
 
-// SetCustomMessage sends the specified custom message to the server.
-func (c *ClientCommon) SetCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error) {
+// SendCustomMessage sends the specified custom message to the server.
+func (c *ClientCommon) SendCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error) {
 	if message == nil {
 		return nil, types.ErrCustomMessageMissing
 	}

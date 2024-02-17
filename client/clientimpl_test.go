@@ -1604,7 +1604,7 @@ func TestReportCustomCapabilities(t *testing.T) {
 
 		// Client --->
 		// Send a custom message to the server
-		_, _ = client.SetCustomMessage(clientEchoRequest)
+		_, _ = client.SendCustomMessage(clientEchoRequest)
 
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
@@ -1653,9 +1653,9 @@ func TestReportCustomCapabilities(t *testing.T) {
 	})
 }
 
-// TestSetCustomMessage tests the SetCustomMessage method to ensure it returns errors
+// TestSendCustomMessage tests the SendCustomMessage method to ensure it returns errors
 // appropriately.
-func TestSetCustomMessage(t *testing.T) {
+func TestSendCustomMessage(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		settings := types.StartSettings{
 			Callbacks:          types.CallbacksStruct{},
@@ -1691,7 +1691,7 @@ func TestSetCustomMessage(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
-				_, err := client.SetCustomMessage(test.message)
+				_, err := client.SendCustomMessage(test.message)
 				assert.ErrorIs(t, err, test.expectedError)
 			})
 		}
@@ -1727,7 +1727,7 @@ func TestCustomMessages(t *testing.T) {
 			Type:       "hello",
 			Data:       []byte("test message 1"),
 		}
-		_, err := client.SetCustomMessage(customMessage1)
+		_, err := client.SendCustomMessage(customMessage1)
 		assert.NoError(t, err)
 
 		// Verify message 1 delivered
@@ -1748,7 +1748,7 @@ func TestCustomMessages(t *testing.T) {
 			Type:       "hello",
 			Data:       []byte("test message 2"),
 		}
-		_, err = client.SetCustomMessage(customMessage2)
+		_, err = client.SendCustomMessage(customMessage2)
 		assert.NoError(t, err)
 
 		// Verify message 2 delivered
@@ -1772,7 +1772,7 @@ func TestCustomMessages(t *testing.T) {
 	})
 }
 
-func TestSetCustomMessageConflict(t *testing.T) {
+func TestSendCustomMessageConflict(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a Server.
 		srv := internal.StartMockServer(t)
@@ -1804,11 +1804,11 @@ func TestSetCustomMessageConflict(t *testing.T) {
 			Data:       []byte("test message 2"),
 		}
 
-		_, err := client.SetCustomMessage(customMessage1)
+		_, err := client.SendCustomMessage(customMessage1)
 		assert.NoError(t, err)
 
 		// Sending another message immediately should fail with ErrCustomMessagePending.
-		sendingChan, err := client.SetCustomMessage(customMessage2)
+		sendingChan, err := client.SendCustomMessage(customMessage2)
 		assert.ErrorIs(t, err, types.ErrCustomMessagePending)
 		assert.NotNil(t, sendingChan)
 
@@ -1828,7 +1828,7 @@ func TestSetCustomMessageConflict(t *testing.T) {
 		<-sendingChan
 
 		// Now sending the second message should work.
-		_, err = client.SetCustomMessage(customMessage2)
+		_, err = client.SendCustomMessage(customMessage2)
 		assert.NoError(t, err)
 
 		// Receive the second custom message

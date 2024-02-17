@@ -49,6 +49,10 @@ type StartSettings struct {
 	// should match a capability specified in a supported CustomMessage. The client will
 	// automatically ignore any CustomMessage that contains a custom capability that is not
 	// specified in this field.
+	//
+	// See
+	// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#customcapabilities
+	// for more details.
 	CustomCapabilities []string
 
 	// EnableCompression can be set to true to enable the compression. Note that for WebSocket transport
