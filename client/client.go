@@ -90,6 +90,16 @@ type OpAMPClient interface {
 	// May be also called from OnMessage handler.
 	RequestConnectionSettings(request *protobufs.ConnectionSettingsRequest) error
 
+	// SetCustomCapabilities modifies the set of customCapabilities supported by the client.
+	// The new customCapabilities will be sent with the next message to the server.
+	// May be called anytime after Start(), including from OnMessage handler.
+	// nil values are not allowed and will return an error.
+	//
+	// See
+	// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#customcapabilities
+	// for more details.
+	SetCustomCapabilities(customCapabilities *protobufs.CustomCapabilities) error
+
 	// SendCustomMessage sends the custom message to the Server. May be called anytime after
 	// Start(), including from OnMessage handler.
 	//
@@ -97,9 +107,11 @@ type OpAMPClient interface {
 	// specifies a capability that is not listed in the CustomCapabilities provided in the
 	// StartSettings for the client, ErrCustomCapabilityNotSupported will be returned.
 	//
-	// Only one message can be sent at a time. If a message has already been sent, it will
-	// return ErrCustomMessagePending. To ensure that it is safe to send another
-	// CustomMessage, the caller should wait for the returned channel to be closed before
-	// attempting to send another custom message.
+	// Only one message can be sent at a time. If SendCustomMessage has been already called
+	// and the message is still pending (in progress) then subsequent calls to
+	// SendCustomMessage will return ErrCustomMessagePending. To ensure that the previous
+	// send is complete and it is safe to send another CustomMessage, the caller should wait
+	// for the returned channel to be closed before attempting to send another custom
+	// message.
 	SendCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error)
 }

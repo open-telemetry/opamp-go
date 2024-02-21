@@ -1920,3 +1920,87 @@ func TestCustomMessagesSendAndWait(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+// TestSetCustomCapabilities tests the ability for the client to change the set of custom capabilities that it supports.
+func TestSetCustomCapabilities(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+
+		// Start a Server.
+		srv := internal.StartMockServer(t)
+		var rcvCustomCapabilities atomic.Value
+		var rcvCustomMessage atomic.Value
+		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			if msg.CustomMessage != nil {
+				rcvCustomMessage.Store(msg.CustomMessage)
+			}
+			if msg.CustomCapabilities != nil {
+				rcvCustomCapabilities.Store(msg.CustomCapabilities)
+			}
+			return nil
+		}
+
+		// Start a client with no support for CustomCapabilities
+		settings := types.StartSettings{
+			OpAMPServerURL:     "ws://" + srv.Endpoint,
+			CustomCapabilities: nil,
+		}
+		prepareClient(t, &settings, client)
+
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		// Send message 1 (should fail because capability not supported)
+		customMessage1 := &protobufs.CustomMessage{
+			Capability: "local.test.example",
+			Type:       "hello",
+			Data:       []byte("test message 1"),
+		}
+		_, err := client.SendCustomMessage(customMessage1)
+		assert.Error(t, err)
+
+		// SetCustomCapabilities fails when protobufs.CustomCapabilities is missing
+		err = client.SetCustomCapabilities(nil)
+		assert.Error(t, err)
+
+		// Update CustomCapabilities
+		newCustomCapabilities := &protobufs.CustomCapabilities{
+			Capabilities: []string{"local.test.example"},
+		}
+		err = client.SetCustomCapabilities(newCustomCapabilities)
+		assert.NoError(t, err)
+
+		// Verify custom capabilities delivered to the server
+		eventually(
+			t,
+			func() bool {
+				msg, ok := rcvCustomCapabilities.Load().(*protobufs.CustomCapabilities)
+				if !ok || msg == nil {
+					return false
+				}
+				return proto.Equal(newCustomCapabilities, msg)
+			},
+		)
+
+		// Send message 1 again (should succeed now)
+		_, err = client.SendCustomMessage(customMessage1)
+		assert.NoError(t, err)
+
+		// Verify message 1 delivered
+		eventually(
+			t,
+			func() bool {
+				msg, ok := rcvCustomMessage.Load().(*protobufs.CustomMessage)
+				if !ok || msg == nil {
+					return false
+				}
+				return proto.Equal(customMessage1, msg)
+			},
+		)
+
+		// Shutdown the Server.
+		srv.Close()
+
+		// Shutdown the client.
+		err = client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}

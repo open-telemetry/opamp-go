@@ -378,10 +378,11 @@ func (c *ClientCommon) SetPackageStatuses(statuses *protobufs.PackageStatuses) e
 
 // SetCustomCapabilities sends a message to the Server with the new custom capabilities.
 func (c *ClientCommon) SetCustomCapabilities(customCapabilities *protobufs.CustomCapabilities) error {
-	// store the health to send on reconnect
+	// store the customCapabilities to send
 	if err := c.ClientSyncedState.SetCustomCapabilities(customCapabilities); err != nil {
 		return err
 	}
+	// send the new customCapabilities to the Server
 	c.sender.NextMessage().Update(
 		func(msg *protobufs.AgentToServer) {
 			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()

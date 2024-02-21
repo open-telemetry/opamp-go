@@ -22,6 +22,10 @@ type Settings struct {
 	// Defines the custom capabilities of the Server. Each capability is a reverse FQDN with
 	// optional version information that uniquely identifies the custom capability and
 	// should match a capability specified in a supported CustomMessage.
+	//
+	// See
+	// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#customcapabilities
+	// for more details.
 	CustomCapabilities []string
 }
 
