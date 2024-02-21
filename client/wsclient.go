@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -35,6 +36,10 @@ type wsClient struct {
 
 	// The sender is responsible for sending portion of the OpAMP protocol.
 	sender *internal.WSSender
+
+	// last non-nil internal error that was encountered in the conn retry loop,
+	// currently used only for testing.
+	lastInternalErr atomic.Pointer[error]
 }
 
 // NewWebSocket creates a new OpAMP Client that uses WebSocket transport.
@@ -136,7 +141,6 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 				// very liberal handling of 3xx that largely ignores HTTP semantics
 				redirect, err := resp.Location()
 				if err != nil {
-					c.common.Callbacks.OnConnectFailed(ctx, err)
 					c.common.Logger.Errorf(ctx, "%d redirect, but no valid location: %s", resp.StatusCode, err)
 					return err, duration
 				}
@@ -187,6 +191,7 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 		case <-timer.C:
 			{
 				if err, retryAfter := c.tryConnectOnce(ctx); err != nil {
+					c.lastInternalErr.Store(&err)
 					if errors.Is(err, context.Canceled) {
 						c.common.Logger.Debugf(ctx, "Client is stopped, will not try anymore.")
 						return err

@@ -245,9 +245,11 @@ func TestRedirectWS(t *testing.T) {
 			startClient(t, settings, client)
 
 			// Wait for connection to be established.
-			eventually(t, func() bool { return conn.Load() != nil || connectErr.Load() != nil })
+			eventually(t, func() bool {
+				return conn.Load() != nil || connectErr.Load() != nil || client.lastInternalErr.Load() != nil
+			})
 			if test.ExpError {
-				if connectErr.Load() == nil {
+				if connectErr.Load() == nil && client.lastInternalErr.Load() == nil {
 					t.Error("expected non-nil error")
 				}
 			} else {
