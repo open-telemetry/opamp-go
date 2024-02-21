@@ -1846,7 +1846,7 @@ func TestSendCustomMessageConflict(t *testing.T) {
 	})
 }
 
-// TestStreamCustomMessages tests the ability to send may custom messages in succession.
+// TestStreamCustomMessages tests the ability to send many custom messages in succession.
 func TestCustomMessagesSendAndWait(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
