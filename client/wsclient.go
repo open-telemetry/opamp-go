@@ -128,7 +128,7 @@ func (c *wsClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) error
 // Try to connect once. Returns an error if connection fails and optional retryAfter
 // duration to indicate to the caller to retry after the specified time as instructed
 // by the Server.
-func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sharedinternal.OptionalDuration) {
+func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinternal.OptionalDuration, err error) {
 	var resp *http.Response
 	conn, resp, err := c.dialer.DialContext(ctx, c.url.String(), c.requestHeader)
 	if err != nil {
@@ -142,7 +142,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 				redirect, err := resp.Location()
 				if err != nil {
 					c.common.Logger.Errorf(ctx, "%d redirect, but no valid location: %s", resp.StatusCode, err)
-					return err, duration
+					return duration, err
 				}
 				// rewrite the scheme for the sake of tolerance
 				if redirect.Scheme == "http" {
@@ -157,9 +157,9 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 			} else {
 				c.common.Logger.Errorf(ctx, "Server responded with status=%v", resp.Status)
 			}
-			return err, duration
+			return duration, err
 		}
-		return err, sharedinternal.OptionalDuration{Defined: false}
+		return sharedinternal.OptionalDuration{Defined: false}, err
 	}
 
 	// Successfully connected.
@@ -170,7 +170,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 		c.common.Callbacks.OnConnect(ctx)
 	}
 
-	return nil, sharedinternal.OptionalDuration{Defined: false}
+	return sharedinternal.OptionalDuration{Defined: false}, nil
 }
 
 // Continuously try until connected. Will return nil when successfully
@@ -190,7 +190,7 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 		select {
 		case <-timer.C:
 			{
-				if err, retryAfter := c.tryConnectOnce(ctx); err != nil {
+				if retryAfter, err := c.tryConnectOnce(ctx); err != nil {
 					c.lastInternalErr.Store(&err)
 					if errors.Is(err, context.Canceled) {
 						c.common.Logger.Debugf(ctx, "Client is stopped, will not try anymore.")
