@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -35,6 +36,10 @@ type wsClient struct {
 
 	// The sender is responsible for sending portion of the OpAMP protocol.
 	sender *internal.WSSender
+
+	// last non-nil internal error that was encountered in the conn retry loop,
+	// currently used only for testing.
+	lastInternalErr atomic.Pointer[error]
 }
 
 // NewWebSocket creates a new OpAMP Client that uses WebSocket transport.
@@ -131,8 +136,27 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (err error, retryAfter sh
 			c.common.Callbacks.OnConnectFailed(ctx, err)
 		}
 		if resp != nil {
-			c.common.Logger.Errorf(ctx, "Server responded with status=%v", resp.Status)
 			duration := sharedinternal.ExtractRetryAfterHeader(resp)
+			if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+				// very liberal handling of 3xx that largely ignores HTTP semantics
+				redirect, err := resp.Location()
+				if err != nil {
+					c.common.Logger.Errorf(ctx, "%d redirect, but no valid location: %s", resp.StatusCode, err)
+					return err, duration
+				}
+				// rewrite the scheme for the sake of tolerance
+				if redirect.Scheme == "http" {
+					redirect.Scheme = "ws"
+				} else if redirect.Scheme == "https" {
+					redirect.Scheme = "wss"
+				}
+				c.common.Logger.Debugf(ctx, "%d redirect to %s", resp.StatusCode, redirect)
+				// Set the URL to the redirect, so that it connects to it on the
+				// next cycle.
+				c.url = redirect
+			} else {
+				c.common.Logger.Errorf(ctx, "Server responded with status=%v", resp.Status)
+			}
 			return err, duration
 		}
 		return err, sharedinternal.OptionalDuration{Defined: false}
@@ -167,6 +191,7 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 		case <-timer.C:
 			{
 				if err, retryAfter := c.tryConnectOnce(ctx); err != nil {
+					c.lastInternalErr.Store(&err)
 					if errors.Is(err, context.Canceled) {
 						c.common.Logger.Debugf(ctx, "Client is stopped, will not try anymore.")
 						return err

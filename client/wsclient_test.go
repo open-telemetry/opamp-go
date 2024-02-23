@@ -3,6 +3,9 @@ package client
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -174,6 +177,88 @@ func TestVerifyWSCompress(t *testing.T) {
 				assert.Greater(t, proxy.ServerToClientBytes(), len(uncompressedCfg))
 				assert.Greater(t, proxy.ClientToServerBytes(), len(uncompressedCfg))
 			}
+		})
+	}
+}
+
+func redirectServer(to string, status int) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		http.Redirect(w, req, to, http.StatusSeeOther)
+	}))
+}
+
+func errServer() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.WriteHeader(302)
+	}))
+}
+
+func TestRedirectWS(t *testing.T) {
+	redirectee := internal.StartMockServer(t)
+	tests := []struct {
+		Name       string
+		Redirector *httptest.Server
+		ExpError   bool
+	}{
+		{
+			Name:       "redirect ws scheme",
+			Redirector: redirectServer("ws://"+redirectee.Endpoint, 302),
+		},
+		{
+			Name:       "redirect http scheme",
+			Redirector: redirectServer("http://"+redirectee.Endpoint, 302),
+		},
+		{
+			Name:       "missing location header",
+			Redirector: errServer(),
+			ExpError:   true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			var conn atomic.Value
+			redirectee.OnWSConnect = func(c *websocket.Conn) {
+				conn.Store(c)
+			}
+
+			// Start an OpAMP/WebSocket client.
+			var connected int64
+			var connectErr atomic.Value
+			settings := types.StartSettings{
+				Callbacks: types.CallbacksStruct{
+					OnConnectFunc: func(ctx context.Context) {
+						atomic.StoreInt64(&connected, 1)
+					},
+					OnConnectFailedFunc: func(ctx context.Context, err error) {
+						if err != websocket.ErrBadHandshake {
+							connectErr.Store(err)
+						}
+					},
+				},
+			}
+			reURL, err := url.Parse(test.Redirector.URL)
+			assert.NoError(t, err)
+			reURL.Scheme = "ws"
+			settings.OpAMPServerURL = reURL.String()
+			client := NewWebSocket(nil)
+			startClient(t, settings, client)
+
+			// Wait for connection to be established.
+			eventually(t, func() bool {
+				return conn.Load() != nil || connectErr.Load() != nil || client.lastInternalErr.Load() != nil
+			})
+			if test.ExpError {
+				if connectErr.Load() == nil && client.lastInternalErr.Load() == nil {
+					t.Error("expected non-nil error")
+				}
+			} else {
+				assert.True(t, connectErr.Load() == nil)
+			}
+
+			// Stop the client.
+			err = client.Stop(context.Background())
+			assert.NoError(t, err)
 		})
 	}
 }
