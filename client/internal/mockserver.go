@@ -112,6 +112,11 @@ func (m *MockServer) EnableExpectMode() {
 
 func (m *MockServer) handlePlainHttp(w http.ResponseWriter, r *http.Request) {
 	msgBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		// request could not be read for some reason
+		http.Error(w, err.Error(), 500)
+		return
+	}
 
 	// We use alwaysRespond=true here because plain HTTP requests must always have
 	// a response.
