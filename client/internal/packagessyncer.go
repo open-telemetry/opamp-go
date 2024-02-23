@@ -104,7 +104,7 @@ func (s *packagesSyncer) doSync(ctx context.Context) {
 		s.logger.Errorf(ctx, "Package syncing failed: %V", err)
 		return
 	}
-	if bytes.Compare(hash, s.available.AllPackagesHash) == 0 {
+	if bytes.Equal(hash, s.available.AllPackagesHash) {
 		s.logger.Debugf(ctx, "All packages are already up to date.")
 		return
 	}
@@ -243,7 +243,7 @@ func (s *packagesSyncer) shouldDownloadFile(ctx context.Context, packageName str
 	} else {
 		// Compare the checksum of the file we have with what
 		// we are offered by the server.
-		if bytes.Compare(fileContentHash, file.ContentHash) != 0 {
+		if !bytes.Equal(fileContentHash, file.ContentHash) {
 			s.logger.Debugf(ctx, "Package %s: file hash mismatch, will download.", packageName)
 			return true, nil
 		}
