@@ -3,7 +3,7 @@ package client
 import (
 	"compress/gzip"
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -63,7 +63,7 @@ func TestHTTPClientCompression(t *testing.T) {
 		assert.Equal(t, "gzip", r.Header.Get("Content-Encoding"))
 		reader, err := gzip.NewReader(r.Body)
 		assert.NoError(t, err)
-		body, err := ioutil.ReadAll(reader)
+		body, err := io.ReadAll(reader)
 		assert.NoError(t, err)
 		_ = r.Body.Close()
 		var response protobufs.AgentToServer
