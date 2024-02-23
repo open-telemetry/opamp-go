@@ -23,9 +23,9 @@ func DecodeWSMessage(bytes []byte, msg proto.Message) error {
 		}
 		// Skip the header. It really is just a single zero byte for now.
 		bytes = bytes[n:]
-	} else {
+	} /*else {
 		// Old message format. No header present.
-	}
+	}*/
 
 	// Decode WebSocket message as a Protobuf message.
 	err := proto.Unmarshal(bytes, msg)
