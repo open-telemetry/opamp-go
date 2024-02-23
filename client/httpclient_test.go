@@ -114,10 +114,12 @@ func TestHTTPClientSetPollingInterval(t *testing.T) {
 	srv := internal.StartMockServer(t)
 	var rcvCounter int64
 	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-		assert.EqualValues(t, rcvCounter, msg.SequenceNum)
-		if msg != nil {
-			atomic.AddInt64(&rcvCounter, 1)
+		if msg == nil {
+			t.Error("unexpected nil msg")
+			return nil
 		}
+		assert.EqualValues(t, rcvCounter, msg.SequenceNum)
+		atomic.AddInt64(&rcvCounter, 1)
 		return nil
 	}
 
