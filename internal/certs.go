@@ -78,7 +78,6 @@ func CreateServerTLSConfig(caCertPath, serverCertPath, serverKeyPath string) (*t
 		InsecureSkipVerify: true,
 		ClientCAs:          caCertPool,
 	}
-	tlsConfig.BuildNameToCertificate()
 	return tlsConfig, nil
 }
 
