@@ -77,13 +77,6 @@ func (c *ClientCommon) PrepareStart(
 	// According to OpAMP spec this capability MUST be set, since all Agents MUST report status.
 	c.Capabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
 
-	// Prepare custom capabilities.
-	if err := c.ClientSyncedState.SetCustomCapabilities(&protobufs.CustomCapabilities{
-		Capabilities: settings.CustomCapabilities,
-	}); err != nil {
-		return err
-	}
-
 	if c.ClientSyncedState.AgentDescription() == nil {
 		return ErrAgentDescriptionMissing
 	}

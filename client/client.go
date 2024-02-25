@@ -91,9 +91,16 @@ type OpAMPClient interface {
 	RequestConnectionSettings(request *protobufs.ConnectionSettingsRequest) error
 
 	// SetCustomCapabilities modifies the set of customCapabilities supported by the client.
-	// The new customCapabilities will be sent with the next message to the server.
-	// May be called anytime after Start(), including from OnMessage handler.
-	// nil values are not allowed and will return an error.
+	// The new customCapabilities will be sent with the next message to the server. SHOULD
+	// be called before Start(). If not called before Start(), the set of supported custom
+	// capabilities will be empty. May also be called anytime after Start(), including from
+	// OnMessage handler, to modify the set of supported custom capabilities. nil values are
+	// not allowed and will return an error.
+	//
+	// Each capability is a reverse FQDN with optional version information that uniquely
+	// identifies the custom capability and should match a capability specified in a
+	// supported CustomMessage. The client will automatically ignore any CustomMessage that
+	// contains a custom capability that is not specified in this field.
 	//
 	// See
 	// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#customcapabilities

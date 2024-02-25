@@ -1562,8 +1562,7 @@ func TestReportCustomCapabilities(t *testing.T) {
 
 		// Start a client.
 		settings := types.StartSettings{
-			OpAMPServerURL:     "ws://" + srv.Endpoint,
-			CustomCapabilities: []string{"local.test.echo"},
+			OpAMPServerURL: "ws://" + srv.Endpoint,
 			Callbacks: types.CallbacksStruct{
 				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
 					clientRcvCustomMessage.Store(msg.CustomMessage)
@@ -1571,10 +1570,10 @@ func TestReportCustomCapabilities(t *testing.T) {
 			},
 		}
 		prepareClient(t, &settings, client)
-
 		clientCustomCapabilities := &protobufs.CustomCapabilities{
 			Capabilities: []string{"local.test.echo"},
 		}
+		client.SetCustomCapabilities(clientCustomCapabilities)
 
 		// Client --->
 		assert.NoError(t, client.Start(context.Background(), settings))
@@ -1659,10 +1658,16 @@ func TestReportCustomCapabilities(t *testing.T) {
 func TestSendCustomMessage(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		settings := types.StartSettings{
-			Callbacks:          types.CallbacksStruct{},
-			CustomCapabilities: []string{"io.opentelemetry.supported"},
+			Callbacks: types.CallbacksStruct{},
 		}
-		startClient(t, settings, client)
+		prepareClient(t, &settings, client)
+		clientCustomCapabilities := &protobufs.CustomCapabilities{
+			Capabilities: []string{"io.opentelemetry.supported"},
+		}
+		client.SetCustomCapabilities(clientCustomCapabilities)
+
+		// Client --->
+		assert.NoError(t, client.Start(context.Background(), settings))
 
 		tests := []struct {
 			name          string
@@ -1715,10 +1720,13 @@ func TestCustomMessages(t *testing.T) {
 
 		// Start a client.
 		settings := types.StartSettings{
-			OpAMPServerURL:     "ws://" + srv.Endpoint,
-			CustomCapabilities: []string{"local.test.example"},
+			OpAMPServerURL: "ws://" + srv.Endpoint,
 		}
 		prepareClient(t, &settings, client)
+		clientCustomCapabilities := &protobufs.CustomCapabilities{
+			Capabilities: []string{"local.test.example"},
+		}
+		client.SetCustomCapabilities(clientCustomCapabilities)
 
 		assert.NoError(t, client.Start(context.Background(), settings))
 
@@ -1787,10 +1795,13 @@ func TestSendCustomMessageConflict(t *testing.T) {
 
 		// Start a client.
 		settings := types.StartSettings{
-			OpAMPServerURL:     "ws://" + srv.Endpoint,
-			CustomCapabilities: []string{"local.test.example"},
+			OpAMPServerURL: "ws://" + srv.Endpoint,
 		}
 		prepareClient(t, &settings, client)
+		clientCustomCapabilities := &protobufs.CustomCapabilities{
+			Capabilities: []string{"local.test.example"},
+		}
+		client.SetCustomCapabilities(clientCustomCapabilities)
 
 		assert.NoError(t, client.Start(context.Background(), settings))
 
@@ -1879,10 +1890,13 @@ func TestCustomMessagesSendAndWait(t *testing.T) {
 
 		// Start a client.
 		settings := types.StartSettings{
-			OpAMPServerURL:     "ws://" + srv.Endpoint,
-			CustomCapabilities: []string{"local.test.example"},
+			OpAMPServerURL: "ws://" + srv.Endpoint,
 		}
 		prepareClient(t, &settings, client)
+		clientCustomCapabilities := &protobufs.CustomCapabilities{
+			Capabilities: []string{"local.test.example"},
+		}
+		client.SetCustomCapabilities(clientCustomCapabilities)
 
 		assert.NoError(t, client.Start(context.Background(), settings))
 
@@ -1941,8 +1955,7 @@ func TestSetCustomCapabilities(t *testing.T) {
 
 		// Start a client with no support for CustomCapabilities
 		settings := types.StartSettings{
-			OpAMPServerURL:     "ws://" + srv.Endpoint,
-			CustomCapabilities: nil,
+			OpAMPServerURL: "ws://" + srv.Endpoint,
 		}
 		prepareClient(t, &settings, client)
 
