@@ -1782,7 +1782,7 @@ func TestCustomMessages(t *testing.T) {
 	})
 }
 
-func TestSendCustomMessageConflict(t *testing.T) {
+func TestSendCustomMessagePendingError(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a Server.
 		srv := internal.StartMockServer(t)
@@ -1858,7 +1858,7 @@ func TestSendCustomMessageConflict(t *testing.T) {
 	})
 }
 
-// TestStreamCustomMessages tests the ability to send many custom messages in succession.
+// TestCustomMessagesSendAndWait tests the ability to send many custom messages in succession.
 func TestCustomMessagesSendAndWait(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
