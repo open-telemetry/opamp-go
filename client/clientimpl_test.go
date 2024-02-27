@@ -1604,7 +1604,8 @@ func TestReportCustomCapabilities(t *testing.T) {
 
 		// Client --->
 		// Send a custom message to the server
-		_, _ = client.SendCustomMessage(clientEchoRequest)
+		_, err := client.SendCustomMessage(clientEchoRequest)
+		assert.NoError(t, err)
 
 		// ---> Server
 		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
@@ -1648,7 +1649,7 @@ func TestReportCustomCapabilities(t *testing.T) {
 		srv.Close()
 
 		// Shutdown the client.
-		err := client.Stop(context.Background())
+		err = client.Stop(context.Background())
 		assert.NoError(t, err)
 	})
 }
