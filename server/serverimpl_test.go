@@ -628,6 +628,7 @@ func TestServerHonoursClientRequestContentEncoding(t *testing.T) {
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("POST", "http://"+settings.ListenEndpoint+settings.ListenPath, bytes.NewReader(b))
+	require.NoError(t, err)
 	req.Header.Set(headerContentType, contentTypeProtobuf)
 	req.Header.Set(headerContentEncoding, contentEncodingGzip)
 	resp, err := hc.Do(req)
@@ -700,6 +701,7 @@ func TestServerHonoursAcceptEncoding(t *testing.T) {
 	b, err := proto.Marshal(&sendMsg)
 	require.NoError(t, err)
 	req, err := http.NewRequest("POST", "http://"+settings.ListenEndpoint+settings.ListenPath, bytes.NewReader(b))
+	require.NoError(t, err)
 	req.Header.Set(headerContentType, contentTypeProtobuf)
 	req.Header.Set(headerAcceptEncoding, contentEncodingGzip)
 	resp, err := hc.Do(req)

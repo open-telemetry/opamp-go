@@ -15,7 +15,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"net"
 	"os"
@@ -79,19 +78,18 @@ func CreateServerTLSConfig(caCertPath, serverCertPath, serverKeyPath string) (*t
 		InsecureSkipVerify: true,
 		ClientCAs:          caCertPool,
 	}
-	tlsConfig.BuildNameToCertificate()
 	return tlsConfig, nil
 }
 
 func CreateTLSCert(caCertPath, caKeyPath string) (*protobufs.TLSCertificate, error) {
 
 	// Load CA Cert.
-	caCertBytes, err := ioutil.ReadFile(caCertPath)
+	caCertBytes, err := os.ReadFile(caCertPath)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read CA cert: %v", err)
 	}
 
-	caKeyBytes, err := ioutil.ReadFile(caKeyPath)
+	caKeyBytes, err := os.ReadFile(caKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read CA key: %v", err)
 	}

@@ -110,7 +110,6 @@ func (h *HTTPSender) Run(
 			// This will make hasPendingMessage channel readable, so we will enter
 			// the case above on the next iteration of the loop.
 			h.ScheduleSend()
-			break
 
 		case <-ctx.Done():
 			return

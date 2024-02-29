@@ -39,7 +39,7 @@ func IsEqualAnyValue(v1, v2 *protobufs.AnyValue) bool {
 
 	case *protobufs.AnyValue_BytesValue:
 		v2, ok := v2.Value.(*protobufs.AnyValue_BytesValue)
-		return ok && bytes.Compare(v1.BytesValue, v2.BytesValue) == 0
+		return ok && bytes.Equal(v1.BytesValue, v2.BytesValue)
 
 	case *protobufs.AnyValue_ArrayValue:
 		v2, ok := v2.Value.(*protobufs.AnyValue_ArrayValue)
