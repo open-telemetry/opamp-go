@@ -275,7 +275,13 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		c.common.PackagesStateProvider,
 		c.common.Capabilities,
 	)
-	r.Start(ctx)
+
+	// When the wsclient is closed, the context passed to runOneCycle will be canceled.
+	// The receiver should keep running and processing messages
+	// until it received a Close message from the server which means the server has no more messages.
+	receiverCtx, stopReceiver := context.WithCancel(context.Background())
+	defer stopReceiver()
+	r.Start(receiverCtx)
 
 	select {
 	case <-c.sender.IsStopped():
@@ -283,8 +289,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		if err := c.sender.StoppingErr(); err != nil {
 			c.common.Logger.Debugf(ctx, "Error stopping the sender: %v", err)
 
-			// Close the connection to stop the receiver.
-			_ = c.conn.Close()
+			stopReceiver()
 			<-r.IsStopped()
 			break
 		}
@@ -295,8 +300,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 			c.common.Logger.Debugf(ctx, "Receiver stopped.")
 		case <-time.After(c.connShutdownTimeout):
 			c.common.Logger.Debugf(ctx, "Timeout waiting for receiver to stop.")
-			// Close the connection to force the receive loop to stop.
-			_ = c.conn.Close()
+			stopReceiver()
 			<-r.IsStopped()
 		}
 	case <-r.IsStopped():
