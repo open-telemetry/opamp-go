@@ -63,6 +63,8 @@ func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 		err     error
 	}
 
+	defer func() { close(r.stopped) }()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -70,6 +72,7 @@ func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 		default:
 			result := make(chan receivedMessage, 1)
 
+			// To stop this goroutine, close the websocket connection
 			go func() {
 				var message protobufs.ServerToAgent
 				err := r.receiveMessage(&message)
