@@ -275,6 +275,7 @@ func TestPerformsClosingHandshake(t *testing.T) {
 	var wsConn *websocket.Conn
 	connected := make(chan struct{})
 	closed := make(chan struct{})
+	acked := make(chan struct{})
 
 	srv.OnWSConnect = func(conn *websocket.Conn) {
 		wsConn = conn
@@ -299,6 +300,14 @@ func TestPerformsClosingHandshake(t *testing.T) {
 		return conn != nil
 	})
 
+	{
+		defhandler := client.conn.CloseHandler()
+		client.conn.SetCloseHandler(func(code int, msg string) error {
+			close(acked)
+			return defhandler(code, msg)
+		})
+	}
+
 	defHandler := wsConn.CloseHandler()
 
 	wsConn.SetCloseHandler(func(code int, _ string) error {
@@ -313,6 +322,11 @@ func TestPerformsClosingHandshake(t *testing.T) {
 
 	select {
 	case <-closed:
+		select {
+		case <-acked:
+		case <-time.After(2 * time.Second):
+			require.Fail(t, "Close connection without waiting for a close message from server")
+		}
 	case <-time.After(2 * time.Second):
 		require.Fail(t, "Connection never closed")
 	}
