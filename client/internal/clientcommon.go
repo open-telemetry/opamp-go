@@ -60,9 +60,7 @@ type ClientCommon struct {
 
 // NewClientCommon creates a new ClientCommon.
 func NewClientCommon(logger types.Logger, sender Sender) ClientCommon {
-	return ClientCommon{
-		Logger: logger, sender: sender, stoppedSignal: make(chan struct{}, 1),
-	}
+	return ClientCommon{Logger: logger, sender: sender, stoppedSignal: make(chan struct{}, 1)}
 }
 
 // PrepareStart prepares the client state for the next Start() call.
@@ -215,6 +213,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.RemoteConfigStatus = c.ClientSyncedState.RemoteConfigStatus()
 			msg.PackageStatuses = c.ClientSyncedState.PackageStatuses()
 			msg.Capabilities = uint64(c.Capabilities)
+			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()
 		},
 	)
 	return nil
@@ -368,4 +367,49 @@ func (c *ClientCommon) SetPackageStatuses(statuses *protobufs.PackageStatuses) e
 	}
 
 	return nil
+}
+
+// SetCustomCapabilities sends a message to the Server with the new custom capabilities.
+func (c *ClientCommon) SetCustomCapabilities(customCapabilities *protobufs.CustomCapabilities) error {
+	// store the customCapabilities to send
+	if err := c.ClientSyncedState.SetCustomCapabilities(customCapabilities); err != nil {
+		return err
+	}
+	// send the new customCapabilities to the Server
+	c.sender.NextMessage().Update(
+		func(msg *protobufs.AgentToServer) {
+			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()
+		},
+	)
+	c.sender.ScheduleSend()
+	return nil
+}
+
+// SendCustomMessage sends the specified custom message to the server.
+func (c *ClientCommon) SendCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error) {
+	if message == nil {
+		return nil, types.ErrCustomMessageMissing
+	}
+	if !c.ClientSyncedState.HasCustomCapability(message.Capability) {
+		return nil, types.ErrCustomCapabilityNotSupported
+	}
+
+	hasCustomMessage := false
+	sendingChan := c.sender.NextMessage().Update(
+		func(msg *protobufs.AgentToServer) {
+			if msg.CustomMessage != nil {
+				hasCustomMessage = true
+			} else {
+				msg.CustomMessage = message
+			}
+		},
+	)
+
+	if hasCustomMessage {
+		return sendingChan, types.ErrCustomMessagePending
+	}
+
+	c.sender.ScheduleSend()
+
+	return sendingChan, nil
 }

@@ -13,6 +13,7 @@ var (
 	errLastRemoteConfigHashNil          = errors.New("LastRemoteConfigHash is nil")
 	errPackageStatusesMissing           = errors.New("PackageStatuses is not set")
 	errServerProvidedAllPackagesHashNil = errors.New("ServerProvidedAllPackagesHash is nil")
+	errCustomCapabilitiesMissing        = errors.New("CustomCapabilities is not set")
 )
 
 // ClientSyncedState stores the state of the Agent messages that the OpAMP Client needs to
@@ -37,6 +38,7 @@ type ClientSyncedState struct {
 	health             *protobufs.ComponentHealth
 	remoteConfigStatus *protobufs.RemoteConfigStatus
 	packageStatuses    *protobufs.PackageStatuses
+	customCapabilities *protobufs.CustomCapabilities
 }
 
 func (s *ClientSyncedState) AgentDescription() *protobufs.AgentDescription {
@@ -61,6 +63,12 @@ func (s *ClientSyncedState) PackageStatuses() *protobufs.PackageStatuses {
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	return s.packageStatuses
+}
+
+func (s *ClientSyncedState) CustomCapabilities() *protobufs.CustomCapabilities {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	return s.customCapabilities
 }
 
 // SetAgentDescription sets the AgentDescription in the state.
@@ -125,4 +133,38 @@ func (s *ClientSyncedState) SetPackageStatuses(status *protobufs.PackageStatuses
 	s.packageStatuses = clone
 
 	return nil
+}
+
+// SetCustomCapabilities sets the CustomCapabilities in the state.
+func (s *ClientSyncedState) SetCustomCapabilities(capabilities *protobufs.CustomCapabilities) error {
+	if capabilities == nil {
+		return errCustomCapabilitiesMissing
+	}
+
+	clone := proto.Clone(capabilities).(*protobufs.CustomCapabilities)
+
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	s.customCapabilities = clone
+
+	return nil
+}
+
+// HasCustomCapability returns true if the provided capability is in the
+// CustomCapabilities.
+func (s *ClientSyncedState) HasCustomCapability(capability string) bool {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+
+	if s.customCapabilities == nil {
+		return false
+	}
+
+	for _, c := range s.customCapabilities.Capabilities {
+		if c == capability {
+			return true
+		}
+	}
+
+	return false
 }

@@ -209,6 +209,8 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 		connectionCallbacks.OnConnected(reqCtx, agentConn)
 	}
 
+	sentCustomCapabilities := false
+
 	// Loop until fail to read from the WebSocket connection.
 	for {
 		msgContext := context.Background()
@@ -240,6 +242,12 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			response := connectionCallbacks.OnMessage(msgContext, agentConn, &request)
 			if response.InstanceUid == "" {
 				response.InstanceUid = request.InstanceUid
+			}
+			if !sentCustomCapabilities {
+				response.CustomCapabilities = &protobufs.CustomCapabilities{
+					Capabilities: s.settings.CustomCapabilities,
+				}
+				sentCustomCapabilities = true
 			}
 			err = agentConn.Send(msgContext, response)
 			if err != nil {
@@ -327,6 +335,11 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	// Set the InstanceUid if it is not set by the callback.
 	if response.InstanceUid == "" {
 		response.InstanceUid = request.InstanceUid
+	}
+
+	// Return the CustomCapabilities
+	response.CustomCapabilities = &protobufs.CustomCapabilities{
+		Capabilities: s.settings.CustomCapabilities,
 	}
 
 	// Marshal the response.
