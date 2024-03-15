@@ -44,7 +44,8 @@ type StartSettings struct {
 	TLSConfig *tls.Config
 
 	// HTTPMiddlewareFunc specifies middleware for HTTP messages received by the server.
-	// This function is optional to set.
+	// Note that the function will be called once for websockets upon connecting and will
+	// be called for every HTTP request. This function is optional to set.
 	HTTPMiddlewareFunc func(handlerFunc http.HandlerFunc) http.HandlerFunc
 }
 
