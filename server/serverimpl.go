@@ -82,7 +82,11 @@ func (s *server) Start(settings StartSettings) error {
 		path = defaultOpAMPPath
 	}
 
-	mux.HandleFunc(path, s.httpHandler)
+	if settings.HTTPMiddlewareFunc != nil {
+		mux.HandleFunc(path, settings.HTTPMiddlewareFunc(s.httpHandler))
+	} else {
+		mux.HandleFunc(path, s.httpHandler)
+	}
 
 	hs := &http.Server{
 		Handler:     mux,

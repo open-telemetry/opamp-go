@@ -42,6 +42,10 @@ type StartSettings struct {
 
 	// Server's TLS configuration.
 	TLSConfig *tls.Config
+
+	// HTTPMiddlewareFunc specifies middleware for HTTP messages received by the server.
+	// This function is optional to set.
+	HTTPMiddlewareFunc func(handlerFunc http.HandlerFunc) http.HandlerFunc
 }
 
 type HTTPHandlerFunc func(http.ResponseWriter, *http.Request)
