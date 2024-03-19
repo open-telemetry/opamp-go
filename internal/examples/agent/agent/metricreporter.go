@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"go.opentelemetry.io/otel"
 	"math"
 	"math/rand"
 	"net/url"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"github.com/shirou/gopsutil/process"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/metric"
@@ -93,8 +93,7 @@ func NewMetricReporter(
 	meterProvider := sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(resource),
 		sdkmetric.WithReader(
-			sdkmetric.NewPeriodicReader(
-				metricExporter, sdkmetric.WithInterval(5*time.Second)),
+			sdkmetric.NewPeriodicReader(metricExporter, sdkmetric.WithInterval(5*time.Second)),
 		))
 
 	otel.SetMeterProvider(meterProvider)
@@ -146,6 +145,7 @@ func (reporter *MetricReporter) processCpuTimeFunc(ctx context.Context, result m
 	times, err := reporter.process.Times()
 	if err != nil {
 		reporter.logger.Errorf(ctx, "Cannot get process CPU times: %v", err)
+		return err
 	}
 
 	// Report process CPU times, but also add some randomness to make it interesting for demo.
@@ -159,7 +159,7 @@ func (reporter *MetricReporter) processMemoryPhysicalFunc(ctx context.Context, r
 	memory, err := reporter.process.MemoryInfo()
 	if err != nil {
 		reporter.logger.Errorf(ctx, "Cannot get process memory information: %v", err)
-		return nil
+		return err
 	}
 
 	// Report the RSS, but also add some randomness to make it interesting for demo.
