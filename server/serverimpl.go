@@ -61,7 +61,7 @@ func (s *server) Attach(settings Settings) (HTTPHandlerFunc, ConnContext, error)
 	s.wsUpgrader = websocket.Upgrader{
 		EnableCompression: settings.EnableCompression,
 	}
-	return s.httpHandler, contextWithConn, nil
+	return s.ServeHTTP, contextWithConn, nil
 }
 
 func (s *server) Start(settings StartSettings) error {
@@ -82,10 +82,11 @@ func (s *server) Start(settings StartSettings) error {
 		path = defaultOpAMPPath
 	}
 
-	if settings.HTTPMiddlewareFunc != nil {
-		mux.HandleFunc(path, settings.HTTPMiddlewareFunc(s.httpHandler))
+	if settings.HTTPMiddleware != nil {
+		mux.Handle(path, settings.HTTPMiddleware(s))
+		//mux.HandleFunc(path, settings.HTTPMiddlewareFunc(s.httpHandler))
 	} else {
-		mux.HandleFunc(path, s.httpHandler)
+		mux.HandleFunc(path, s.ServeHTTP)
 	}
 
 	hs := &http.Server{
@@ -155,7 +156,7 @@ func (s *server) Addr() net.Addr {
 	return s.addr
 }
 
-func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
+func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var connectionCallbacks serverTypes.ConnectionCallbacks
 	if s.settings.Callbacks != nil {
 		resp := s.settings.Callbacks.OnConnecting(req)

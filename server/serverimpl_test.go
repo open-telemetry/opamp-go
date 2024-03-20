@@ -61,15 +61,17 @@ func TestServerStartStopWithMiddleware(t *testing.T) {
 	var addedMiddleware atomic.Bool
 	assert.False(t, addedMiddleware.Load())
 
-	testHTTPMiddlewareFunc := func(handlerFunc http.HandlerFunc) http.HandlerFunc {
+	testHTTPMiddleware := func(handler http.Handler) http.Handler {
 		addedMiddleware.Store(true)
-		return func(writer http.ResponseWriter, request *http.Request) {
-			handlerFunc(writer, request)
-		}
+		return http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				handler.ServeHTTP(w, r)
+			},
+		)
 	}
 
 	startSettings := &StartSettings{
-		HTTPMiddlewareFunc: testHTTPMiddlewareFunc,
+		HTTPMiddleware: testHTTPMiddleware,
 	}
 
 	srv := startServer(t, startSettings)
@@ -858,11 +860,13 @@ func TestConnectionAllowsConcurrentWrites(t *testing.T) {
 func TestServerCallsHTTPMiddlewareOverWebsocket(t *testing.T) {
 	middlewareCalled := int32(0)
 
-	testHTTPMiddlewareFunc := func(handlerFunc http.HandlerFunc) http.HandlerFunc {
-		return func(writer http.ResponseWriter, request *http.Request) {
-			atomic.AddInt32(&middlewareCalled, 1)
-			handlerFunc(writer, request)
-		}
+	testHTTPMiddleware := func(handler http.Handler) http.Handler {
+		return http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				atomic.AddInt32(&middlewareCalled, 1)
+				handler.ServeHTTP(w, r)
+			},
+		)
 	}
 
 	callbacks := CallbacksStruct{
@@ -876,8 +880,8 @@ func TestServerCallsHTTPMiddlewareOverWebsocket(t *testing.T) {
 
 	// Start a Server
 	settings := &StartSettings{
-		HTTPMiddlewareFunc: testHTTPMiddlewareFunc,
-		Settings:           Settings{Callbacks: callbacks},
+		HTTPMiddleware: testHTTPMiddleware,
+		Settings:       Settings{Callbacks: callbacks},
 	}
 	srv := startServer(t, settings)
 	defer func() {
@@ -900,11 +904,13 @@ func TestServerCallsHTTPMiddlewareOverWebsocket(t *testing.T) {
 func TestServerCallsHTTPMiddlewareOverHTTP(t *testing.T) {
 	middlewareCalled := int32(0)
 
-	testHTTPMiddlewareFunc := func(handlerFunc http.HandlerFunc) http.HandlerFunc {
-		return func(writer http.ResponseWriter, request *http.Request) {
-			atomic.AddInt32(&middlewareCalled, 1)
-			handlerFunc(writer, request)
-		}
+	testHTTPMiddleware := func(handler http.Handler) http.Handler {
+		return http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				atomic.AddInt32(&middlewareCalled, 1)
+				handler.ServeHTTP(w, r)
+			},
+		)
 	}
 
 	callbacks := CallbacksStruct{
@@ -918,8 +924,8 @@ func TestServerCallsHTTPMiddlewareOverHTTP(t *testing.T) {
 
 	// Start a Server
 	settings := &StartSettings{
-		HTTPMiddlewareFunc: testHTTPMiddlewareFunc,
-		Settings:           Settings{Callbacks: callbacks},
+		HTTPMiddleware: testHTTPMiddleware,
+		Settings:       Settings{Callbacks: callbacks},
 	}
 	srv := startServer(t, settings)
 	defer func() {

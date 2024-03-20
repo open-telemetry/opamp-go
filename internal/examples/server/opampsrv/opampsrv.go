@@ -11,6 +11,7 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server"
 	"github.com/open-telemetry/opamp-go/server/types"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type Server struct {
@@ -54,6 +55,7 @@ func (srv *Server) Start() {
 			},
 		},
 		ListenEndpoint: "127.0.0.1:4320",
+		HTTPMiddleware: otelhttp.NewMiddleware("HTTP POST"),
 	}
 	tlsConfig, err := internal.CreateServerTLSConfig(
 		"../../certs/certs/ca.cert.pem",

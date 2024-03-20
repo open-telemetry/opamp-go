@@ -43,10 +43,10 @@ type StartSettings struct {
 	// Server's TLS configuration.
 	TLSConfig *tls.Config
 
-	// HTTPMiddlewareFunc specifies middleware for HTTP messages received by the server.
+	// HTTPMiddleware specifies middleware for HTTP messages received by the server.
 	// Note that the function will be called once for websockets upon connecting and will
 	// be called for every HTTP request. This function is optional to set.
-	HTTPMiddlewareFunc func(handlerFunc http.HandlerFunc) http.HandlerFunc
+	HTTPMiddleware func(handler http.Handler) http.Handler
 }
 
 type HTTPHandlerFunc func(http.ResponseWriter, *http.Request)
