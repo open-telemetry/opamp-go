@@ -84,9 +84,8 @@ func (s *server) Start(settings StartSettings) error {
 
 	if settings.HTTPMiddleware != nil {
 		mux.Handle(path, settings.HTTPMiddleware(s))
-		//mux.HandleFunc(path, settings.HTTPMiddlewareFunc(s.httpHandler))
 	} else {
-		mux.HandleFunc(path, s.ServeHTTP)
+		mux.Handle(path, s)
 	}
 
 	hs := &http.Server{
