@@ -47,6 +47,16 @@ type server struct {
 
 var _ OpAMPServer = (*server)(nil)
 
+// innerHTTPHandler implements the http.Handler interface so it can be used by functions
+// that require the type (like Middleware) without exposing ServeHTTP directly on server.
+type innerHTTPHander struct {
+	httpHandlerFunc http.HandlerFunc
+}
+
+func (i innerHTTPHander) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	i.httpHandlerFunc(writer, request)
+}
+
 // New creates a new OpAMP Server.
 func New(logger types.Logger) *server {
 	if logger == nil {
@@ -61,7 +71,7 @@ func (s *server) Attach(settings Settings) (HTTPHandlerFunc, ConnContext, error)
 	s.wsUpgrader = websocket.Upgrader{
 		EnableCompression: settings.EnableCompression,
 	}
-	return s.ServeHTTP, contextWithConn, nil
+	return s.httpHandler, contextWithConn, nil
 }
 
 func (s *server) Start(settings StartSettings) error {
@@ -82,10 +92,12 @@ func (s *server) Start(settings StartSettings) error {
 		path = defaultOpAMPPath
 	}
 
+	handler := innerHTTPHander{s.httpHandler}
+
 	if settings.HTTPMiddleware != nil {
-		mux.Handle(path, settings.HTTPMiddleware(s))
+		mux.Handle(path, settings.HTTPMiddleware(handler))
 	} else {
-		mux.Handle(path, s)
+		mux.Handle(path, handler)
 	}
 
 	hs := &http.Server{
@@ -155,7 +167,7 @@ func (s *server) Addr() net.Addr {
 	return s.addr
 }
 
-func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 	var connectionCallbacks serverTypes.ConnectionCallbacks
 	if s.settings.Callbacks != nil {
 		resp := s.settings.Callbacks.OnConnecting(req)
