@@ -47,6 +47,16 @@ type server struct {
 
 var _ OpAMPServer = (*server)(nil)
 
+// innerHTTPHandler implements the http.Handler interface so it can be used by functions
+// that require the type (like Middleware) without exposing ServeHTTP directly on server.
+type innerHTTPHander struct {
+	httpHandlerFunc http.HandlerFunc
+}
+
+func (i innerHTTPHander) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	i.httpHandlerFunc(writer, request)
+}
+
 // New creates a new OpAMP Server.
 func New(logger types.Logger) *server {
 	if logger == nil {
@@ -82,7 +92,13 @@ func (s *server) Start(settings StartSettings) error {
 		path = defaultOpAMPPath
 	}
 
-	mux.HandleFunc(path, s.httpHandler)
+	handler := innerHTTPHander{s.httpHandler}
+
+	if settings.HTTPMiddleware != nil {
+		mux.Handle(path, settings.HTTPMiddleware(handler))
+	} else {
+		mux.Handle(path, handler)
+	}
 
 	hs := &http.Server{
 		Handler:     mux,
