@@ -210,9 +210,8 @@ func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, sett
 
 	if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings) {
 		err := r.callbacks.OnOpampConnectionSettings(ctx, settings.Opamp)
-		if err == nil {
-			// TODO: verify connection using new settings.
-			r.callbacks.OnOpampConnectionSettingsAccepted(ctx, settings.Opamp)
+		if err != nil {
+			r.logger.Errorf(ctx, "Failed to process OpAMPConnectionSettings: %v", err)
 		}
 	} else {
 		r.logger.Debugf(ctx, "Ignoring Opamp, agent does not have AcceptsOpAMPConnectionSettings capability")
