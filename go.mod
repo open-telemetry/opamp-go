@@ -7,7 +7,7 @@ require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/stretchr/testify v1.9.0
-	google.golang.org/protobuf v1.32.0
+	google.golang.org/protobuf v1.33.0
 )
 
 require (
