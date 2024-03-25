@@ -81,15 +81,9 @@ type Callbacks interface {
 	// authorization headers or TLS certificate, potentially also a different
 	// OpAMP destination to work with.
 	//
-	// The Agent should process the offer and return an error if the Agent does not
-	// want to accept the settings (e.g. if the TSL certificate in the settings
-	// cannot be verified).
-	//
-	// If OnOpampConnectionSettings returns nil and then the caller will
-	// attempt to reconnect to the OpAMP Server using the new settings.
-	// If the connection fails the settings will be rejected and an error will
-	// be reported to the Server. If the connection succeeds the new settings
-	// will be used by the client from that moment on.
+	// The Agent should process the offer by reconnecting the client using the new
+	// settings or return an error if the Agent does not want to accept the settings
+	// (e.g. if the TSL certificate in the settings cannot be verified).
 	//
 	// Only one OnOpampConnectionSettings call can be active at any time.
 	// See OnRemoteConfig for the behavior.
@@ -97,12 +91,6 @@ type Callbacks interface {
 		ctx context.Context,
 		settings *protobufs.OpAMPConnectionSettings,
 	) error
-
-	// OnOpampConnectionSettingsAccepted will be called after the settings are
-	// verified and accepted (OnOpampConnectionSettingsOffer and connection using
-	// new settings succeeds). The Agent should store the settings and use them
-	// in the future. Old connection settings should be forgotten.
-	OnOpampConnectionSettingsAccepted(ctx context.Context, settings *protobufs.OpAMPConnectionSettings)
 
 	// For all methods that accept a context parameter the caller may cancel the
 	// context if processing takes too long. In that case the method should return
@@ -137,10 +125,6 @@ type CallbacksStruct struct {
 		ctx context.Context,
 		settings *protobufs.OpAMPConnectionSettings,
 	) error
-	OnOpampConnectionSettingsAcceptedFunc func(
-		ctx context.Context,
-		settings *protobufs.OpAMPConnectionSettings,
-	)
 
 	OnCommandFunc func(ctx context.Context, command *protobufs.ServerToAgentCommand) error
 
@@ -201,13 +185,6 @@ func (c CallbacksStruct) OnOpampConnectionSettings(
 		return c.OnOpampConnectionSettingsFunc(ctx, settings)
 	}
 	return nil
-}
-
-// OnOpampConnectionSettingsAccepted implements Callbacks.OnOpampConnectionSettingsAccepted.
-func (c CallbacksStruct) OnOpampConnectionSettingsAccepted(ctx context.Context, settings *protobufs.OpAMPConnectionSettings) {
-	if c.OnOpampConnectionSettingsAcceptedFunc != nil {
-		c.OnOpampConnectionSettingsAcceptedFunc(ctx, settings)
-	}
 }
 
 // OnCommand implements Callbacks.OnCommand.
