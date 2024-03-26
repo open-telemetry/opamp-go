@@ -17,6 +17,9 @@ type wsReceiver struct {
 	sender    *WSSender
 	callbacks types.Callbacks
 	processor receivedProcessor
+
+	// Indicates that the receiver has fully stopped.
+	stopped chan struct{}
 }
 
 // NewWSReceiver creates a new Receiver that uses WebSocket to receive
@@ -36,17 +39,31 @@ func NewWSReceiver(
 		sender:    sender,
 		callbacks: callbacks,
 		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider, capabilities),
+		stopped:   make(chan struct{}),
 	}
 
 	return w
 }
 
-// ReceiverLoop runs the receiver loop. To stop the receiver cancel the context.
+// Start starts the receiver loop.
+func (r *wsReceiver) Start(ctx context.Context) {
+	go r.ReceiverLoop(ctx)
+}
+
+// IsStopped returns a channel that's closed when the receiver is stopped.
+func (r *wsReceiver) IsStopped() <-chan struct{} {
+	return r.stopped
+}
+
+// ReceiverLoop runs the receiver loop.
+// To stop the receiver cancel the context and close the websocket connection
 func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 	type receivedMessage struct {
 		message *protobufs.ServerToAgent
 		err     error
 	}
+
+	defer func() { close(r.stopped) }()
 
 	for {
 		select {
@@ -55,6 +72,7 @@ func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 		default:
 			result := make(chan receivedMessage, 1)
 
+			// To stop this goroutine, close the websocket connection
 			go func() {
 				var message protobufs.ServerToAgent
 				err := r.receiveMessage(&message)
