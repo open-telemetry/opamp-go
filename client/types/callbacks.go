@@ -2,6 +2,7 @@ package types
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
@@ -110,6 +111,11 @@ type Callbacks struct {
 
 	// OnCommand is called when the Server requests that the connected Agent perform a command.
 	OnCommand func(ctx context.Context, command *protobufs.ServerToAgentCommand) error
+
+	// CheckRedirect is called before following a redirect. It is similar in
+	// nature to the CheckRedirect in net/http's Client. If the value is nil,
+	// then the http client's CheckRedirect will not be altered.
+	CheckRedirect func(req *http.Request, via []*http.Response) error
 }
 
 func (c *Callbacks) SetDefaults() {
