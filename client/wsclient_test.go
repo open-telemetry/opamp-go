@@ -392,6 +392,59 @@ func TestRedirectWS(t *testing.T) {
 	}
 }
 
+func TestRedirectWSFollowChain(t *testing.T) {
+	// test that redirect following is recursive
+	redirectee := internal.StartMockServer(t)
+	middle := redirectServer("http://"+redirectee.Endpoint, 302)
+	middleURL, err := url.Parse(middle.URL)
+	if err != nil {
+		// unlikely
+		t.Fatal(err)
+	}
+	redirector := redirectServer("http://"+middleURL.Host, 302)
+
+	var conn atomic.Value
+	redirectee.OnWSConnect = func(c *websocket.Conn) {
+		conn.Store(c)
+	}
+
+	// Start an OpAMP/WebSocket client.
+	var connected int64
+	var connectErr atomic.Value
+	settings := types.StartSettings{
+		Callbacks: types.CallbacksStruct{
+			OnConnectFunc: func(ctx context.Context) {
+				atomic.StoreInt64(&connected, 1)
+			},
+			OnConnectFailedFunc: func(ctx context.Context, err error) {
+				if err != websocket.ErrBadHandshake {
+					connectErr.Store(err)
+				}
+			},
+		},
+	}
+	reURL, err := url.Parse(redirector.URL)
+	if err != nil {
+		// unlikely
+		t.Fatal(err)
+	}
+	reURL.Scheme = "ws"
+	settings.OpAMPServerURL = reURL.String()
+	client := NewWebSocket(nil)
+	startClient(t, settings, client)
+
+	// Wait for connection to be established.
+	eventually(t, func() bool {
+		return conn.Load() != nil || connectErr.Load() != nil || client.lastInternalErr.Load() != nil
+	})
+
+	assert.True(t, connectErr.Load() == nil)
+
+	// Stop the client.
+	err = client.Stop(context.Background())
+	assert.NoError(t, err)
+}
+
 func TestHandlesStopBeforeStart(t *testing.T) {
 	client := NewWebSocket(nil)
 	require.Error(t, client.Stop(context.Background()))
