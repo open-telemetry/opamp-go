@@ -333,6 +333,7 @@ type checkRedirectMock struct {
 func (c *checkRedirectMock) CheckRedirect(req *http.Request, via []*http.Response) error {
 	if req == nil {
 		c.t.Error("nil request in CheckRedirect")
+		return errors.New("nil request in CheckRedirect")
 	}
 	if len(via) > c.viaLen {
 		c.t.Error("via should be shorter than viaLen")
