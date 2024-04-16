@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
@@ -162,7 +161,6 @@ func (c *wsClient) SendCustomMessage(message *protobufs.CustomMessage) (messageS
 // and a Location header. If found, it sets the URL to the location found in the
 // header so that it is tried on the next retry, instead of the current URL.
 func (c *wsClient) handleRedirect(ctx context.Context, resp *http.Response) error {
-	fmt.Println("FOO")
 	// append to the responseChain so that subsequent redirects will have access
 	c.responseChain = append(c.responseChain, resp)
 
