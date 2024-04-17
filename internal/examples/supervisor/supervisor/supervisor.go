@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"math/rand"
 	"os"
 	"runtime"
 	"sort"
@@ -13,11 +12,11 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/google/uuid"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/rawbytes"
-	"github.com/oklog/ulid/v2"
 
 	"github.com/open-telemetry/opamp-go/client"
 	"github.com/open-telemetry/opamp-go/client/types"
@@ -54,7 +53,7 @@ type Supervisor struct {
 	agentVersion string
 
 	// Agent's instance id.
-	instanceId ulid.ULID
+	instanceId uuid.UUID
 
 	// A config section to be added to the Collector's config to fetch its own metrics.
 	// TODO: store this persistently so that when starting we can compose the effective
@@ -91,7 +90,7 @@ func NewSupervisor(logger types.Logger) (*Supervisor, error) {
 
 	s.createInstanceId()
 	logger.Debugf(context.Background(), "Supervisor starting, id=%v, type=%s, version=%s.",
-		s.instanceId.String(), agentType, agentVersion)
+		s.instanceId, agentType, agentVersion)
 
 	s.loadAgentEffectiveConfig()
 
@@ -138,7 +137,7 @@ func (s *Supervisor) startOpAMP() error {
 		TLSConfig: &tls.Config{
 			InsecureSkipVerify: true,
 		},
-		InstanceUid: s.instanceId.String(),
+		InstanceUid: types.InstanceUid(s.instanceId),
 		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func(ctx context.Context) {
 				s.logger.Debugf(ctx, "Connected to the server.")
@@ -184,8 +183,12 @@ func (s *Supervisor) startOpAMP() error {
 
 func (s *Supervisor) createInstanceId() {
 	// Generate instance id.
-	entropy := ulid.Monotonic(rand.New(rand.NewSource(0)), 0)
-	s.instanceId = ulid.MustNew(ulid.Timestamp(time.Now()), entropy)
+
+	uid, err := uuid.NewV7()
+	if err != nil {
+		panic(err)
+	}
+	s.instanceId = uid
 
 	// TODO: set instanceId in the Collector config.
 }
@@ -573,9 +576,10 @@ func (s *Supervisor) onMessage(ctx context.Context, msg *types.MessageData) {
 	}
 
 	if msg.AgentIdentification != nil {
-		newInstanceId, err := ulid.Parse(msg.AgentIdentification.NewInstanceUid)
+		newInstanceId, err := uuid.FromBytes(msg.AgentIdentification.NewInstanceUid)
 		if err != nil {
-			s.logger.Errorf(ctx, err.Error())
+			s.logger.Errorf(ctx, "invalid NewInstanceUid: %v", err)
+			return
 		}
 
 		s.logger.Debugf(ctx, "Agent identify is being changed from id=%v to id=%v",

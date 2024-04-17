@@ -247,6 +247,8 @@ func TestDisconnectWSConnection(t *testing.T) {
 	})
 }
 
+var testInstanceUid = []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}
+
 func TestServerReceiveSendMessage(t *testing.T) {
 	var rcvMsg atomic.Value
 	callbacks := CallbacksStruct{
@@ -282,7 +284,7 @@ func TestServerReceiveSendMessage(t *testing.T) {
 
 	// Send a message to the Server.
 	sendMsg := protobufs.AgentToServer{
-		InstanceUid: "12345678",
+		InstanceUid: testInstanceUid,
 	}
 	bytes, err := proto.Marshal(&sendMsg)
 	require.NoError(t, err)
@@ -364,7 +366,7 @@ func TestServerReceiveSendMessageWithCompression(t *testing.T) {
 
 			// Send a message to the Server.
 			sendMsg := protobufs.AgentToServer{
-				InstanceUid: "10000000",
+				InstanceUid: testInstanceUid,
 				EffectiveConfig: &protobufs.EffectiveConfig{
 					ConfigMap: &protobufs.AgentConfigMap{
 						ConfigMap: map[string]*protobufs.AgentConfigFile{
@@ -452,7 +454,7 @@ func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
 
 	// Send a message to the Server.
 	sendMsg := protobufs.AgentToServer{
-		InstanceUid: "12345678",
+		InstanceUid: testInstanceUid,
 	}
 	b, err := proto.Marshal(&sendMsg)
 	require.NoError(t, err)
@@ -584,7 +586,7 @@ func TestServerAttachSendMessagePlainHTTP(t *testing.T) {
 
 	// Send a message to the Server.
 	sendMsg := protobufs.AgentToServer{
-		InstanceUid: "12345678",
+		InstanceUid: testInstanceUid,
 	}
 	b, err := proto.Marshal(&sendMsg)
 	require.NoError(t, err)
@@ -653,7 +655,7 @@ func TestServerHonoursClientRequestContentEncoding(t *testing.T) {
 
 	// Send a message to the Server.
 	sendMsg := protobufs.AgentToServer{
-		InstanceUid: "12345678",
+		InstanceUid: testInstanceUid,
 	}
 	b, err := proto.Marshal(&sendMsg)
 	require.NoError(t, err)
@@ -731,7 +733,7 @@ func TestServerHonoursAcceptEncoding(t *testing.T) {
 
 	// Send a message to the Server.
 	sendMsg := protobufs.AgentToServer{
-		InstanceUid: "12345678",
+		InstanceUid: testInstanceUid,
 	}
 	b, err := proto.Marshal(&sendMsg)
 	require.NoError(t, err)
@@ -775,7 +777,7 @@ func TestDecodeMessage(t *testing.T) {
 	msgsToTest := []*protobufs.AgentToServer{
 		{}, // Empty message
 		{
-			InstanceUid: "abcd",
+			InstanceUid: testInstanceUid,
 			SequenceNum: 123,
 		},
 	}
@@ -934,7 +936,7 @@ func TestServerCallsHTTPMiddlewareOverHTTP(t *testing.T) {
 	}()
 
 	// Send an AgentToServer message to the Server
-	sendMsg1 := protobufs.AgentToServer{InstanceUid: "01BX5ZZKBKACTAV9WEVGEMMVS1"}
+	sendMsg1 := protobufs.AgentToServer{InstanceUid: []byte("0123456789123456")}
 	serializedProtoBytes1, err := proto.Marshal(&sendMsg1)
 	require.NoError(t, err)
 	_, err = http.Post(
@@ -945,7 +947,7 @@ func TestServerCallsHTTPMiddlewareOverHTTP(t *testing.T) {
 	require.NoError(t, err)
 
 	// Send another AgentToServer message to the Server
-	sendMsg2 := protobufs.AgentToServer{InstanceUid: "01BX5ZZKBKACTAV9WEVGEMMVRZ"}
+	sendMsg2 := protobufs.AgentToServer{InstanceUid: []byte("0123456789000000")}
 	serializedProtoBytes2, err := proto.Marshal(&sendMsg2)
 	require.NoError(t, err)
 	_, err = http.Post(

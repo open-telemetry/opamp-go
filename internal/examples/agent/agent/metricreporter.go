@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/oklog/ulid/v2"
+	"github.com/google/uuid"
 	"github.com/shirou/gopsutil/process"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -46,7 +46,7 @@ func NewMetricReporter(
 	dest *protobufs.TelemetryConnectionSettings,
 	agentType string,
 	agentVersion string,
-	instanceId ulid.ULID,
+	instanceId uuid.UUID,
 ) (*MetricReporter, error) {
 
 	// Check the destination credentials to make sure they look like a valid OTLP/HTTP

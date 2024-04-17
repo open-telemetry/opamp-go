@@ -21,7 +21,7 @@ type StartSettings struct {
 	TLSConfig *tls.Config
 
 	// Agent information.
-	InstanceUid string
+	InstanceUid InstanceUid
 
 	// Callbacks that the client will call after Start() returns nil.
 	Callbacks Callbacks
