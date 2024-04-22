@@ -150,14 +150,12 @@ func (s *packagesSyncer) syncPackage(
 	if status == nil {
 		// This package has no status. Create one.
 		status = &protobufs.PackageStatus{
-			Name:                 pkgName,
-			ServerOfferedVersion: pkgAvail.Version,
-			ServerOfferedHash:    pkgAvail.Hash,
+			Name: pkgName,
 		}
 		s.statuses.Packages[pkgName] = status
 	}
-	// status.ServerOfferedVersion = pkgAvail.Version
-	// status.ServerOfferedHash = pkgAvail.Hash
+	status.ServerOfferedVersion = pkgAvail.Version
+	status.ServerOfferedHash = pkgAvail.Hash
 
 	pkgLocal, err := s.localState.PackageState(pkgName)
 	if err != nil {
