@@ -18,6 +18,15 @@ type Settings struct {
 	// the compression is only effectively enabled if the client also supports compression.
 	// The data will be compressed in both directions.
 	EnableCompression bool
+
+	// Defines the custom capabilities of the Server. Each capability is a reverse FQDN with
+	// optional version information that uniquely identifies the custom capability and
+	// should match a capability specified in a supported CustomMessage.
+	//
+	// See
+	// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#customcapabilities
+	// for more details.
+	CustomCapabilities []string
 }
 
 // StartSettings contains the settings for starting an OpAMP Server.
@@ -33,6 +42,11 @@ type StartSettings struct {
 
 	// Server's TLS configuration.
 	TLSConfig *tls.Config
+
+	// HTTPMiddleware specifies middleware for HTTP messages received by the server.
+	// Note that the function will be called once for websockets upon connecting and will
+	// be called for every HTTP request. This function is optional to set.
+	HTTPMiddleware func(handler http.Handler) http.Handler
 }
 
 type HTTPHandlerFunc func(http.ResponseWriter, *http.Request)

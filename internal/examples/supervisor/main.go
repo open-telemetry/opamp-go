@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
@@ -12,7 +13,7 @@ func main() {
 	logger := &supervisor.Logger{Logger: log.Default()}
 	supervisor, err := supervisor.NewSupervisor(logger)
 	if err != nil {
-		logger.Errorf(err.Error())
+		logger.Errorf(context.Background(), err.Error())
 		os.Exit(-1)
 		return
 	}

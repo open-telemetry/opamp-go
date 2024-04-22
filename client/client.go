@@ -89,4 +89,39 @@ type OpAMPClient interface {
 	// May be called before or after Start().
 	// May be also called from OnMessage handler.
 	RequestConnectionSettings(request *protobufs.ConnectionSettingsRequest) error
+
+	// SetCustomCapabilities modifies the set of customCapabilities supported by the client.
+	// The new customCapabilities will be sent with the next message to the server. If
+	// custom capabilities are used SHOULD be called before Start(). If not called before
+	// Start(), the set of supported custom capabilities will be empty. May also be called
+	// anytime after Start(), including from OnMessage handler, to modify the set of
+	// supported custom capabilities. nil values are not allowed and will return an error.
+	//
+	// Each capability is a reverse FQDN with optional version information that uniquely
+	// identifies the custom capability and should match a capability specified in a
+	// supported CustomMessage. The client will automatically ignore any CustomMessage that
+	// contains a custom capability that is not specified in this field.
+	//
+	// See
+	// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#customcapabilities
+	// for more details.
+	SetCustomCapabilities(customCapabilities *protobufs.CustomCapabilities) error
+
+	// SendCustomMessage sends the custom message to the Server. May be called anytime after
+	// Start(), including from OnMessage handler.
+	//
+	// If the CustomMessage is nil, ErrCustomMessageMissing will be returned. If the message
+	// specifies a capability that is not listed in the CustomCapabilities provided in the
+	// StartSettings for the client, ErrCustomCapabilityNotSupported will be returned.
+	//
+	// Only one message can be sent at a time. If SendCustomMessage has been already called
+	// and the message is still pending (in progress) then subsequent calls to
+	// SendCustomMessage will return ErrCustomMessagePending and a channel that will be
+	// closed when the pending message is sent. To ensure that the previous send is complete
+	// and it is safe to send another CustomMessage, the caller should wait for the returned
+	// channel to be closed before attempting to send another custom message.
+	//
+	// If no error is returned, the channel returned will be closed after the specified
+	// message is sent.
+	SendCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error)
 }

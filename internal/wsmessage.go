@@ -11,6 +11,7 @@ import (
 // Message header is currently uint64 zero value.
 const wsMsgHeader = uint64(0)
 
+// DecodeWSMessage decodes a websocket message as bytes into a proto.Message.
 func DecodeWSMessage(bytes []byte, msg proto.Message) error {
 	// Message header is optional until the end of grace period that ends Feb 1, 2023.
 	// Check if the header is present.
@@ -23,9 +24,9 @@ func DecodeWSMessage(bytes []byte, msg proto.Message) error {
 		}
 		// Skip the header. It really is just a single zero byte for now.
 		bytes = bytes[n:]
-	} else {
-		// Old message format. No header present.
 	}
+	// If no header was present (the "if" check above), then this is the old
+	// message format. No header is present.
 
 	// Decode WebSocket message as a Protobuf message.
 	err := proto.Unmarshal(bytes, msg)

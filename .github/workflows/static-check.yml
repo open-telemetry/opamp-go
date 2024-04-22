@@ -1,0 +1,26 @@
+name: static-check
+
+on:
+  pull_request:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+
+jobs:
+  staticcheck:
+    name: staticcheck (project)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - id: install_go
+        uses: WillAbides/setup-go-faster@v1.14.0
+        with:
+          go-version: "1.20.x"
+      - uses: dominikh/staticcheck-action@v1.3.1
+        with:
+          install-go: false
+          version: "2023.1.7"

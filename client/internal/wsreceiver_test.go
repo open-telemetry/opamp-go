@@ -3,8 +3,11 @@ package internal
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -14,12 +17,18 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
+var _ types.Logger = &TestLogger{}
+
 type TestLogger struct {
 	*testing.T
 }
 
-func (logger TestLogger) Debugf(format string, v ...interface{}) {
+func (logger TestLogger) Debugf(ctx context.Context, format string, v ...interface{}) {
 	logger.Logf(format, v...)
+}
+
+func (logger TestLogger) Errorf(ctx context.Context, format string, v ...interface{}) {
+	logger.Fatalf(format, v...)
 }
 
 type commandAction int
@@ -63,7 +72,7 @@ func TestServerToAgentCommand(t *testing.T) {
 			action := none
 
 			callbacks := types.CallbacksStruct{
-				OnCommandFunc: func(command *protobufs.ServerToAgentCommand) error {
+				OnCommandFunc: func(ctx context.Context, command *protobufs.ServerToAgentCommand) error {
 					switch command.Type {
 					case protobufs.CommandType_CommandType_Restart:
 						action = restart
@@ -123,7 +132,7 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 		calledOnMessageConfig := false
 
 		callbacks := types.CallbacksStruct{
-			OnCommandFunc: func(command *protobufs.ServerToAgentCommand) error {
+			OnCommandFunc: func(ctx context.Context, command *protobufs.ServerToAgentCommand) error {
 				calledCommand = true
 				return nil
 			},
@@ -174,4 +183,37 @@ func TestDecodeMessage(t *testing.T) {
 			assert.True(t, proto.Equal(msg, &decoded))
 		}
 	}
+}
+
+func TestReceiverLoopStop(t *testing.T) {
+
+	srv := StartMockServer(t)
+
+	conn, _, err := websocket.DefaultDialer.DialContext(
+		context.Background(),
+		"ws://"+srv.Endpoint,
+		nil,
+	)
+	require.NoError(t, err)
+
+	var receiverLoopStopped atomic.Bool
+
+	callbacks := types.CallbacksStruct{}
+	clientSyncedState := ClientSyncedState{
+		remoteConfigStatus: &protobufs.RemoteConfigStatus{},
+	}
+	sender := WSSender{}
+	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
+	receiver := NewWSReceiver(TestLogger{t}, callbacks, conn, &sender, &clientSyncedState, nil, capabilities)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		receiver.ReceiverLoop(ctx)
+		receiverLoopStopped.Store(true)
+	}()
+	cancel()
+
+	assert.Eventually(t, func() bool {
+		return receiverLoopStopped.Load()
+	}, 2*time.Second, 100*time.Millisecond, "ReceiverLoop should stop when context is cancelled")
 }

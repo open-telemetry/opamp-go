@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -27,25 +28,25 @@ func (c CallbacksStruct) OnConnecting(request *http.Request) types.ConnectionRes
 // ConnectionCallbacksStruct is a struct that implements ConnectionCallbacks interface and allows
 // to override only the methods that are needed.
 type ConnectionCallbacksStruct struct {
-	OnConnectedFunc       func(conn types.Connection)
-	OnMessageFunc         func(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent
+	OnConnectedFunc       func(ctx context.Context, conn types.Connection)
+	OnMessageFunc         func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent
 	OnConnectionCloseFunc func(conn types.Connection)
 }
 
 var _ types.ConnectionCallbacks = (*ConnectionCallbacksStruct)(nil)
 
 // OnConnected implements ConnectionCallbacks.OnConnected.
-func (c ConnectionCallbacksStruct) OnConnected(conn types.Connection) {
+func (c ConnectionCallbacksStruct) OnConnected(ctx context.Context, conn types.Connection) {
 	if c.OnConnectedFunc != nil {
-		c.OnConnectedFunc(conn)
+		c.OnConnectedFunc(ctx, conn)
 	}
 }
 
 // OnMessage implements ConnectionCallbacks.OnMessage.
 // If OnMessageFunc is nil then it will send an empty response to the agent
-func (c ConnectionCallbacksStruct) OnMessage(conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+func (c ConnectionCallbacksStruct) OnMessage(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 	if c.OnMessageFunc != nil {
-		return c.OnMessageFunc(conn, message)
+		return c.OnMessageFunc(ctx, conn, message)
 	} else {
 		// We will send an empty response since there is no user-defined callback to handle it.
 		return &protobufs.ServerToAgent{

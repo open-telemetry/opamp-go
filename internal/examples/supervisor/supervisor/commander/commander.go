@@ -41,7 +41,7 @@ func NewCommander(logger types.Logger, cfg *config.Agent, args ...string) (*Comm
 // Start the Agent and begin watching the process.
 // Agent's stdout and stderr are written to a file.
 func (c *Commander) Start(ctx context.Context) error {
-	c.logger.Debugf("Starting agent %s", c.cfg.Executable)
+	c.logger.Debugf(ctx, "Starting agent %s", c.cfg.Executable)
 
 	logFilePath := "agent.log"
 	logFile, err := os.Create(logFilePath)
@@ -62,7 +62,7 @@ func (c *Commander) Start(ctx context.Context) error {
 		return err
 	}
 
-	c.logger.Debugf("Agent process started, PID=%d", c.cmd.Process.Pid)
+	c.logger.Debugf(ctx, "Agent process started, PID=%d", c.cmd.Process.Pid)
 	atomic.StoreInt64(&c.running, 1)
 
 	go c.watch()
@@ -121,7 +121,7 @@ func (c *Commander) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	c.logger.Debugf("Stopping agent process, PID=%v", c.cmd.Process.Pid)
+	c.logger.Debugf(ctx, "Stopping agent process, PID=%v", c.cmd.Process.Pid)
 
 	// Gracefully signal process to stop.
 	if err := c.cmd.Process.Signal(syscall.SIGTERM); err != nil {
@@ -143,12 +143,12 @@ func (c *Commander) Stop(ctx context.Context) error {
 			break
 		case <-finished:
 			// Process is successfully finished.
-			c.logger.Debugf("Agent process PID=%v successfully stopped.", c.cmd.Process.Pid)
+			c.logger.Debugf(ctx, "Agent process PID=%v successfully stopped.", c.cmd.Process.Pid)
 			return
 		}
 
 		// Time is out. Kill the process.
-		c.logger.Debugf(
+		c.logger.Debugf(ctx,
 			"Agent process PID=%d is not responding to SIGTERM. Sending SIGKILL to kill forcedly.",
 			c.cmd.Process.Pid)
 		if innerErr = c.cmd.Process.Signal(syscall.SIGKILL); innerErr != nil {

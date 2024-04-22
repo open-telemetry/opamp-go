@@ -47,9 +47,9 @@ func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
 		}
 	})
 	sender.callbacks = types.CallbacksStruct{
-		OnConnectFunc: func() {
+		OnConnectFunc: func(ctx context.Context) {
 		},
-		OnConnectFailedFunc: func(_ error) {
+		OnConnectFailedFunc: func(ctx context.Context, _ error) {
 		},
 	}
 	sender.url = url
@@ -144,9 +144,9 @@ func TestHTTPSenderRetryForFailedRequests(t *testing.T) {
 		}
 	})
 	sender.callbacks = types.CallbacksStruct{
-		OnConnectFunc: func() {
+		OnConnectFunc: func(ctx context.Context) {
 		},
-		OnConnectFailedFunc: func(_ error) {
+		OnConnectFailedFunc: func(ctx context.Context, _ error) {
 		},
 	}
 	sender.url = url

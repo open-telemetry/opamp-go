@@ -47,6 +47,16 @@ type server struct {
 
 var _ OpAMPServer = (*server)(nil)
 
+// innerHTTPHandler implements the http.Handler interface so it can be used by functions
+// that require the type (like Middleware) without exposing ServeHTTP directly on server.
+type innerHTTPHander struct {
+	httpHandlerFunc http.HandlerFunc
+}
+
+func (i innerHTTPHander) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	i.httpHandlerFunc(writer, request)
+}
+
 // New creates a new OpAMP Server.
 func New(logger types.Logger) *server {
 	if logger == nil {
@@ -82,7 +92,13 @@ func (s *server) Start(settings StartSettings) error {
 		path = defaultOpAMPPath
 	}
 
-	mux.HandleFunc(path, s.httpHandler)
+	handler := innerHTTPHander{s.httpHandler}
+
+	if settings.HTTPMiddleware != nil {
+		mux.Handle(path, settings.HTTPMiddleware(handler))
+	} else {
+		mux.Handle(path, handler)
+	}
 
 	hs := &http.Server{
 		Handler:     mux,
@@ -130,7 +146,7 @@ func (s *server) startHttpServer(listenAddr string, serveFunc func(l net.Listene
 		// ErrServerClosed is expected after successful Stop(), so we won't log that
 		// particular error.
 		if err != nil && err != http.ErrServerClosed {
-			s.logger.Errorf("Error running HTTP Server: %v", err)
+			s.logger.Errorf(context.Background(), "Error running HTTP Server: %v", err)
 		}
 	}()
 
@@ -179,16 +195,16 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 	// No, it is a WebSocket. Upgrade it.
 	conn, err := s.wsUpgrader.Upgrade(w, req, nil)
 	if err != nil {
-		s.logger.Errorf("Cannot upgrade HTTP connection to WebSocket: %v", err)
+		s.logger.Errorf(req.Context(), "Cannot upgrade HTTP connection to WebSocket: %v", err)
 		return
 	}
 
 	// Return from this func to reduce memory usage.
 	// Handle the connection on a separate goroutine.
-	go s.handleWSConnection(conn, connectionCallbacks)
+	go s.handleWSConnection(req.Context(), conn, connectionCallbacks)
 }
 
-func (s *server) handleWSConnection(wsConn *websocket.Conn, connectionCallbacks serverTypes.ConnectionCallbacks) {
+func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Conn, connectionCallbacks serverTypes.ConnectionCallbacks) {
 	agentConn := wsConnection{wsConn: wsConn, connMutex: &sync.Mutex{}}
 
 	defer func() {
@@ -196,7 +212,7 @@ func (s *server) handleWSConnection(wsConn *websocket.Conn, connectionCallbacks 
 		defer func() {
 			err := wsConn.Close()
 			if err != nil {
-				s.logger.Errorf("error closing the WebSocket connection: %v", err)
+				s.logger.Errorf(context.Background(), "error closing the WebSocket connection: %v", err)
 			}
 		}()
 
@@ -206,43 +222,52 @@ func (s *server) handleWSConnection(wsConn *websocket.Conn, connectionCallbacks 
 	}()
 
 	if connectionCallbacks != nil {
-		connectionCallbacks.OnConnected(agentConn)
+		connectionCallbacks.OnConnected(reqCtx, agentConn)
 	}
+
+	sentCustomCapabilities := false
 
 	// Loop until fail to read from the WebSocket connection.
 	for {
+		msgContext := context.Background()
 		// Block until the next message can be read.
-		mt, bytes, err := wsConn.ReadMessage()
+		mt, msgBytes, err := wsConn.ReadMessage()
 		if err != nil {
 			if !websocket.IsUnexpectedCloseError(err) {
-				s.logger.Errorf("Cannot read a message from WebSocket: %v", err)
+				s.logger.Errorf(msgContext, "Cannot read a message from WebSocket: %v", err)
 				break
 			}
 			// This is a normal closing of the WebSocket connection.
-			s.logger.Debugf("Agent disconnected: %v", err)
+			s.logger.Debugf(msgContext, "Agent disconnected: %v", err)
 			break
 		}
 		if mt != websocket.BinaryMessage {
-			s.logger.Errorf("Received unexpected message type from WebSocket: %v", mt)
+			s.logger.Errorf(msgContext, "Received unexpected message type from WebSocket: %v", mt)
 			continue
 		}
 
 		// Decode WebSocket message as a Protobuf message.
 		var request protobufs.AgentToServer
-		err = internal.DecodeWSMessage(bytes, &request)
+		err = internal.DecodeWSMessage(msgBytes, &request)
 		if err != nil {
-			s.logger.Errorf("Cannot decode message from WebSocket: %v", err)
+			s.logger.Errorf(msgContext, "Cannot decode message from WebSocket: %v", err)
 			continue
 		}
 
 		if connectionCallbacks != nil {
-			response := connectionCallbacks.OnMessage(agentConn, &request)
+			response := connectionCallbacks.OnMessage(msgContext, agentConn, &request)
 			if response.InstanceUid == "" {
 				response.InstanceUid = request.InstanceUid
 			}
-			err = agentConn.Send(context.Background(), response)
+			if !sentCustomCapabilities {
+				response.CustomCapabilities = &protobufs.CustomCapabilities{
+					Capabilities: s.settings.CustomCapabilities,
+				}
+				sentCustomCapabilities = true
+			}
+			err = agentConn.Send(msgContext, response)
 			if err != nil {
-				s.logger.Errorf("Cannot send message to WebSocket: %v", err)
+				s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
 			}
 		}
 	}
@@ -286,18 +311,18 @@ func compressGzip(data []byte) ([]byte, error) {
 }
 
 func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter, connectionCallbacks serverTypes.ConnectionCallbacks) {
-	bytes, err := s.readReqBody(req)
+	bodyBytes, err := s.readReqBody(req)
 	if err != nil {
-		s.logger.Debugf("Cannot read HTTP body: %v", err)
+		s.logger.Debugf(req.Context(), "Cannot read HTTP body: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	// Decode the message as a Protobuf message.
 	var request protobufs.AgentToServer
-	err = proto.Unmarshal(bytes, &request)
+	err = proto.Unmarshal(bodyBytes, &request)
 	if err != nil {
-		s.logger.Debugf("Cannot decode message from HTTP Body: %v", err)
+		s.logger.Debugf(req.Context(), "Cannot decode message from HTTP Body: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -311,7 +336,7 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 		return
 	}
 
-	connectionCallbacks.OnConnected(agentConn)
+	connectionCallbacks.OnConnected(req.Context(), agentConn)
 
 	defer func() {
 		// Indicate via the callback that the OpAMP Connection is closed. From OpAMP
@@ -321,15 +346,20 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 		connectionCallbacks.OnConnectionClose(agentConn)
 	}()
 
-	response := connectionCallbacks.OnMessage(agentConn, &request)
+	response := connectionCallbacks.OnMessage(req.Context(), agentConn, &request)
 
 	// Set the InstanceUid if it is not set by the callback.
 	if response.InstanceUid == "" {
 		response.InstanceUid = request.InstanceUid
 	}
 
+	// Return the CustomCapabilities
+	response.CustomCapabilities = &protobufs.CustomCapabilities{
+		Capabilities: s.settings.CustomCapabilities,
+	}
+
 	// Marshal the response.
-	bytes, err = proto.Marshal(response)
+	bodyBytes, err = proto.Marshal(response)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -338,17 +368,17 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	// Send the response.
 	w.Header().Set(headerContentType, contentTypeProtobuf)
 	if req.Header.Get(headerAcceptEncoding) == contentEncodingGzip {
-		bytes, err = compressGzip(bytes)
+		bodyBytes, err = compressGzip(bodyBytes)
 		if err != nil {
-			s.logger.Errorf("Cannot compress response: %v", err)
+			s.logger.Errorf(req.Context(), "Cannot compress response: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set(headerContentEncoding, contentEncodingGzip)
 	}
-	_, err = w.Write(bytes)
+	_, err = w.Write(bodyBytes)
 
 	if err != nil {
-		s.logger.Debugf("Cannot send HTTP response: %v", err)
+		s.logger.Debugf(req.Context(), "Cannot send HTTP response: %v", err)
 	}
 }

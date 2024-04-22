@@ -110,7 +110,6 @@ func (h *HTTPSender) Run(
 			// This will make hasPendingMessage channel readable, so we will enter
 			// the case above on the next iteration of the loop.
 			h.ScheduleSend()
-			break
 
 		case <-ctx.Done():
 			return
@@ -134,7 +133,7 @@ func (h *HTTPSender) SetRequestHeader(header http.Header) {
 func (h *HTTPSender) makeOneRequestRoundtrip(ctx context.Context) {
 	resp, err := h.sendRequestWithRetries(ctx)
 	if err != nil {
-		h.logger.Errorf("%v", err)
+		h.logger.Errorf(ctx, "%v", err)
 		return
 	}
 	if resp == nil {
@@ -148,9 +147,9 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 	req, err := h.prepareRequest(ctx)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			h.logger.Debugf("Client is stopped, will not try anymore.")
+			h.logger.Debugf(ctx, "Client is stopped, will not try anymore.")
 		} else {
-			h.logger.Errorf("Failed prepare request (%v), will not try anymore.", err)
+			h.logger.Errorf(ctx, "Failed prepare request (%v), will not try anymore.", err)
 		}
 		return nil, err
 	}
@@ -179,7 +178,7 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 					switch resp.StatusCode {
 					case http.StatusOK:
 						// We consider it connected if we receive 200 status from the Server.
-						h.callbacks.OnConnect()
+						h.callbacks.OnConnect(ctx)
 						return resp, nil
 
 					case http.StatusTooManyRequests, http.StatusServiceUnavailable:
@@ -190,16 +189,16 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 						return nil, fmt.Errorf("invalid response from server: %d", resp.StatusCode)
 					}
 				} else if errors.Is(err, context.Canceled) {
-					h.logger.Debugf("Client is stopped, will not try anymore.")
+					h.logger.Debugf(ctx, "Client is stopped, will not try anymore.")
 					return nil, err
 				}
 
-				h.logger.Errorf("Failed to do HTTP request (%v), will retry", err)
-				h.callbacks.OnConnectFailed(err)
+				h.logger.Errorf(ctx, "Failed to do HTTP request (%v), will retry", err)
+				h.callbacks.OnConnectFailed(ctx, err)
 			}
 
 		case <-ctx.Done():
-			h.logger.Debugf("Client is stopped, will not try anymore.")
+			h.logger.Debugf(ctx, "Client is stopped, will not try anymore.")
 			return nil, ctx.Err()
 		}
 	}
@@ -239,11 +238,11 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 		var buf bytes.Buffer
 		g := gzip.NewWriter(&buf)
 		if _, err = g.Write(data); err != nil {
-			h.logger.Errorf("Failed to compress message: %v", err)
+			h.logger.Errorf(ctx, "Failed to compress message: %v", err)
 			return nil, err
 		}
 		if err = g.Close(); err != nil {
-			h.logger.Errorf("Failed to close the writer: %v", err)
+			h.logger.Errorf(ctx, "Failed to close the writer: %v", err)
 			return nil, err
 		}
 		req.bodyReader = bodyReader(buf.Bytes())
@@ -262,14 +261,14 @@ func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
 	msgBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		_ = resp.Body.Close()
-		h.logger.Errorf("cannot read response body: %v", err)
+		h.logger.Errorf(ctx, "cannot read response body: %v", err)
 		return
 	}
 	_ = resp.Body.Close()
 
 	var response protobufs.ServerToAgent
 	if err := proto.Unmarshal(msgBytes, &response); err != nil {
-		h.logger.Errorf("cannot unmarshal response: %v", err)
+		h.logger.Errorf(ctx, "cannot unmarshal response: %v", err)
 		return
 	}
 

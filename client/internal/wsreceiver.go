@@ -17,6 +17,9 @@ type wsReceiver struct {
 	sender    *WSSender
 	callbacks types.Callbacks
 	processor receivedProcessor
+
+	// Indicates that the receiver has fully stopped.
+	stopped chan struct{}
 }
 
 // NewWSReceiver creates a new Receiver that uses WebSocket to receive
@@ -36,29 +39,60 @@ func NewWSReceiver(
 		sender:    sender,
 		callbacks: callbacks,
 		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider, capabilities),
+		stopped:   make(chan struct{}),
 	}
 
 	return w
 }
 
-// ReceiverLoop runs the receiver loop. To stop the receiver cancel the context.
-func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
-	runContext, cancelFunc := context.WithCancel(ctx)
+// Start starts the receiver loop.
+func (r *wsReceiver) Start(ctx context.Context) {
+	go r.ReceiverLoop(ctx)
+}
 
-out:
-	for {
-		var message protobufs.ServerToAgent
-		if err := r.receiveMessage(&message); err != nil {
-			if ctx.Err() == nil && !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-				r.logger.Errorf("Unexpected error while receiving: %v", err)
-			}
-			break out
-		} else {
-			r.processor.ProcessReceivedMessage(runContext, &message)
-		}
+// IsStopped returns a channel that's closed when the receiver is stopped.
+func (r *wsReceiver) IsStopped() <-chan struct{} {
+	return r.stopped
+}
+
+// ReceiverLoop runs the receiver loop.
+// To stop the receiver cancel the context and close the websocket connection
+func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
+	type receivedMessage struct {
+		message *protobufs.ServerToAgent
+		err     error
 	}
 
-	cancelFunc()
+	defer func() { close(r.stopped) }()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			result := make(chan receivedMessage, 1)
+
+			// To stop this goroutine, close the websocket connection
+			go func() {
+				var message protobufs.ServerToAgent
+				err := r.receiveMessage(&message)
+				result <- receivedMessage{&message, err}
+			}()
+
+			select {
+			case <-ctx.Done():
+				return
+			case res := <-result:
+				if res.err != nil {
+					if !websocket.IsCloseError(res.err, websocket.CloseNormalClosure) {
+						r.logger.Errorf(ctx, "Unexpected error while receiving: %v", res.err)
+					}
+					return
+				}
+				r.processor.ProcessReceivedMessage(ctx, res.message)
+			}
+		}
+	}
 }
 
 func (r *wsReceiver) receiveMessage(msg *protobufs.ServerToAgent) error {

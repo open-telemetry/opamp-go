@@ -3,7 +3,7 @@ package client
 import (
 	"compress/gzip"
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -22,10 +22,12 @@ func TestHTTPPolling(t *testing.T) {
 	srv := internal.StartMockServer(t)
 	var rcvCounter int64
 	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-		assert.EqualValues(t, rcvCounter, msg.SequenceNum)
-		if msg != nil {
-			atomic.AddInt64(&rcvCounter, 1)
+		if msg == nil {
+			t.Error("unexpected nil msg")
+			return nil
 		}
+		assert.EqualValues(t, rcvCounter, msg.SequenceNum)
+		atomic.AddInt64(&rcvCounter, 1)
 		return nil
 	}
 
@@ -63,7 +65,7 @@ func TestHTTPClientCompression(t *testing.T) {
 		assert.Equal(t, "gzip", r.Header.Get("Content-Encoding"))
 		reader, err := gzip.NewReader(r.Body)
 		assert.NoError(t, err)
-		body, err := ioutil.ReadAll(reader)
+		body, err := io.ReadAll(reader)
 		assert.NoError(t, err)
 		_ = r.Body.Close()
 		var response protobufs.AgentToServer
@@ -112,10 +114,12 @@ func TestHTTPClientSetPollingInterval(t *testing.T) {
 	srv := internal.StartMockServer(t)
 	var rcvCounter int64
 	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-		assert.EqualValues(t, rcvCounter, msg.SequenceNum)
-		if msg != nil {
-			atomic.AddInt64(&rcvCounter, 1)
+		if msg == nil {
+			t.Error("unexpected nil msg")
+			return nil
 		}
+		assert.EqualValues(t, rcvCounter, msg.SequenceNum)
+		atomic.AddInt64(&rcvCounter, 1)
 		return nil
 	}
 
