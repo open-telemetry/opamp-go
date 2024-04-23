@@ -154,6 +154,7 @@ func (s *packagesSyncer) syncPackage(
 		}
 		s.statuses.Packages[pkgName] = status
 	}
+	// Update the newly offered package Version and Hash
 	status.ServerOfferedVersion = pkgAvail.Version
 	status.ServerOfferedHash = pkgAvail.Hash
 
@@ -233,7 +234,9 @@ func (s *packagesSyncer) syncPackageFile(
 }
 
 // shouldDownloadFile returns true if the file should be downloaded.
-func (s *packagesSyncer) shouldDownloadFile(ctx context.Context, packageName string, file *protobufs.DownloadableFile) (bool, error) {
+func (s *packagesSyncer) shouldDownloadFile(ctx context.Context,
+	packageName string,
+	file *protobufs.DownloadableFile) (bool, error) {
 	fileContentHash, err := s.localState.FileContentHash(packageName)
 
 	if err != nil {
