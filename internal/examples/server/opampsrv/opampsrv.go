@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/oklog/ulid/v2"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/open-telemetry/opamp-go/internal"
@@ -83,12 +84,27 @@ func (srv *Server) onDisconnect(conn types.Connection) {
 }
 
 func (srv *Server) onMessage(ctx context.Context, conn types.Connection, msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-	instanceId := data.InstanceId(msg.InstanceUid)
-
-	agent := srv.agents.FindOrCreateAgent(instanceId, conn)
-
 	// Start building the response.
 	response := &protobufs.ServerToAgent{}
+
+	var instanceId data.InstanceId
+	if len(msg.InstanceUid) == 26 {
+		// This is an old-style ULID.
+		u, err := ulid.Parse(string(msg.InstanceUid))
+		if err != nil {
+			srv.logger.Errorf(ctx, "Cannot parse ULID %s: %v", string(msg.InstanceUid), err)
+			return response
+		}
+		instanceId = data.InstanceId(u.Bytes())
+	} else if len(msg.InstanceUid) == 16 {
+		// This is a 16 byte, new style UID.
+		instanceId = data.InstanceId(msg.InstanceUid)
+	} else {
+		srv.logger.Errorf(ctx, "Invalid length of msg.InstanceUid")
+		return response
+	}
+
+	agent := srv.agents.FindOrCreateAgent(instanceId, conn)
 
 	// Process the status report and continue building the response.
 	agent.UpdateStatus(msg, response)

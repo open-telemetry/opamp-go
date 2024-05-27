@@ -2,7 +2,7 @@ package internal
 
 import (
 	"context"
-	"errors"
+	"fmt"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -225,13 +225,13 @@ func (r *receivedProcessor) processErrorResponse(ctx context.Context, body *prot
 }
 
 func (r *receivedProcessor) rcvAgentIdentification(ctx context.Context, agentId *protobufs.AgentIdentification) error {
-	if agentId.NewInstanceUid == "" {
-		err := errors.New("empty instance uid is not allowed")
+	if len(agentId.NewInstanceUid) != 16 {
+		err := fmt.Errorf("instance uid must be 16 bytes but is %d bytes long", len(agentId.NewInstanceUid))
 		r.logger.Debugf(ctx, err.Error())
 		return err
 	}
 
-	err := r.sender.SetInstanceUid(agentId.NewInstanceUid)
+	err := r.sender.SetInstanceUid(types.InstanceUid(agentId.NewInstanceUid))
 	if err != nil {
 		r.logger.Errorf(ctx, "Error while setting instance uid: %v", err)
 		return err

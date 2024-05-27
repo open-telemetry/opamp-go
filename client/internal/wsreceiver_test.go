@@ -157,7 +157,7 @@ func TestDecodeMessage(t *testing.T) {
 	msgsToTest := []*protobufs.ServerToAgent{
 		{}, // Empty message
 		{
-			InstanceUid: "abcd",
+			InstanceUid: []byte("0123456789123456"),
 		},
 	}
 

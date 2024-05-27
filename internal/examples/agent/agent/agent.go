@@ -10,16 +10,14 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"math/rand"
 	"os"
 	"runtime"
 	"sort"
-	"time"
 
+	"github.com/google/uuid"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/rawbytes"
-	"github.com/oklog/ulid/v2"
 
 	"github.com/open-telemetry/opamp-go/client"
 	"github.com/open-telemetry/opamp-go/client/types"
@@ -54,7 +52,7 @@ type Agent struct {
 
 	effectiveConfig string
 
-	instanceId ulid.ULID
+	instanceId uuid.UUID
 
 	agentDescription *protobufs.AgentDescription
 
@@ -82,7 +80,7 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 
 	agent.createAgentIdentity()
 	agent.logger.Debugf(context.Background(), "Agent starting, id=%v, type=%s, version=%s.",
-		agent.instanceId.String(), agentType, agentVersion)
+		agent.instanceId, agentType, agentVersion)
 
 	agent.loadLocalConfig()
 	if err := agent.connect(); err != nil {
@@ -107,7 +105,7 @@ func (agent *Agent) connect() error {
 	settings := types.StartSettings{
 		OpAMPServerURL: "wss://127.0.0.1:4320/v1/opamp",
 		TLSConfig:      tlsConfig,
-		InstanceUid:    agent.instanceId.String(),
+		InstanceUid:    types.InstanceUid(agent.instanceId),
 		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func(ctx context.Context) {
 				agent.logger.Debugf(ctx, "Connected to the server.")
@@ -167,8 +165,11 @@ func (agent *Agent) disconnect(ctx context.Context) {
 
 func (agent *Agent) createAgentIdentity() {
 	// Generate instance id.
-	entropy := ulid.Monotonic(rand.New(rand.NewSource(0)), 0)
-	agent.instanceId = ulid.MustNew(ulid.Timestamp(time.Now()), entropy)
+	uid, err := uuid.NewV7()
+	if err != nil {
+		panic(err)
+	}
+	agent.instanceId = uid
 
 	hostname, _ := os.Hostname()
 
@@ -209,10 +210,10 @@ func (agent *Agent) createAgentIdentity() {
 	}
 }
 
-func (agent *Agent) updateAgentIdentity(ctx context.Context, instanceId ulid.ULID) {
+func (agent *Agent) updateAgentIdentity(ctx context.Context, instanceId uuid.UUID) {
 	agent.logger.Debugf(ctx, "Agent identify is being changed from id=%v to id=%v",
-		agent.instanceId.String(),
-		instanceId.String())
+		agent.instanceId,
+		instanceId)
 	agent.instanceId = instanceId
 
 	if agent.metricReporter != nil {
@@ -459,11 +460,12 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	}
 
 	if msg.AgentIdentification != nil {
-		newInstanceId, err := ulid.Parse(msg.AgentIdentification.NewInstanceUid)
+		uid, err := uuid.FromBytes(msg.AgentIdentification.NewInstanceUid)
 		if err != nil {
-			agent.logger.Errorf(ctx, err.Error())
+			agent.logger.Errorf(ctx, "invalid NewInstanceUid: %v", err)
+			return
 		}
-		agent.updateAgentIdentity(ctx, newInstanceId)
+		agent.updateAgentIdentity(ctx, uid)
 	}
 
 	if configChanged {

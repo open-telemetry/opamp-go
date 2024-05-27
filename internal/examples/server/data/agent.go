@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/internal/examples/server/certman"
@@ -23,7 +24,8 @@ type Agent struct {
 	// Some fields in this struct are exported so that we can render them in the UI.
 
 	// Agent's instance id. This is an immutable field.
-	InstanceId InstanceId
+	InstanceId    InstanceId
+	InstanceIdStr string
 
 	// Connection to the Agent.
 	conn types.Connection
@@ -60,7 +62,7 @@ func NewAgent(
 	instanceId InstanceId,
 	conn types.Connection,
 ) *Agent {
-	agent := &Agent{InstanceId: instanceId, conn: conn}
+	agent := &Agent{InstanceId: instanceId, InstanceIdStr: uuid.UUID(instanceId).String(), conn: conn}
 	tslConn, ok := conn.Connection().(*tls.Conn)
 	if ok {
 		// Client is using TLS connection.
@@ -84,6 +86,7 @@ func (agent *Agent) CloneReadonly() *Agent {
 	defer agent.mux.RUnlock()
 	return &Agent{
 		InstanceId:                  agent.InstanceId,
+		InstanceIdStr:               uuid.UUID(agent.InstanceId).String(),
 		Status:                      proto.Clone(agent.Status).(*protobufs.AgentToServer),
 		EffectiveConfig:             agent.EffectiveConfig,
 		CustomInstanceConfig:        agent.CustomInstanceConfig,

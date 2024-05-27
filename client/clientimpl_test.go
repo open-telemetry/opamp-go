@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	ulid "github.com/oklog/ulid/v2"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -94,10 +93,17 @@ func eventually(t *testing.T, f func() bool) {
 	assert.Eventually(t, f, 5*time.Second, 10*time.Millisecond)
 }
 
+func newInstanceUid(t *testing.T) types.InstanceUid {
+	uid, err := uuid.NewV7()
+	require.NoError(t, err)
+	b, err := uid.MarshalBinary()
+	require.NoError(t, err)
+	return types.InstanceUid(b)
+}
+
 func prepareSettings(t *testing.T, settings *types.StartSettings, c OpAMPClient) {
 	// Autogenerate instance id.
-	entropy := ulid.Monotonic(rand.New(rand.NewSource(99)), 0)
-	settings.InstanceUid = ulid.MustNew(ulid.Timestamp(time.Now()), entropy).String()
+	settings.InstanceUid = newInstanceUid(t)
 
 	// Make sure correct URL scheme is used, based on the type of the OpAMP client.
 	u, err := url.Parse(settings.OpAMPServerURL)
@@ -150,7 +156,7 @@ func TestInvalidInstanceId(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		settings := createNoServerSettings()
 		prepareClient(t, &settings, client)
-		settings.InstanceUid = "invalidid"
+		settings.InstanceUid = types.InstanceUid{}
 
 		err := client.Start(context.Background(), settings)
 		assert.Error(t, err)
@@ -624,9 +630,7 @@ func TestAgentIdentification(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a server.
 		srv := internal.StartMockServer(t)
-		newInstanceUid := ulid.MustNew(
-			ulid.Timestamp(time.Now()), ulid.Monotonic(rand.New(rand.NewSource(0)), 0),
-		)
+		newInstanceUid := newInstanceUid(t)
 		var rcvAgentInstanceUid atomic.Value
 		var sentInvalidId atomic.Bool
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
@@ -636,7 +640,7 @@ func TestAgentIdentification(t *testing.T) {
 					InstanceUid: msg.InstanceUid,
 					AgentIdentification: &protobufs.AgentIdentification{
 						// If we sent the invalid one first, send a valid one now
-						NewInstanceUid: newInstanceUid.String(),
+						NewInstanceUid: newInstanceUid[:],
 					},
 				}
 			}
@@ -645,7 +649,7 @@ func TestAgentIdentification(t *testing.T) {
 				InstanceUid: msg.InstanceUid,
 				AgentIdentification: &protobufs.AgentIdentification{
 					// Start by sending an invalid id forcing an error.
-					NewInstanceUid: "",
+					NewInstanceUid: nil,
 				},
 			}
 		}
@@ -662,11 +666,11 @@ func TestAgentIdentification(t *testing.T) {
 		eventually(
 			t,
 			func() bool {
-				instanceUid, ok := rcvAgentInstanceUid.Load().(string)
+				instanceUid, ok := rcvAgentInstanceUid.Load().([]byte)
 				if !ok {
 					return false
 				}
-				return instanceUid == oldInstanceUid
+				return types.InstanceUid(instanceUid) == oldInstanceUid
 			},
 		)
 
@@ -677,11 +681,11 @@ func TestAgentIdentification(t *testing.T) {
 		eventually(
 			t,
 			func() bool {
-				instanceUid, ok := rcvAgentInstanceUid.Load().(string)
+				instanceUid, ok := rcvAgentInstanceUid.Load().([]byte)
 				if !ok {
 					return false
 				}
-				return instanceUid == oldInstanceUid
+				return types.InstanceUid(instanceUid) == oldInstanceUid
 			},
 		)
 
@@ -693,11 +697,11 @@ func TestAgentIdentification(t *testing.T) {
 		eventually(
 			t,
 			func() bool {
-				instanceUid, ok := rcvAgentInstanceUid.Load().(string)
+				instanceUid, ok := rcvAgentInstanceUid.Load().([]byte)
 				if !ok {
 					return false
 				}
-				return instanceUid == newInstanceUid.String()
+				return types.InstanceUid(instanceUid) == newInstanceUid
 			},
 		)
 
