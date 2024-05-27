@@ -256,7 +256,7 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 
 		if connectionCallbacks != nil {
 			response := connectionCallbacks.OnMessage(msgContext, agentConn, &request)
-			if response.InstanceUid == "" {
+			if len(response.InstanceUid) == 0 {
 				response.InstanceUid = request.InstanceUid
 			}
 			if !sentCustomCapabilities {
@@ -349,7 +349,7 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	response := connectionCallbacks.OnMessage(req.Context(), agentConn, &request)
 
 	// Set the InstanceUid if it is not set by the callback.
-	if response.InstanceUid == "" {
+	if len(response.InstanceUid) == 0 {
 		response.InstanceUid = request.InstanceUid
 	}
 

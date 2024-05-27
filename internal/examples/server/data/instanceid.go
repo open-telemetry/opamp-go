@@ -1,3 +1,5 @@
 package data
 
-type InstanceId string
+import "github.com/google/uuid"
+
+type InstanceId uuid.UUID

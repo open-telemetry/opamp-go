@@ -8,6 +8,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/examples/server/data"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -63,7 +65,13 @@ func renderRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func renderAgent(w http.ResponseWriter, r *http.Request) {
-	agent := data.AllAgents.GetAgentReadonlyClone(data.InstanceId(r.URL.Query().Get("instanceid")))
+	uid, err := uuid.Parse(r.URL.Query().Get("instanceid"))
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	agent := data.AllAgents.GetAgentReadonlyClone(data.InstanceId(uid))
 	if agent == nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -77,7 +85,13 @@ func saveCustomConfigForInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	instanceId := data.InstanceId(r.Form.Get("instanceid"))
+	uid, err := uuid.Parse(r.Form.Get("instanceid"))
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	instanceId := data.InstanceId(uid)
 	agent := data.AllAgents.GetAgentReadonlyClone(instanceId)
 	if agent == nil {
 		w.WriteHeader(http.StatusNotFound)
@@ -103,7 +117,7 @@ func saveCustomConfigForInstance(w http.ResponseWriter, r *http.Request) {
 	case <-timer.C:
 	}
 
-	http.Redirect(w, r, "/agent?instanceid="+string(instanceId), http.StatusSeeOther)
+	http.Redirect(w, r, "/agent?instanceid="+uid.String(), http.StatusSeeOther)
 }
 
 func rotateInstanceClientCert(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +127,13 @@ func rotateInstanceClientCert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find the agent instance.
-	instanceId := data.InstanceId(r.Form.Get("instanceid"))
+	uid, err := uuid.Parse(r.Form.Get("instanceid"))
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	instanceId := data.InstanceId(uid)
 	agent := data.AllAgents.GetAgentReadonlyClone(instanceId)
 	if agent == nil {
 		w.WriteHeader(http.StatusNotFound)
@@ -151,5 +171,5 @@ func rotateInstanceClientCert(w http.ResponseWriter, r *http.Request) {
 		logger.Printf("Time out waiting for agent %s to reconnect\n", instanceId)
 	}
 
-	http.Redirect(w, r, "/agent?instanceid="+string(instanceId), http.StatusSeeOther)
+	http.Redirect(w, r, "/agent?instanceid="+uid.String(), http.StatusSeeOther)
 }
