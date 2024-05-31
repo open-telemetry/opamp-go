@@ -533,7 +533,7 @@ func TestSetEffectiveConfig(t *testing.T) {
 			t,
 			func() bool {
 				return rcvConfig.Load() != nil &&
-						proto.Equal(sendConfig, rcvConfig.Load().(*protobufs.EffectiveConfig))
+					proto.Equal(sendConfig, rcvConfig.Load().(*protobufs.EffectiveConfig))
 			},
 		)
 
@@ -546,7 +546,7 @@ func TestSetEffectiveConfig(t *testing.T) {
 			t,
 			func() bool {
 				return rcvConfig.Load() != nil &&
-						proto.Equal(sendConfig, rcvConfig.Load().(*protobufs.EffectiveConfig))
+					proto.Equal(sendConfig, rcvConfig.Load().(*protobufs.EffectiveConfig))
 			},
 		)
 
@@ -765,7 +765,7 @@ func TestServerOfferConnectionSettings(t *testing.T) {
 				},
 
 				OnOpampConnectionSettingsFunc: func(
-						ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
+					ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
 				) error {
 					assert.True(t, proto.Equal(opampSettings, settings))
 					atomic.AddInt64(&gotOpampSettings, 1)
@@ -773,10 +773,10 @@ func TestServerOfferConnectionSettings(t *testing.T) {
 				},
 			},
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnTraces |
-					protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
-					protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnLogs |
-					protobufs.AgentCapabilities_AgentCapabilities_AcceptsOtherConnectionSettings |
-					protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings,
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnLogs |
+				protobufs.AgentCapabilities_AgentCapabilities_AcceptsOtherConnectionSettings |
+				protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings,
 		}
 		settings.OpAMPServerURL = "ws://" + srv.Endpoint
 		prepareClient(t, &settings, client)
@@ -823,7 +823,7 @@ func TestClientRequestConnectionSettings(t *testing.T) {
 			settings := types.StartSettings{
 				Callbacks: types.CallbacksStruct{
 					OnOpampConnectionSettingsFunc: func(
-							ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
+						ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
 					) error {
 						assert.True(t, proto.Equal(opampSettings, settings))
 						atomic.AddInt64(&clientGotOpampSettings, 1)
@@ -929,7 +929,7 @@ func TestReportAgentHealth(t *testing.T) {
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
-					protobufs.AgentCapabilities_AgentCapabilities_ReportsHealth,
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsHealth,
 		}
 		prepareClient(t, &settings, client)
 
@@ -1090,7 +1090,7 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 				},
 			},
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
-					protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig,
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig,
 		}
 		prepareClient(t, &settings, client)
 
@@ -1208,12 +1208,15 @@ type packageTestCase struct {
 const packageUpdateErrorMsg = "cannot update packages"
 
 func assertPackageStatus(t *testing.T,
-		testCase packageTestCase,
-		msg *protobufs.AgentToServer) (*protobufs.ServerToAgent, bool) {
+	testCase packageTestCase,
+	msg *protobufs.AgentToServer) (*protobufs.ServerToAgent, bool) {
 	expectedStatusReceived := false
 
 	status := msg.PackageStatuses
-	require.NotNil(t, status)
+	if status == nil {
+		// PackageStatuses is not yet reported, keep waiting.
+		return nil, false
+	}
 	assert.EqualValues(t, testCase.expectedStatus.ServerProvidedAllPackagesHash, status.ServerProvidedAllPackagesHash)
 
 	if testCase.expectedError != "" {
@@ -1286,7 +1289,7 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 			},
 			PackagesStateProvider: localPackageState,
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages |
-					protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
 		}
 		prepareClient(t, &settings, client)
 
@@ -1309,7 +1312,7 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 		// ---> Server
 		// Wait for the expected package statuses to be received.
 		srv.EventuallyExpect("full PackageStatuses", func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent,
-				bool) {
+			bool) {
 			return assertPackageStatus(t, testCase, msg)
 		})
 
@@ -1470,7 +1473,7 @@ func TestMissingCapabilities(t *testing.T) {
 					assert.Nil(t, msg.PackagesAvailable)
 				},
 				OnOpampConnectionSettingsFunc: func(
-						ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
+					ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
 				) error {
 					assert.Fail(t, "should not be called since capability is not set to accept it")
 					return nil
@@ -1532,7 +1535,7 @@ func TestMissingPackagesStateProvider(t *testing.T) {
 		settings := types.StartSettings{
 			Callbacks: types.CallbacksStruct{},
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages |
-					protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
 		}
 		prepareClient(t, &settings, client)
 
@@ -1590,7 +1593,7 @@ func TestOfferUpdatedVersion(t *testing.T) {
 			},
 			PackagesStateProvider: localPackageState,
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages |
-					protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
 		}
 		prepareClient(t, &settings, client)
 
@@ -1612,7 +1615,7 @@ func TestOfferUpdatedVersion(t *testing.T) {
 		// ---> Server
 		// Wait for the expected package statuses to be received.
 		srv.EventuallyExpect("full PackageStatuses", func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent,
-				bool) {
+			bool) {
 			return assertPackageStatus(t, testCase, msg)
 		})
 
@@ -1639,7 +1642,7 @@ func TestOfferUpdatedVersion(t *testing.T) {
 		// ---> Server
 		// Wait for the expected package statuses to be received.
 		srv.EventuallyExpect("full PackageStatuses updated version", func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent,
-				bool) {
+			bool) {
 			return assertPackageStatus(t, testCase, msg)
 		})
 
