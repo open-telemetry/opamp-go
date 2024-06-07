@@ -56,9 +56,9 @@ func TestExtractRetryAfterHeaderDelaySeconds(t *testing.T) {
 }
 
 func TestExtractRetryAfterHeaderHttpDate(t *testing.T) {
-	// Generate a random n > 0 second duration
+	// Generate a random n >= 1 second duration
 	now := time.Now()
-	retryIntervalSec := rand.Intn(9999)
+	retryIntervalSec := 1 + rand.Intn(9999)
 	expectedDuration := time.Second * time.Duration(retryIntervalSec)
 
 	// Set a response with Retry-After header = random n > 0 int
