@@ -807,12 +807,14 @@ func TestDecodeMessage(t *testing.T) {
 }
 
 func TestConnectionAllowsConcurrentWrites(t *testing.T) {
+	ch := make(chan struct{})
 	srvConnVal := atomic.Value{}
 	callbacks := CallbacksStruct{
 		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
 				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
 					srvConnVal.Store(conn)
+					ch <- struct{}{}
 				},
 			}}
 		},
@@ -837,10 +839,7 @@ func TestConnectionAllowsConcurrentWrites(t *testing.T) {
 	select {
 	case <-timeout.Done():
 		t.Error("Client failed to connect before timeout")
-	default:
-		if _, ok := srvConnVal.Load().(types.Connection); ok == true {
-			break
-		}
+	case <-ch:
 	}
 
 	cancel()
