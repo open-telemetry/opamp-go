@@ -385,6 +385,19 @@ func (c *ClientCommon) SetCustomCapabilities(customCapabilities *protobufs.Custo
 	return nil
 }
 
+func (c *ClientCommon) SetFlags(flags protobufs.AgentToServerFlags) {
+	// store the flags to send
+	c.ClientSyncedState.SetFlags(flags)
+
+	// send the new flags to the Server
+	c.sender.NextMessage().Update(
+		func(msg *protobufs.AgentToServer) {
+			msg.Flags = uint64(flags)
+		},
+	)
+	c.sender.ScheduleSend()
+}
+
 // SendCustomMessage sends the specified custom message to the server.
 func (c *ClientCommon) SendCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error) {
 	if message == nil {

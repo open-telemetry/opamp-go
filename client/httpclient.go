@@ -105,9 +105,14 @@ func (c *httpClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) err
 	return c.common.SetPackageStatuses(statuses)
 }
 
-// SendCustomMessage implements OpAMPClient.SetCustomCapabilities.
+// SendCustomCapabilities implements OpAMPClient.SetCustomCapabilities.
 func (c *httpClient) SetCustomCapabilities(customCapabilities *protobufs.CustomCapabilities) error {
 	return c.common.SetCustomCapabilities(customCapabilities)
+}
+
+// SetFlags implements OpAMPClient.SetFlags.
+func (c *httpClient) SetFlags(flags protobufs.AgentToServerFlags) {
+	c.common.SetFlags(flags)
 }
 
 // SendCustomMessage implements OpAMPClient.SendCustomMessage.

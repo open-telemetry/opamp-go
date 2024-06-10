@@ -2122,3 +2122,53 @@ func TestSetCustomCapabilities(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+// TestSetFlags tests the ability for the client to change the set of flags it sends.
+func TestSetFlags(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+
+		// Start a Server.
+		srv := internal.StartMockServer(t)
+		var rcvCustomFlags atomic.Value
+		var flags protobufs.AgentToServerFlags
+
+		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			if msg.Flags != 0 {
+				rcvCustomFlags.Store(msg.Flags)
+			}
+			return nil
+		}
+
+		settings := types.StartSettings{}
+		settings.OpAMPServerURL = "ws://" + srv.Endpoint
+		prepareClient(t, &settings, client)
+
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		// The zero value of AgentToServerFlags is ready to use
+		client.SetFlags(flags)
+
+		// Update flags to send
+		flags |= protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid
+		client.SetFlags(flags)
+
+		// Verify new flags were delivered to the server
+		eventually(
+			t,
+			func() bool {
+				msg, ok := rcvCustomFlags.Load().(uint64)
+				if !ok || msg == 0 {
+					return false
+				}
+				return uint64(flags) == msg
+			},
+		)
+
+		// Shutdown the Server.
+		srv.Close()
+
+		// Shutdown the client.
+		err := client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
