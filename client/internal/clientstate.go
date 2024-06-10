@@ -17,11 +17,11 @@ var (
 )
 
 // ClientSyncedState stores the state of the Agent messages that the OpAMP Client needs to
-// have access to synchronize to the Server. 4 messages can be stored in this store:
-// AgentDescription, ComponentHealth, RemoteConfigStatus and PackageStatuses.
+// have access to synchronize to the Server. 5 messages can be stored in this store:
+// AgentDescription, ComponentHealth, RemoteConfigStatus, PackageStatuses and CustomCapabilities.
 //
-// See OpAMP spec for more details on how state synchronization works:
-// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#Agent-to-Server-state-synchronization
+// See OpAMP spec for more details on how status reporting works:
+// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#status-reporting
 //
 // Note that the EffectiveConfig is subject to the same synchronization logic, however
 // it is not stored in this struct since it can be large, and we do not want to always
