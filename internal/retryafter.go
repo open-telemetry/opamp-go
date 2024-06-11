@@ -18,26 +18,32 @@ type OptionalDuration struct {
 }
 
 func parseDelaySeconds(s string) (time.Duration, error) {
+	// Verify duration parsed properly
 	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, errCouldNotParseRetryAfterHeader
+	}
 
-	// Verify duration parsed properly and bigger than 0
-	if err == nil && n > 0 {
+	// If n > 0 return n seconds, otherwise return 0.
+	if n > 0 {
 		duration := time.Duration(n) * time.Second
 		return duration, nil
 	}
-	return 0, errCouldNotParseRetryAfterHeader
+	return 0, nil
 }
 
 func parseHTTPDate(s string) (time.Duration, error) {
+	// Verify duration parsed properly
 	t, err := http.ParseTime(s)
-
-	// Verify duration parsed properly and bigger than 0
-	if err == nil {
-		if duration := time.Until(t); duration > 0 {
-			return duration, nil
-		}
+	if err != nil {
+		return 0, errCouldNotParseRetryAfterHeader
 	}
-	return 0, errCouldNotParseRetryAfterHeader
+
+	// If the date is in the future return that duration, otherwise return 0.
+	if duration := time.Until(t); duration > 0 {
+		return duration, nil
+	}
+	return 0, nil
 }
 
 // ExtractRetryAfterHeader extracts Retry-After response header if the status
