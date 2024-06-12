@@ -24,7 +24,7 @@ func parseDelaySeconds(s string) (time.Duration, error) {
 		return 0, errCouldNotParseRetryAfterHeader
 	}
 
-	// If n > 0 return n seconds, otherwise return 0.
+	// If n > 0 return n seconds, otherwise return 0
 	if n > 0 {
 		duration := time.Duration(n) * time.Second
 		return duration, nil
@@ -39,7 +39,7 @@ func parseHTTPDate(s string) (time.Duration, error) {
 		return 0, errCouldNotParseRetryAfterHeader
 	}
 
-	// If the date is in the future return that duration, otherwise return 0.
+	// If the date is in the future return that duration, otherwise return 0
 	if duration := time.Until(t); duration > 0 {
 		return duration, nil
 	}
