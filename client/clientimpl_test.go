@@ -93,7 +93,7 @@ func eventually(t *testing.T, f func() bool) {
 	assert.Eventually(t, f, 5*time.Second, 10*time.Millisecond)
 }
 
-func newInstanceUid(t *testing.T) types.InstanceUid {
+func genNewInstanceUid(t *testing.T) types.InstanceUid {
 	uid, err := uuid.NewV7()
 	require.NoError(t, err)
 	b, err := uid.MarshalBinary()
@@ -103,7 +103,7 @@ func newInstanceUid(t *testing.T) types.InstanceUid {
 
 func prepareSettings(t *testing.T, settings *types.StartSettings, c OpAMPClient) {
 	// Autogenerate instance id.
-	settings.InstanceUid = newInstanceUid(t)
+	settings.InstanceUid = genNewInstanceUid(t)
 
 	// Make sure correct URL scheme is used, based on the type of the OpAMP client.
 	u, err := url.Parse(settings.OpAMPServerURL)
@@ -630,27 +630,24 @@ func TestAgentIdentification(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a server.
 		srv := internal.StartMockServer(t)
-		newInstanceUid := newInstanceUid(t)
+		newInstanceUid := genNewInstanceUid(t)
 		var rcvAgentInstanceUid atomic.Value
-		var sentInvalidId atomic.Bool
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			rcvAgentInstanceUid.Store(msg.InstanceUid)
-			if sentInvalidId.Load() {
+			if msg.Flags&uint64(protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid) == 1 {
+				newInstanceUid = genNewInstanceUid(t)
+				rcvAgentInstanceUid.Store(newInstanceUid[:])
 				return &protobufs.ServerToAgent{
 					InstanceUid: msg.InstanceUid,
 					AgentIdentification: &protobufs.AgentIdentification{
-						// If we sent the invalid one first, send a valid one now
+						// If the RequestInstanceUid flag was set, populate this field.
 						NewInstanceUid: newInstanceUid[:],
 					},
 				}
 			}
-			sentInvalidId.Store(true)
+			rcvAgentInstanceUid.Store(msg.InstanceUid)
+			// Start by sending just the old instance ID.
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
-				AgentIdentification: &protobufs.AgentIdentification{
-					// Start by sending an invalid id forcing an error.
-					NewInstanceUid: nil,
-				},
 			}
 		}
 
@@ -689,8 +686,8 @@ func TestAgentIdentification(t *testing.T) {
 			},
 		)
 
-		// Send a dummy message again to get the _new_ id
-		_ = client.SetAgentDescription(createAgentDescr())
+		// Set the flags to request a new ID.
+		client.SetFlags(protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid)
 
 		// When it was sent, the new instance uid should have been used, which should
 		// have been observed by the Server

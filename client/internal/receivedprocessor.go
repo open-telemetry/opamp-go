@@ -190,8 +190,9 @@ func (r *receivedProcessor) rcvFlags(
 				msg.RemoteConfigStatus = r.clientSyncedState.RemoteConfigStatus()
 				msg.PackageStatuses = r.clientSyncedState.PackageStatuses()
 				msg.CustomCapabilities = r.clientSyncedState.CustomCapabilities()
+				msg.Flags = uint64(r.clientSyncedState.flags)
 
-				// The logic for EffectiveConfig is similar to the previous 5 sub-messages however
+				// The logic for EffectiveConfig is similar to the previous 6 sub-messages however
 				// the EffectiveConfig is fetched using GetEffectiveConfig instead of
 				// from clientSyncedState. We do this to avoid keeping EffectiveConfig in-memory.
 				msg.EffectiveConfig = cfg
@@ -236,6 +237,9 @@ func (r *receivedProcessor) rcvAgentIdentification(ctx context.Context, agentId 
 		r.logger.Errorf(ctx, "Error while setting instance uid: %v", err)
 		return err
 	}
+
+	// If we set up a new instance ID, reset the RequestInstanceUid flag.
+	r.clientSyncedState.flags &^= protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid
 
 	return nil
 }
