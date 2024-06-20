@@ -108,7 +108,7 @@ type OpAMPClient interface {
 	SetCustomCapabilities(customCapabilities *protobufs.CustomCapabilities) error
 
 	// SetFlags modifies the set of flags supported by the client.
-	// May be called anytime after Start(), including from OnMessage handler.
+	// May be called before or after Start(), including from OnMessage handler.
 	// The zero value of protobufs.AgentToServerFlags corresponds to FlagsUnspecified
 	// and is safe to use.
 	//

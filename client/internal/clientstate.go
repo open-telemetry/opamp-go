@@ -72,6 +72,12 @@ func (s *ClientSyncedState) CustomCapabilities() *protobufs.CustomCapabilities {
 	return s.customCapabilities
 }
 
+func (s *ClientSyncedState) Flags() uint64 {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	return uint64(s.flags)
+}
+
 // SetAgentDescription sets the AgentDescription in the state.
 func (s *ClientSyncedState) SetAgentDescription(descr *protobufs.AgentDescription) error {
 	if descr == nil {

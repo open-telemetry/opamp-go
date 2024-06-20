@@ -190,7 +190,7 @@ func (r *receivedProcessor) rcvFlags(
 				msg.RemoteConfigStatus = r.clientSyncedState.RemoteConfigStatus()
 				msg.PackageStatuses = r.clientSyncedState.PackageStatuses()
 				msg.CustomCapabilities = r.clientSyncedState.CustomCapabilities()
-				msg.Flags = uint64(r.clientSyncedState.flags)
+				msg.Flags = r.clientSyncedState.Flags()
 
 				// The logic for EffectiveConfig is similar to the previous 6 sub-messages however
 				// the EffectiveConfig is fetched using GetEffectiveConfig instead of

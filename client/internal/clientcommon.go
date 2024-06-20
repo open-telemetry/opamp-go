@@ -214,7 +214,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.PackageStatuses = c.ClientSyncedState.PackageStatuses()
 			msg.Capabilities = uint64(c.Capabilities)
 			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()
-			msg.Flags = uint64(c.ClientSyncedState.flags)
+			msg.Flags = c.ClientSyncedState.Flags()
 		},
 	)
 	return nil
