@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -20,6 +21,7 @@ type packagesSyncer struct {
 	sender            Sender
 
 	statuses *protobufs.PackageStatuses
+	mut      *sync.Mutex
 	doneCh   chan struct{}
 }
 
@@ -30,6 +32,7 @@ func NewPackagesSyncer(
 	sender Sender,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
+	mut *sync.Mutex,
 ) *packagesSyncer {
 	return &packagesSyncer{
 		logger:            logger,
@@ -38,6 +41,7 @@ func NewPackagesSyncer(
 		clientSyncedState: clientSyncedState,
 		localState:        packagesStateProvider,
 		doneCh:            make(chan struct{}),
+		mut:               mut,
 	}
 }
 
@@ -49,6 +53,7 @@ func (s *packagesSyncer) Sync(ctx context.Context) error {
 	}()
 
 	// Prepare package statuses.
+	s.mut.Lock()
 	if err := s.initStatuses(); err != nil {
 		return err
 	}
@@ -99,6 +104,8 @@ func (s *packagesSyncer) initStatuses() error {
 
 // doSync performs the actual syncing process.
 func (s *packagesSyncer) doSync(ctx context.Context) {
+	defer s.mut.Unlock()
+
 	hash, err := s.localState.AllPackagesHash()
 	if err != nil {
 		s.logger.Errorf(ctx, "Package syncing failed: %V", err)
