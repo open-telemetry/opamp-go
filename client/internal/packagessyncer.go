@@ -53,6 +53,8 @@ func (s *packagesSyncer) Sync(ctx context.Context) error {
 	}()
 
 	// Prepare package statuses.
+	// Grab a lock to make sure that package statuses are not overriden by
+	// another call to Sync running in parallel.
 	s.mut.Lock()
 	if err := s.initStatuses(); err != nil {
 		return err
@@ -62,7 +64,8 @@ func (s *packagesSyncer) Sync(ctx context.Context) error {
 		return err
 	}
 
-	// Now do the actual syncing in the background.
+	// Now do the actual syncing in the background and release the lock from
+	// inside of the goroutine.
 	go s.doSync(ctx)
 
 	return nil
@@ -104,6 +107,8 @@ func (s *packagesSyncer) initStatuses() error {
 
 // doSync performs the actual syncing process.
 func (s *packagesSyncer) doSync(ctx context.Context) {
+	// Once doSync returns  in a separate goroutine, make sure to release the
+	// mutex so that a new syncing process can take place.
 	defer s.mut.Unlock()
 
 	hash, err := s.localState.AllPackagesHash()
