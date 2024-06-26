@@ -214,6 +214,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.PackageStatuses = c.ClientSyncedState.PackageStatuses()
 			msg.Capabilities = uint64(c.Capabilities)
 			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()
+			msg.Flags = c.ClientSyncedState.Flags()
 		},
 	)
 	return nil
@@ -383,6 +384,19 @@ func (c *ClientCommon) SetCustomCapabilities(customCapabilities *protobufs.Custo
 	)
 	c.sender.ScheduleSend()
 	return nil
+}
+
+func (c *ClientCommon) SetFlags(flags protobufs.AgentToServerFlags) {
+	// store the flags to send
+	c.ClientSyncedState.SetFlags(flags)
+
+	// send the new flags to the Server
+	c.sender.NextMessage().Update(
+		func(msg *protobufs.AgentToServer) {
+			msg.Flags = uint64(flags)
+		},
+	)
+	c.sender.ScheduleSend()
 }
 
 // SendCustomMessage sends the specified custom message to the server.

@@ -93,7 +93,7 @@ func eventually(t *testing.T, f func() bool) {
 	assert.Eventually(t, f, 5*time.Second, 10*time.Millisecond)
 }
 
-func newInstanceUid(t *testing.T) types.InstanceUid {
+func genNewInstanceUid(t *testing.T) types.InstanceUid {
 	uid, err := uuid.NewV7()
 	require.NoError(t, err)
 	b, err := uid.MarshalBinary()
@@ -103,7 +103,7 @@ func newInstanceUid(t *testing.T) types.InstanceUid {
 
 func prepareSettings(t *testing.T, settings *types.StartSettings, c OpAMPClient) {
 	// Autogenerate instance id.
-	settings.InstanceUid = newInstanceUid(t)
+	settings.InstanceUid = genNewInstanceUid(t)
 
 	// Make sure correct URL scheme is used, based on the type of the OpAMP client.
 	u, err := url.Parse(settings.OpAMPServerURL)
@@ -630,27 +630,24 @@ func TestAgentIdentification(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a server.
 		srv := internal.StartMockServer(t)
-		newInstanceUid := newInstanceUid(t)
+		newInstanceUid := genNewInstanceUid(t)
 		var rcvAgentInstanceUid atomic.Value
-		var sentInvalidId atomic.Bool
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			rcvAgentInstanceUid.Store(msg.InstanceUid)
-			if sentInvalidId.Load() {
+			if msg.Flags&uint64(protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid) == 1 {
+				newInstanceUid = genNewInstanceUid(t)
+				rcvAgentInstanceUid.Store(newInstanceUid[:])
 				return &protobufs.ServerToAgent{
 					InstanceUid: msg.InstanceUid,
 					AgentIdentification: &protobufs.AgentIdentification{
-						// If we sent the invalid one first, send a valid one now
+						// If the RequestInstanceUid flag was set, populate this field.
 						NewInstanceUid: newInstanceUid[:],
 					},
 				}
 			}
-			sentInvalidId.Store(true)
+			rcvAgentInstanceUid.Store(msg.InstanceUid)
+			// Start by sending just the old instance ID.
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
-				AgentIdentification: &protobufs.AgentIdentification{
-					// Start by sending an invalid id forcing an error.
-					NewInstanceUid: nil,
-				},
 			}
 		}
 
@@ -689,8 +686,8 @@ func TestAgentIdentification(t *testing.T) {
 			},
 		)
 
-		// Send a dummy message again to get the _new_ id
-		_ = client.SetAgentDescription(createAgentDescr())
+		// Set the flags to request a new ID.
+		client.SetFlags(protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid)
 
 		// When it was sent, the new instance uid should have been used, which should
 		// have been observed by the Server
@@ -2119,6 +2116,107 @@ func TestSetCustomCapabilities(t *testing.T) {
 
 		// Shutdown the client.
 		err = client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
+// TestSetFlags tests the ability for the client to change the set of flags it sends.
+func TestSetFlags(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+
+		// Start a Server.
+		srv := internal.StartMockServer(t)
+		var rcvCustomFlags atomic.Value
+		var flags protobufs.AgentToServerFlags
+
+		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			if msg.Flags != 0 {
+				rcvCustomFlags.Store(msg.Flags)
+			}
+			return nil
+		}
+
+		settings := types.StartSettings{}
+		settings.OpAMPServerURL = "ws://" + srv.Endpoint
+		prepareClient(t, &settings, client)
+
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		// The zero value of AgentToServerFlags is ready to use
+		client.SetFlags(flags)
+
+		// Update flags to send
+		flags |= protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid
+		client.SetFlags(flags)
+
+		// Verify new flags were delivered to the server
+		eventually(
+			t,
+			func() bool {
+				msg, ok := rcvCustomFlags.Load().(uint64)
+				if !ok || msg == 0 {
+					return false
+				}
+				return uint64(flags) == msg
+			},
+		)
+
+		// Shutdown the Server.
+		srv.Close()
+
+		// Shutdown the client.
+		err := client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
+// TestSetFlags tests the ability for the client to set its flags before starting up.
+func TestSetFlagsBeforeStart(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a Server.
+		flags := protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid
+		srv := internal.StartMockServer(t)
+		var rcvCustomFlags atomic.Value
+		var isFirstMessage atomic.Bool
+		isFirstMessage.Store(true)
+
+		// Make sure we only record flags from the very first message.
+		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			if isFirstMessage.Load() {
+				rcvCustomFlags.Store(msg.Flags)
+			}
+			isFirstMessage.Store(false)
+			return nil
+		}
+
+		settings := types.StartSettings{}
+		settings.OpAMPServerURL = "ws://" + srv.Endpoint
+		prepareClient(t, &settings, client)
+
+		// Set up the flags _before_ calling Start to verify that they're
+		// handled correctly in PrepareFirstMessage.
+		client.SetFlags(flags)
+
+		// Start the client.
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		// Verify the flags were delivered to the server during the first message.
+		eventually(
+			t,
+			func() bool {
+				msg, ok := rcvCustomFlags.Load().(uint64)
+				if !ok || msg == 0 {
+					return false
+				}
+				return uint64(flags) == msg
+			},
+		)
+
+		// Shutdown the Server.
+		srv.Close()
+
+		// Shutdown the client.
+		err := client.Stop(context.Background())
 		assert.NoError(t, err)
 	})
 }

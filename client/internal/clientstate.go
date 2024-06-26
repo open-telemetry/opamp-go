@@ -17,8 +17,8 @@ var (
 )
 
 // ClientSyncedState stores the state of the Agent messages that the OpAMP Client needs to
-// have access to synchronize to the Server. 5 messages can be stored in this store:
-// AgentDescription, ComponentHealth, RemoteConfigStatus, PackageStatuses and CustomCapabilities.
+// have access to synchronize to the Server. Six messages can be stored in this store:
+// AgentDescription, ComponentHealth, RemoteConfigStatus, PackageStatuses, CustomCapabilities and Flags.
 //
 // See OpAMP spec for more details on how status reporting works:
 // https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#status-reporting
@@ -39,6 +39,7 @@ type ClientSyncedState struct {
 	remoteConfigStatus *protobufs.RemoteConfigStatus
 	packageStatuses    *protobufs.PackageStatuses
 	customCapabilities *protobufs.CustomCapabilities
+	flags              protobufs.AgentToServerFlags
 }
 
 func (s *ClientSyncedState) AgentDescription() *protobufs.AgentDescription {
@@ -69,6 +70,12 @@ func (s *ClientSyncedState) CustomCapabilities() *protobufs.CustomCapabilities {
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	return s.customCapabilities
+}
+
+func (s *ClientSyncedState) Flags() uint64 {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	return uint64(s.flags)
 }
 
 // SetAgentDescription sets the AgentDescription in the state.
@@ -167,4 +174,12 @@ func (s *ClientSyncedState) HasCustomCapability(capability string) bool {
 	}
 
 	return false
+}
+
+// SetFlags sets the flags in the state.
+func (s *ClientSyncedState) SetFlags(flags protobufs.AgentToServerFlags) {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+
+	s.flags = flags
 }

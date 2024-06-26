@@ -172,3 +172,39 @@ func TestHTTPSenderRetryForFailedRequests(t *testing.T) {
 	cancel()
 	srv.Close()
 }
+
+func TestRequestInstanceUidFlagReset(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender.callbacks = types.CallbacksStruct{}
+
+	// Set the RequestInstanceUid flag on the tracked state to request the server for a new ID to use.
+	clientSyncedState := &ClientSyncedState{}
+	clientSyncedState.SetFlags(protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid)
+	capabilities := protobufs.AgentCapabilities_AgentCapabilities_Unspecified
+	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, nil, capabilities)
+
+	// If we process a message with a nil AgentIdentification, or an incorrect NewInstanceUid.
+	sender.receiveProcessor.ProcessReceivedMessage(ctx,
+		&protobufs.ServerToAgent{
+			AgentIdentification: nil,
+		})
+	sender.receiveProcessor.ProcessReceivedMessage(ctx,
+		&protobufs.ServerToAgent{
+			AgentIdentification: &protobufs.AgentIdentification{NewInstanceUid: []byte("foo")},
+		})
+
+	// Then the RequestInstanceUid flag stays intact.
+	assert.Equal(t, sender.receiveProcessor.clientSyncedState.flags, protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid)
+
+	// If we process a message that contains a non-nil AgentIdentification that contains a NewInstanceUid.
+	sender.receiveProcessor.ProcessReceivedMessage(ctx,
+		&protobufs.ServerToAgent{
+			AgentIdentification: &protobufs.AgentIdentification{NewInstanceUid: []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}},
+		})
+
+	// Then the flag is reset so we don't request a new instance uid yet again.
+	assert.Equal(t, sender.receiveProcessor.clientSyncedState.flags, protobufs.AgentToServerFlags_AgentToServerFlags_Unspecified)
+	cancel()
+}

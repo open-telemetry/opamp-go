@@ -129,6 +129,10 @@ func (c *wsClient) SetCustomCapabilities(customCapabilities *protobufs.CustomCap
 	return c.common.SetCustomCapabilities(customCapabilities)
 }
 
+func (c *wsClient) SetFlags(flags protobufs.AgentToServerFlags) {
+	c.common.SetFlags(flags)
+}
+
 func (c *wsClient) SendCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error) {
 	return c.common.SendCustomMessage(message)
 }
