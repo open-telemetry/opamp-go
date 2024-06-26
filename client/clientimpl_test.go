@@ -2169,3 +2169,54 @@ func TestSetFlags(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+// TestSetFlags tests the ability for the client to set its flags before starting up.
+func TestSetFlagsBeforeStart(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a Server.
+		flags := protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid
+		srv := internal.StartMockServer(t)
+		var rcvCustomFlags atomic.Value
+		var isFirstMessage atomic.Bool
+		isFirstMessage.Store(true)
+
+		// Make sure we only record flags from the very first message.
+		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			if isFirstMessage.Load() {
+				rcvCustomFlags.Store(msg.Flags)
+			}
+			isFirstMessage.Store(false)
+			return nil
+		}
+
+		settings := types.StartSettings{}
+		settings.OpAMPServerURL = "ws://" + srv.Endpoint
+		prepareClient(t, &settings, client)
+
+		// Set up the flags _before_ calling Start to verify that they're
+		// handled correctly in PrepareFirstMessage.
+		client.SetFlags(flags)
+
+		// Start the client.
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		// Verify the flags were delivered to the server during the first message.
+		eventually(
+			t,
+			func() bool {
+				msg, ok := rcvCustomFlags.Load().(uint64)
+				if !ok || msg == 0 {
+					return false
+				}
+				return uint64(flags) == msg
+			},
+		)
+
+		// Shutdown the Server.
+		srv.Close()
+
+		// Shutdown the client.
+		err := client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
