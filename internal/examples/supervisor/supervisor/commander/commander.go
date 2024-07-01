@@ -23,7 +23,7 @@ type Commander struct {
 	cmd     *exec.Cmd
 	doneCh  chan struct{}
 	waitCh  chan struct{}
-	running int64
+	running atomic.Bool
 }
 
 func NewCommander(logger types.Logger, cfg *config.Agent, args ...string) (*Commander, error) {
@@ -63,7 +63,7 @@ func (c *Commander) Start(ctx context.Context) error {
 	}
 
 	c.logger.Debugf(ctx, "Agent process started, PID=%d", c.cmd.Process.Pid)
-	atomic.StoreInt64(&c.running, 1)
+	c.running.Store(true)
 
 	go c.watch()
 
@@ -83,7 +83,7 @@ func (c *Commander) Restart(ctx context.Context) error {
 func (c *Commander) watch() {
 	c.cmd.Wait()
 	c.doneCh <- struct{}{}
-	atomic.StoreInt64(&c.running, 0)
+	c.running.Store(false)
 	close(c.waitCh)
 }
 
@@ -102,21 +102,21 @@ func (c *Commander) Pid() int {
 
 // ExitCode returns Agent process exit code if it exited or 0 if it is not.
 func (c *Commander) ExitCode() int {
-	if c.cmd == nil || c.cmd.ProcessState == nil {
+	if c.IsRunning() {
 		return 0
 	}
 	return c.cmd.ProcessState.ExitCode()
 }
 
 func (c *Commander) IsRunning() bool {
-	return atomic.LoadInt64(&c.running) != 0
+	return c.running.Load()
 }
 
 // Stop the Agent process. Sends SIGTERM to the process and wait for up 10 seconds
 // and if the process does not finish kills it forcedly by sending SIGKILL.
 // Returns after the process is terminated.
 func (c *Commander) Stop(ctx context.Context) error {
-	if c.cmd == nil || c.cmd.Process == nil {
+	if !c.IsRunning() {
 		// Not started, nothing to do.
 		return nil
 	}
@@ -159,7 +159,7 @@ func (c *Commander) Stop(ctx context.Context) error {
 	// Wait for process to terminate
 	<-c.waitCh
 
-	atomic.StoreInt64(&c.running, 0)
+	c.running.Store(false)
 
 	// Let goroutine know process is finished.
 	close(finished)
