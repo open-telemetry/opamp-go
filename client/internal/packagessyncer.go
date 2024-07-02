@@ -55,12 +55,17 @@ func (s *packagesSyncer) Sync(ctx context.Context) error {
 	// Prepare package statuses.
 	// Grab a lock to make sure that package statuses are not overriden by
 	// another call to Sync running in parallel.
+	// In case Sync returns early with an error, take care of unlocking the
+	// mutex in this goroutine; otherwise it will be unlocked at the end
+	// of the sync operation.
 	s.mut.Lock()
 	if err := s.initStatuses(); err != nil {
+		s.mut.Unlock()
 		return err
 	}
 
 	if err := s.clientSyncedState.SetPackageStatuses(s.statuses); err != nil {
+		s.mut.Unlock()
 		return err
 	}
 
