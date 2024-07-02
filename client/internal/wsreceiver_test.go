@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -87,7 +88,7 @@ func TestServerToAgentCommand(t *testing.T) {
 			}
 			sender := WSSender{}
 			capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
-			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, &sender, &clientSyncedState, nil, capabilities)
+			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, &sender, &clientSyncedState, nil, capabilities, new(sync.Mutex))
 			receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 				Command: test.command,
 			})
@@ -141,7 +142,7 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 			},
 		}
 		clientSyncedState := ClientSyncedState{}
-		receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, test.capabilities)
+		receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, test.capabilities, new(sync.Mutex))
 		receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 			Command: &protobufs.ServerToAgentCommand{
 				Type: protobufs.CommandType_CommandType_Restart,
@@ -204,7 +205,7 @@ func TestReceiverLoopStop(t *testing.T) {
 	}
 	sender := WSSender{}
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
-	receiver := NewWSReceiver(TestLogger{t}, callbacks, conn, &sender, &clientSyncedState, nil, capabilities)
+	receiver := NewWSReceiver(TestLogger{t}, callbacks, conn, &sender, &clientSyncedState, nil, capabilities, new(sync.Mutex))
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {

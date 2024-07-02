@@ -41,6 +41,9 @@ type ClientCommon struct {
 	// PackagesStateProvider provides access to the local state of packages.
 	PackagesStateProvider types.PackagesStateProvider
 
+	// PackageSyncMutex makes sure only one package syncing operation happens at a time.
+	PackageSyncMutex sync.Mutex
+
 	// The transport-specific sender.
 	sender Sender
 

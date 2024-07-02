@@ -183,7 +183,7 @@ func TestRequestInstanceUidFlagReset(t *testing.T) {
 	clientSyncedState := &ClientSyncedState{}
 	clientSyncedState.SetFlags(protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid)
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_Unspecified
-	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, nil, capabilities)
+	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, nil, capabilities, new(sync.Mutex))
 
 	// If we process a message with a nil AgentIdentification, or an incorrect NewInstanceUid.
 	sender.receiveProcessor.ProcessReceivedMessage(ctx,
@@ -206,5 +206,71 @@ func TestRequestInstanceUidFlagReset(t *testing.T) {
 
 	// Then the flag is reset so we don't request a new instance uid yet again.
 	assert.Equal(t, sender.receiveProcessor.clientSyncedState.flags, protobufs.AgentToServerFlags_AgentToServerFlags_Unspecified)
+	cancel()
+}
+
+func TestPackageUpdatesInParallel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	localPackageState := NewInMemPackagesStore()
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+
+	var messages atomic.Int32
+	var mut sync.Mutex
+	sender.callbacks = types.CallbacksStruct{
+		OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+			err := msg.PackageSyncer.Sync(ctx)
+			assert.NoError(t, err)
+			messages.Add(1)
+		},
+	}
+
+	// Set the RequestInstanceUid flag on the tracked state to request the server for a new ID to use.
+	clientSyncedState := &ClientSyncedState{}
+	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
+	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, capabilities, &mut)
+
+	go func() {
+		sender.receiveProcessor.ProcessReceivedMessage(ctx,
+			&protobufs.ServerToAgent{
+				PackagesAvailable: &protobufs.PackagesAvailable{
+					Packages: map[string]*protobufs.PackageAvailable{
+						"package1": {
+							Type:    protobufs.PackageType_PackageType_TopLevel,
+							Version: "1.0.0",
+							File: &protobufs.DownloadableFile{
+								DownloadUrl: "foo",
+								ContentHash: []byte{4, 5},
+							},
+							Hash: []byte{1, 2, 3},
+						},
+					},
+					AllPackagesHash: []byte{1, 2, 3, 4, 5},
+				},
+			})
+	}()
+	go func() {
+		sender.receiveProcessor.ProcessReceivedMessage(ctx,
+			&protobufs.ServerToAgent{
+				PackagesAvailable: &protobufs.PackagesAvailable{
+					Packages: map[string]*protobufs.PackageAvailable{
+						"package22": {
+							Type:    protobufs.PackageType_PackageType_TopLevel,
+							Version: "1.0.0",
+							File: &protobufs.DownloadableFile{
+								DownloadUrl: "bar",
+								ContentHash: []byte{4, 5},
+							},
+							Hash: []byte{1, 2, 3},
+						},
+					},
+					AllPackagesHash: []byte{1, 2, 3, 4, 5},
+				},
+			})
+	}()
+
+	assert.Eventually(t, func() bool {
+		return messages.Load() == 2
+	}, 2*time.Second, 100*time.Millisecond, "both messages must have been processed successfully")
+
 	cancel()
 }
