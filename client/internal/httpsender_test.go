@@ -274,3 +274,48 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 
 	cancel()
 }
+
+func TestPackageUpdatesWithError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+
+	// We'll pass in a nil PackageStateProvider to force the Sync call to return with an error.
+	localPackageState := types.PackagesStateProvider(nil)
+	var messages atomic.Int32
+	var mut sync.Mutex
+	sender.callbacks = types.CallbacksStruct{
+		OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+			// Make sure the call to Sync will return an error due to a nil PackageStateProvider
+			err := msg.PackageSyncer.Sync(ctx)
+			assert.Error(t, err)
+			messages.Add(1)
+		},
+	}
+
+	clientSyncedState := &ClientSyncedState{}
+
+	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
+	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, capabilities, &mut)
+
+	// Send two messages in parallel.
+	go func() {
+		sender.receiveProcessor.ProcessReceivedMessage(ctx,
+			&protobufs.ServerToAgent{
+				PackagesAvailable: &protobufs.PackagesAvailable{},
+			})
+	}()
+	go func() {
+		sender.receiveProcessor.ProcessReceivedMessage(ctx,
+			&protobufs.ServerToAgent{
+				PackagesAvailable: &protobufs.PackagesAvailable{},
+			})
+	}()
+
+	// Make sure that even though the call to Sync errored out early, the lock
+	// was still released properly for both messages to be processed.
+	assert.Eventually(t, func() bool {
+		return messages.Load() == 2
+	}, 5*time.Second, 100*time.Millisecond, "both messages must have been processed successfully")
+
+	cancel()
+}
