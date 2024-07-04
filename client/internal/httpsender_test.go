@@ -215,7 +215,7 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 	sender := NewHTTPSender(&sharedinternal.NopLogger{})
 
 	var messages atomic.Int32
-	var mut sync.Mutex
+	var mux sync.Mutex
 	sender.callbacks = types.CallbacksStruct{
 		OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
 			err := msg.PackageSyncer.Sync(ctx)
@@ -227,7 +227,7 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 	// Set the RequestInstanceUid flag on the tracked state to request the server for a new ID to use.
 	clientSyncedState := &ClientSyncedState{}
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
-	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, capabilities, &mut)
+	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, capabilities, &mux)
 
 	go func() {
 		sender.receiveProcessor.ProcessReceivedMessage(ctx,
@@ -282,7 +282,7 @@ func TestPackageUpdatesWithError(t *testing.T) {
 	// We'll pass in a nil PackageStateProvider to force the Sync call to return with an error.
 	localPackageState := types.PackagesStateProvider(nil)
 	var messages atomic.Int32
-	var mut sync.Mutex
+	var mux sync.Mutex
 	sender.callbacks = types.CallbacksStruct{
 		OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
 			// Make sure the call to Sync will return an error due to a nil PackageStateProvider
@@ -295,7 +295,7 @@ func TestPackageUpdatesWithError(t *testing.T) {
 	clientSyncedState := &ClientSyncedState{}
 
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
-	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, capabilities, &mut)
+	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, capabilities, &mux)
 
 	// Send two messages in parallel.
 	go func() {

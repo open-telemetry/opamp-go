@@ -21,7 +21,7 @@ type packagesSyncer struct {
 	sender            Sender
 
 	statuses *protobufs.PackageStatuses
-	mut      *sync.Mutex
+	mux      *sync.Mutex
 	doneCh   chan struct{}
 }
 
@@ -32,7 +32,7 @@ func NewPackagesSyncer(
 	sender Sender,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
-	mut *sync.Mutex,
+	mux *sync.Mutex,
 ) *packagesSyncer {
 	return &packagesSyncer{
 		logger:            logger,
@@ -41,7 +41,7 @@ func NewPackagesSyncer(
 		clientSyncedState: clientSyncedState,
 		localState:        packagesStateProvider,
 		doneCh:            make(chan struct{}),
-		mut:               mut,
+		mux:               mux,
 	}
 }
 
@@ -58,14 +58,14 @@ func (s *packagesSyncer) Sync(ctx context.Context) error {
 	// In case Sync returns early with an error, take care of unlocking the
 	// mutex in this goroutine; otherwise it will be unlocked at the end
 	// of the sync operation.
-	s.mut.Lock()
+	s.mux.Lock()
 	if err := s.initStatuses(); err != nil {
-		s.mut.Unlock()
+		s.mux.Unlock()
 		return err
 	}
 
 	if err := s.clientSyncedState.SetPackageStatuses(s.statuses); err != nil {
-		s.mut.Unlock()
+		s.mux.Unlock()
 		return err
 	}
 
@@ -114,7 +114,7 @@ func (s *packagesSyncer) initStatuses() error {
 func (s *packagesSyncer) doSync(ctx context.Context) {
 	// Once doSync returns  in a separate goroutine, make sure to release the
 	// mutex so that a new syncing process can take place.
-	defer s.mut.Unlock()
+	defer s.mux.Unlock()
 
 	hash, err := s.localState.AllPackagesHash()
 	if err != nil {

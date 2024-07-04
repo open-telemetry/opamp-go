@@ -222,7 +222,7 @@ func TestReceiverLoopStop(t *testing.T) {
 func TestWSPackageUpdatesInParallel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var messages atomic.Int32
-	var mut sync.Mutex
+	var mux sync.Mutex
 	localPackageState := NewInMemPackagesStore()
 	callbacks := types.CallbacksStruct{
 		OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
@@ -234,7 +234,7 @@ func TestWSPackageUpdatesInParallel(t *testing.T) {
 	clientSyncedState := &ClientSyncedState{}
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
 	sender := NewSender(&internal.NopLogger{})
-	receiver := NewWSReceiver(&internal.NopLogger{}, callbacks, nil, sender, clientSyncedState, localPackageState, capabilities, &mut)
+	receiver := NewWSReceiver(&internal.NopLogger{}, callbacks, nil, sender, clientSyncedState, localPackageState, capabilities, &mux)
 
 	go func() {
 		receiver.processor.ProcessReceivedMessage(ctx,
