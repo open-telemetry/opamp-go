@@ -15,6 +15,7 @@ import (
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/internal"
+	sharedinternal "github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -217,4 +218,67 @@ func TestReceiverLoopStop(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		return receiverLoopStopped.Load()
 	}, 2*time.Second, 100*time.Millisecond, "ReceiverLoop should stop when context is cancelled")
+}
+
+func TestWSPackageUpdatesInParallel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var messages atomic.Int32
+	var mut sync.Mutex
+	localPackageState := NewInMemPackagesStore()
+	callbacks := types.CallbacksStruct{
+		OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+			err := msg.PackageSyncer.Sync(ctx)
+			assert.NoError(t, err)
+			messages.Add(1)
+		},
+	}
+	clientSyncedState := &ClientSyncedState{}
+	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
+	sender := NewSender(&sharedinternal.NopLogger{})
+	receiver := NewWSReceiver(&sharedinternal.NopLogger{}, callbacks, nil, sender, clientSyncedState, localPackageState, capabilities, &mut)
+
+	go func() {
+		receiver.processor.ProcessReceivedMessage(ctx,
+			&protobufs.ServerToAgent{
+				PackagesAvailable: &protobufs.PackagesAvailable{
+					Packages: map[string]*protobufs.PackageAvailable{
+						"package1": {
+							Type:    protobufs.PackageType_PackageType_TopLevel,
+							Version: "1.0.0",
+							File: &protobufs.DownloadableFile{
+								DownloadUrl: "foo",
+								ContentHash: []byte{4, 5},
+							},
+							Hash: []byte{1, 2, 3},
+						},
+					},
+					AllPackagesHash: []byte{1, 2, 3, 4, 5},
+				},
+			})
+	}()
+	go func() {
+		receiver.processor.ProcessReceivedMessage(ctx,
+			&protobufs.ServerToAgent{
+				PackagesAvailable: &protobufs.PackagesAvailable{
+					Packages: map[string]*protobufs.PackageAvailable{
+						"package22": {
+							Type:    protobufs.PackageType_PackageType_TopLevel,
+							Version: "1.0.0",
+							File: &protobufs.DownloadableFile{
+								DownloadUrl: "bar",
+								ContentHash: []byte{4, 5},
+							},
+							Hash: []byte{1, 2, 3},
+						},
+					},
+					AllPackagesHash: []byte{1, 2, 3, 4, 5},
+				},
+			})
+	}()
+
+	assert.Eventually(t, func() bool {
+		return messages.Load() == 2
+	}, 2*time.Second, 100*time.Millisecond, "both messages must have been processed successfully")
+
+	cancel()
 }
