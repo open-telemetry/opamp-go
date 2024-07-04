@@ -15,7 +15,6 @@ import (
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/internal"
-	sharedinternal "github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -234,8 +233,8 @@ func TestWSPackageUpdatesInParallel(t *testing.T) {
 	}
 	clientSyncedState := &ClientSyncedState{}
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
-	sender := NewSender(&sharedinternal.NopLogger{})
-	receiver := NewWSReceiver(&sharedinternal.NopLogger{}, callbacks, nil, sender, clientSyncedState, localPackageState, capabilities, &mut)
+	sender := NewSender(&internal.NopLogger{})
+	receiver := NewWSReceiver(&internal.NopLogger{}, callbacks, nil, sender, clientSyncedState, localPackageState, capabilities, &mut)
 
 	go func() {
 		receiver.processor.ProcessReceivedMessage(ctx,
