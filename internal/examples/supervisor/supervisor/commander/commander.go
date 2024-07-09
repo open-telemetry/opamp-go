@@ -94,7 +94,7 @@ func (c *Commander) Done() <-chan struct{} {
 
 // Pid returns Agent process PID if it is started or 0 if it is not.
 func (c *Commander) Pid() int {
-	if c.cmd == nil || c.cmd.Process == nil {
+	if !c.IsRunning() {
 		return 0
 	}
 	return c.cmd.Process.Pid
