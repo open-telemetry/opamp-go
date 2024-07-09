@@ -236,44 +236,40 @@ func TestWSPackageUpdatesInParallel(t *testing.T) {
 	sender := NewSender(&internal.NopLogger{})
 	receiver := NewWSReceiver(&internal.NopLogger{}, callbacks, nil, sender, clientSyncedState, localPackageState, capabilities, &mux)
 
-	go func() {
-		receiver.processor.ProcessReceivedMessage(ctx,
-			&protobufs.ServerToAgent{
-				PackagesAvailable: &protobufs.PackagesAvailable{
-					Packages: map[string]*protobufs.PackageAvailable{
-						"package1": {
-							Type:    protobufs.PackageType_PackageType_TopLevel,
-							Version: "1.0.0",
-							File: &protobufs.DownloadableFile{
-								DownloadUrl: "foo",
-								ContentHash: []byte{4, 5},
-							},
-							Hash: []byte{1, 2, 3},
+	receiver.processor.ProcessReceivedMessage(ctx,
+		&protobufs.ServerToAgent{
+			PackagesAvailable: &protobufs.PackagesAvailable{
+				Packages: map[string]*protobufs.PackageAvailable{
+					"package1": {
+						Type:    protobufs.PackageType_PackageType_TopLevel,
+						Version: "1.0.0",
+						File: &protobufs.DownloadableFile{
+							DownloadUrl: "foo",
+							ContentHash: []byte{4, 5},
 						},
+						Hash: []byte{1, 2, 3},
 					},
-					AllPackagesHash: []byte{1, 2, 3, 4, 5},
 				},
-			})
-	}()
-	go func() {
-		receiver.processor.ProcessReceivedMessage(ctx,
-			&protobufs.ServerToAgent{
-				PackagesAvailable: &protobufs.PackagesAvailable{
-					Packages: map[string]*protobufs.PackageAvailable{
-						"package22": {
-							Type:    protobufs.PackageType_PackageType_TopLevel,
-							Version: "1.0.0",
-							File: &protobufs.DownloadableFile{
-								DownloadUrl: "bar",
-								ContentHash: []byte{4, 5},
-							},
-							Hash: []byte{1, 2, 3},
+				AllPackagesHash: []byte{1, 2, 3, 4, 5},
+			},
+		})
+	receiver.processor.ProcessReceivedMessage(ctx,
+		&protobufs.ServerToAgent{
+			PackagesAvailable: &protobufs.PackagesAvailable{
+				Packages: map[string]*protobufs.PackageAvailable{
+					"package22": {
+						Type:    protobufs.PackageType_PackageType_TopLevel,
+						Version: "1.0.0",
+						File: &protobufs.DownloadableFile{
+							DownloadUrl: "bar",
+							ContentHash: []byte{4, 5},
 						},
+						Hash: []byte{1, 2, 3},
 					},
-					AllPackagesHash: []byte{1, 2, 3, 4, 5},
 				},
-			})
-	}()
+				AllPackagesHash: []byte{1, 2, 3, 4, 5},
+			},
+		})
 
 	assert.Eventually(t, func() bool {
 		return messages.Load() == 2

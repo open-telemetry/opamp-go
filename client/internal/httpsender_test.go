@@ -224,49 +224,44 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 		},
 	}
 
-	// Set the RequestInstanceUid flag on the tracked state to request the server for a new ID to use.
 	clientSyncedState := &ClientSyncedState{}
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
 	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, capabilities, &mux)
 
-	go func() {
-		sender.receiveProcessor.ProcessReceivedMessage(ctx,
-			&protobufs.ServerToAgent{
-				PackagesAvailable: &protobufs.PackagesAvailable{
-					Packages: map[string]*protobufs.PackageAvailable{
-						"package1": {
-							Type:    protobufs.PackageType_PackageType_TopLevel,
-							Version: "1.0.0",
-							File: &protobufs.DownloadableFile{
-								DownloadUrl: "foo",
-								ContentHash: []byte{4, 5},
-							},
-							Hash: []byte{1, 2, 3},
+	sender.receiveProcessor.ProcessReceivedMessage(ctx,
+		&protobufs.ServerToAgent{
+			PackagesAvailable: &protobufs.PackagesAvailable{
+				Packages: map[string]*protobufs.PackageAvailable{
+					"package1": {
+						Type:    protobufs.PackageType_PackageType_TopLevel,
+						Version: "1.0.0",
+						File: &protobufs.DownloadableFile{
+							DownloadUrl: "foo",
+							ContentHash: []byte{4, 5},
 						},
+						Hash: []byte{1, 2, 3},
 					},
-					AllPackagesHash: []byte{1, 2, 3, 4, 5},
 				},
-			})
-	}()
-	go func() {
-		sender.receiveProcessor.ProcessReceivedMessage(ctx,
-			&protobufs.ServerToAgent{
-				PackagesAvailable: &protobufs.PackagesAvailable{
-					Packages: map[string]*protobufs.PackageAvailable{
-						"package22": {
-							Type:    protobufs.PackageType_PackageType_TopLevel,
-							Version: "1.0.0",
-							File: &protobufs.DownloadableFile{
-								DownloadUrl: "bar",
-								ContentHash: []byte{4, 5},
-							},
-							Hash: []byte{1, 2, 3},
+				AllPackagesHash: []byte{1, 2, 3, 4, 5},
+			},
+		})
+	sender.receiveProcessor.ProcessReceivedMessage(ctx,
+		&protobufs.ServerToAgent{
+			PackagesAvailable: &protobufs.PackagesAvailable{
+				Packages: map[string]*protobufs.PackageAvailable{
+					"package22": {
+						Type:    protobufs.PackageType_PackageType_TopLevel,
+						Version: "1.0.0",
+						File: &protobufs.DownloadableFile{
+							DownloadUrl: "bar",
+							ContentHash: []byte{4, 5},
 						},
+						Hash: []byte{1, 2, 3},
 					},
-					AllPackagesHash: []byte{1, 2, 3, 4, 5},
 				},
-			})
-	}()
+				AllPackagesHash: []byte{1, 2, 3, 4, 5},
+			},
+		})
 
 	assert.Eventually(t, func() bool {
 		return messages.Load() == 2
@@ -298,18 +293,14 @@ func TestPackageUpdatesWithError(t *testing.T) {
 	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, capabilities, &mux)
 
 	// Send two messages in parallel.
-	go func() {
-		sender.receiveProcessor.ProcessReceivedMessage(ctx,
-			&protobufs.ServerToAgent{
-				PackagesAvailable: &protobufs.PackagesAvailable{},
-			})
-	}()
-	go func() {
-		sender.receiveProcessor.ProcessReceivedMessage(ctx,
-			&protobufs.ServerToAgent{
-				PackagesAvailable: &protobufs.PackagesAvailable{},
-			})
-	}()
+	sender.receiveProcessor.ProcessReceivedMessage(ctx,
+		&protobufs.ServerToAgent{
+			PackagesAvailable: &protobufs.PackagesAvailable{},
+		})
+	sender.receiveProcessor.ProcessReceivedMessage(ctx,
+		&protobufs.ServerToAgent{
+			PackagesAvailable: &protobufs.PackagesAvailable{},
+		})
 
 	// Make sure that even though the call to Sync errored out early, the lock
 	// was still released properly for both messages to be processed.
