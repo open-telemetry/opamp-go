@@ -213,6 +213,15 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	localPackageState := NewInMemPackagesStore()
 	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	ch := make(chan struct{})
+	doneCh := make([]<-chan struct{}, 0)
+
+	// Use this to simulate blocking behavior on the first call to Sync().
+	localPackageState.onAllPackagesHash = func() {
+		if localPackageState.lastReportedStatuses != nil {
+			<-ch
+		}
+	}
 
 	var messages atomic.Int32
 	var mux sync.Mutex
@@ -221,6 +230,7 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 			err := msg.PackageSyncer.Sync(ctx)
 			assert.NoError(t, err)
 			messages.Add(1)
+			doneCh = append(doneCh, msg.PackageSyncer.Done())
 		},
 	}
 
@@ -263,9 +273,17 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 			},
 		})
 
+	// Make sure that both Sync calls have gone through _before_ releasing the first.
+	// This means that they're both called in parallel, but locking makes sure
+	// that this is not a race condition.
 	assert.Eventually(t, func() bool {
 		return messages.Load() == 2
 	}, 2*time.Second, 100*time.Millisecond, "both messages must have been processed successfully")
+
+	// Release the first Sync call so it can continue and wait for both of them to complete.
+	ch <- struct{}{}
+	<-doneCh[0]
+	<-doneCh[1]
 
 	cancel()
 }
