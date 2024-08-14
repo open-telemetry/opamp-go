@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -24,6 +25,10 @@ type Commander struct {
 	doneCh  chan struct{}
 	waitCh  chan struct{}
 	running atomic.Bool
+
+	// True when stopping is in progress.
+	isStoppingFlag  bool
+	isStoppingMutex sync.RWMutex
 }
 
 func NewCommander(logger types.Logger, cfg *config.Agent, args ...string) (*Commander, error) {
@@ -41,6 +46,10 @@ func NewCommander(logger types.Logger, cfg *config.Agent, args ...string) (*Comm
 // Start the Agent and begin watching the process.
 // Agent's stdout and stderr are written to a file.
 func (c *Commander) Start(ctx context.Context) error {
+	if c.IsStopping() {
+		return nil
+	}
+
 	c.logger.Debugf(ctx, "Starting agent %s", c.cfg.Executable)
 
 	logFilePath := "agent.log"
@@ -121,6 +130,10 @@ func (c *Commander) Stop(ctx context.Context) error {
 		return nil
 	}
 
+	c.isStoppingMutex.Lock()
+	c.isStoppingFlag = true
+	c.isStoppingMutex.Unlock()
+
 	c.logger.Debugf(ctx, "Stopping agent process, PID=%v", c.cmd.Process.Pid)
 
 	// Gracefully signal process to stop.
@@ -165,4 +178,11 @@ func (c *Commander) Stop(ctx context.Context) error {
 	close(finished)
 
 	return innerErr
+}
+
+// IsStopping returns true if Stop() was called.
+func (c *Commander) IsStopping() bool {
+	c.isStoppingMutex.RLock()
+	defer c.isStoppingMutex.RUnlock()
+	return c.isStoppingFlag
 }
