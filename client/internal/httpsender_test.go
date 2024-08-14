@@ -216,7 +216,10 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 	ch := make(chan struct{})
 	doneCh := make([]<-chan struct{}, 0)
 
-	// Use this to simulate blocking behavior on the first call to Sync().
+	// Use `ch` to simulate blocking behavior on the first call to Sync().
+	// This will allow both Sync() calls to be called in parallel; we will
+	// first make sure that both are inflight before manually releaseing the
+	// channel so that both go through in sequence.
 	localPackageState.onAllPackagesHash = func() {
 		if localPackageState.lastReportedStatuses != nil {
 			<-ch
@@ -273,9 +276,10 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 			},
 		})
 
-	// Make sure that both Sync calls have gone through _before_ releasing the first.
-	// This means that they're both called in parallel, but locking makes sure
-	// that this is not a race condition.
+	// Make sure that both Sync calls have gone through _before_ releasing the first one.
+	// This means that they're both called in parallel, and that the race
+	// detector would always report a race condition, but proper locking makes
+	// sure that's not the case.
 	assert.Eventually(t, func() bool {
 		return messages.Load() == 2
 	}, 2*time.Second, 100*time.Millisecond, "both messages must have been processed successfully")
