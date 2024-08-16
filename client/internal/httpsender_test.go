@@ -216,7 +216,7 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 	blockSyncCh := make(chan struct{})
 	doneCh := make([]<-chan struct{}, 0)
 
-	// Use `ch` to simulate blocking behavior on the first call to Sync().
+	// Use `ch` to simulate blocking behavior on the second call to Sync().
 	// This will allow both Sync() calls to be called in parallel; we will
 	// first make sure that both are inflight before manually releasing the
 	// channel so that both go through in sequence.
@@ -284,7 +284,7 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 		return messages.Load() == 2
 	}, 2*time.Second, 100*time.Millisecond, "both messages must have been processed successfully")
 
-	// Release the first Sync call so it can continue and wait for both of them to complete.
+	// Release the second Sync call so it can continue and wait for both of them to complete.
 	blockSyncCh <- struct{}{}
 	<-doneCh[0]
 	<-doneCh[1]
