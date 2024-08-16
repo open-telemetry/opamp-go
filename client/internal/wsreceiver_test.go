@@ -223,17 +223,17 @@ func TestWSPackageUpdatesInParallel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var messages atomic.Int32
 	var mux sync.Mutex
-	ch := make(chan struct{})
+	blockSyncCh := make(chan struct{})
 	doneCh := make([]<-chan struct{}, 0)
 	localPackageState := NewInMemPackagesStore()
 
 	// Use `ch` to simulate blocking behavior on the first call to Sync().
 	// This will allow both Sync() calls to be called in parallel; we will
-	// first make sure that both are inflight before manually releaseing the
+	// first make sure that both are inflight before manually releasing the
 	// channel so that both go through in sequence.
 	localPackageState.onAllPackagesHash = func() {
 		if localPackageState.lastReportedStatuses != nil {
-			<-ch
+			<-blockSyncCh
 		}
 	}
 	callbacks := types.CallbacksStruct{
@@ -293,7 +293,7 @@ func TestWSPackageUpdatesInParallel(t *testing.T) {
 	}, 2*time.Second, 100*time.Millisecond, "both messages must have been processed successfully")
 
 	// Release the first Sync call so it can continue and wait for both of them to complete.
-	ch <- struct{}{}
+	blockSyncCh <- struct{}{}
 	<-doneCh[0]
 	<-doneCh[1]
 
