@@ -1905,8 +1905,6 @@ func TestSendCustomMessagePendingError(t *testing.T) {
 		}
 		client.SetCustomCapabilities(clientCustomCapabilities)
 
-		assert.NoError(t, client.Start(context.Background(), settings))
-
 		customMessage1 := &protobufs.CustomMessage{
 			Capability: "local.test.example",
 			Type:       "hello",
@@ -1918,6 +1916,7 @@ func TestSendCustomMessagePendingError(t *testing.T) {
 			Data:       []byte("test message 2"),
 		}
 
+		// Send a message to the unstarted client.
 		_, err := client.SendCustomMessage(customMessage1)
 		assert.NoError(t, err)
 
@@ -1925,6 +1924,9 @@ func TestSendCustomMessagePendingError(t *testing.T) {
 		sendingChan, err := client.SendCustomMessage(customMessage2)
 		assert.ErrorIs(t, err, types.ErrCustomMessagePending)
 		assert.NotNil(t, sendingChan)
+
+		// Start the client so we can start processing messages properly.
+		assert.NoError(t, client.Start(context.Background(), settings))
 
 		// Receive the first custom message
 		eventually(
