@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -214,6 +215,10 @@ func (r *receivedProcessor) rcvFlags(
 func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, settings *protobufs.ConnectionSettingsOffers) {
 	if settings == nil || settings.Opamp == nil {
 		return
+	}
+
+	if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat) {
+		r.sender.SetHeartbeatInterval(time.Duration(settings.Opamp.HeartbeatIntervalSeconds) * time.Second)
 	}
 
 	if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings) {

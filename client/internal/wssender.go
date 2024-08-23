@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -13,7 +14,8 @@ import (
 )
 
 const (
-	defaultSendCloseMessageTimeout = 5 * time.Second
+	defaultSendCloseMessageTimeout  = 5 * time.Second
+	defaultHeartbeatIntervalSeconds = 30
 )
 
 // WSSender implements the WebSocket client's sending portion of OpAMP protocol.
@@ -25,15 +27,24 @@ type WSSender struct {
 	// Indicates that the sender has fully stopped.
 	stopped chan struct{}
 	err     error
+
+	heartbeatIntervalUpdated chan struct{}
+	heartbeatIntervalSeconds atomic.Int64
+	heartbeatTimer           *time.Timer
 }
 
 // NewSender creates a new Sender that uses WebSocket to send
 // messages to the server.
 func NewSender(logger types.Logger) *WSSender {
-	return &WSSender{
+	s := &WSSender{
 		logger:       logger,
 		SenderCommon: NewSenderCommon(),
 	}
+	s.heartbeatIntervalUpdated = make(chan struct{}, 1)
+	s.heartbeatIntervalSeconds.Store(defaultHeartbeatIntervalSeconds)
+	s.heartbeatTimer = time.NewTimer(0)
+
+	return s
 }
 
 // Start the sender and send the first message that was set via NextMessage().Update()
@@ -62,10 +73,43 @@ func (s *WSSender) StoppingErr() error {
 	return s.err
 }
 
+// SetHeartbeatInterval ...
+func (s *WSSender) SetHeartbeatInterval(d time.Duration) {
+	s.heartbeatIntervalSeconds.Store(int64(d.Seconds()))
+	select {
+	case s.heartbeatIntervalUpdated <- struct{}{}:
+	default:
+	}
+}
+
+func (s *WSSender) shouldSendHeartbeat() <-chan time.Time {
+	t := s.heartbeatTimer
+
+	if !t.Stop() {
+		select {
+		case <-t.C:
+		default:
+		}
+	}
+
+	if d := time.Duration(s.heartbeatIntervalSeconds.Load()) * time.Second; d != 0 {
+		t.Reset(d)
+		return t.C
+	}
+
+	// Heartbeat interval is set to Zero, disable heartbeat.
+	return nil
+}
+
 func (s *WSSender) run(ctx context.Context) {
 out:
 	for {
 		select {
+		case <-s.shouldSendHeartbeat():
+			s.NextMessage().Update(func(msg *protobufs.AgentToServer) {})
+			s.ScheduleSend()
+		case <-s.heartbeatIntervalUpdated:
+			// trigger heartbeat timer reset
 		case <-s.hasPendingMessage:
 			s.sendNextMessage(ctx)
 
@@ -77,6 +121,7 @@ out:
 		}
 	}
 
+	s.heartbeatTimer.Stop()
 	close(s.stopped)
 }
 

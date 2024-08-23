@@ -2,6 +2,7 @@ package internal
 
 import (
 	"errors"
+	"time"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -22,6 +23,9 @@ type Sender interface {
 
 	// SetInstanceUid sets a new instanceUid to be used for all subsequent messages to be sent.
 	SetInstanceUid(instanceUid types.InstanceUid) error
+
+	// SetHeartbeatInterval sets the interval for the agent heartbeats.
+	SetHeartbeatInterval(duration time.Duration)
 }
 
 // SenderCommon is partial Sender implementation that is common between WebSocket and plain
