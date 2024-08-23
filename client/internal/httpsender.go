@@ -278,6 +278,7 @@ func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
 }
 
 func (h *HTTPSender) SetHeartbeatInterval(duration time.Duration) {
+	// 0 is invalid for a http sender
 	if duration != 0 {
 		h.SetPollingInterval(duration)
 	}

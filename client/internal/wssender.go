@@ -73,7 +73,7 @@ func (s *WSSender) StoppingErr() error {
 	return s.err
 }
 
-// SetHeartbeatInterval ...
+// SetHeartbeatInterval sets the heartbeat interval and triggers timer reset.
 func (s *WSSender) SetHeartbeatInterval(d time.Duration) {
 	s.heartbeatIntervalSeconds.Store(int64(d.Seconds()))
 	select {
