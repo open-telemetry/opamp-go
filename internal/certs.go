@@ -153,9 +153,9 @@ func CreateTLSCert(caCertPath, caKeyPath string) (*protobufs.TLSCertificate, err
 
 	// We have a client certificate with a public and private key.
 	certificate := &protobufs.TLSCertificate{
-		PublicKey:   publicKeyPEM.Bytes(),
-		PrivateKey:  privateKeyPEM.Bytes(),
-		CaPublicKey: caCertBytes,
+		Cert:       publicKeyPEM.Bytes(),
+		PrivateKey: privateKeyPEM.Bytes(),
+		CaCert:     caCertBytes,
 	}
 
 	return certificate, nil
