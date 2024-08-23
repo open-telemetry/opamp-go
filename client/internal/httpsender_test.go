@@ -62,6 +62,22 @@ func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
 	srv.Close()
 }
 
+func TestHTTPSenderSetHeartbeatInterval(t *testing.T) {
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+
+	// Default interval should be 30s as per OpAMP Specification
+	assert.Equal(t, (30 * time.Second).Milliseconds(), sender.pollingIntervalMs)
+
+	// zero is invalid for http sender
+	sender.SetHeartbeatInterval(0)
+	assert.Equal(t, (30 * time.Second).Milliseconds(), sender.pollingIntervalMs)
+
+	// zero should be valid for http sender
+	expected := 10 * time.Second
+	sender.SetHeartbeatInterval(expected)
+	assert.Equal(t, expected.Milliseconds(), sender.pollingIntervalMs)
+}
+
 func TestAddTLSConfig(t *testing.T) {
 	sender := NewHTTPSender(&sharedinternal.NopLogger{})
 
