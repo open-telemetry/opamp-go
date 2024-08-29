@@ -37,12 +37,12 @@ type WSSender struct {
 // messages to the server.
 func NewSender(logger types.Logger) *WSSender {
 	s := &WSSender{
-		logger:       logger,
-		SenderCommon: NewSenderCommon(),
+		logger:                   logger,
+		heartbeatIntervalUpdated: make(chan struct{}, 1),
+		heartbeatTimer:           time.NewTimer(0),
+		SenderCommon:             NewSenderCommon(),
 	}
-	s.heartbeatIntervalUpdated = make(chan struct{}, 1)
 	s.heartbeatIntervalSeconds.Store(defaultHeartbeatIntervalSeconds)
-	s.heartbeatTimer = time.NewTimer(0)
 
 	return s
 }
