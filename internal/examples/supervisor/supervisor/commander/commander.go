@@ -125,15 +125,14 @@ func (c *Commander) IsRunning() bool {
 // and if the process does not finish kills it forcedly by sending SIGKILL.
 // Returns after the process is terminated.
 func (c *Commander) Stop(ctx context.Context) error {
-	if !c.IsRunning() {
-		// Not started, nothing to do.
-		return nil
-	}
-
 	c.isStoppingMutex.Lock()
 	c.isStoppingFlag = true
 	c.isStoppingMutex.Unlock()
 
+	if !c.IsRunning() {
+		// Not started, nothing to do.
+		return nil
+	}
 	c.logger.Debugf(ctx, "Stopping agent process, PID=%v", c.cmd.Process.Pid)
 
 	// Gracefully signal process to stop.
