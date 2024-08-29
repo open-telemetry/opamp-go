@@ -85,6 +85,9 @@ func (s *WSSender) SetHeartbeatInterval(d time.Duration) {
 func (s *WSSender) shouldSendHeartbeat() <-chan time.Time {
 	t := s.heartbeatTimer
 
+	// Before Go 1.23, the only safe way to use Reset was to [Stop] and
+	// explicitly drain the timer first.
+	// ref: https://pkg.go.dev/time#Timer.Reset
 	if !t.Stop() {
 		select {
 		case <-t.C:
