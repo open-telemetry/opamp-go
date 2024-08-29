@@ -15,6 +15,8 @@ type InMemPackagesStore struct {
 	fileContents         map[string][]byte
 	fileHashes           map[string][]byte
 	lastReportedStatuses *protobufs.PackageStatuses
+
+	onAllPackagesHash func()
 }
 
 var _ types.PackagesStateProvider = (*InMemPackagesStore)(nil)
@@ -28,6 +30,9 @@ func NewInMemPackagesStore() *InMemPackagesStore {
 }
 
 func (l *InMemPackagesStore) AllPackagesHash() ([]byte, error) {
+	if l.onAllPackagesHash != nil {
+		l.onAllPackagesHash()
+	}
 	return l.allPackagesHash, nil
 }
 

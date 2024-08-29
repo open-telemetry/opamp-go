@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -20,6 +21,7 @@ type packagesSyncer struct {
 	sender            Sender
 
 	statuses *protobufs.PackageStatuses
+	mux      *sync.Mutex
 	doneCh   chan struct{}
 }
 
@@ -30,6 +32,7 @@ func NewPackagesSyncer(
 	sender Sender,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
+	mux *sync.Mutex,
 ) *packagesSyncer {
 	return &packagesSyncer{
 		logger:            logger,
@@ -38,6 +41,7 @@ func NewPackagesSyncer(
 		clientSyncedState: clientSyncedState,
 		localState:        packagesStateProvider,
 		doneCh:            make(chan struct{}),
+		mux:               mux,
 	}
 }
 
@@ -49,15 +53,24 @@ func (s *packagesSyncer) Sync(ctx context.Context) error {
 	}()
 
 	// Prepare package statuses.
+	// Grab a lock to make sure that package statuses are not overriden by
+	// another call to Sync running in parallel.
+	// In case Sync returns early with an error, take care of unlocking the
+	// mutex in this goroutine; otherwise it will be unlocked at the end
+	// of the sync operation.
+	s.mux.Lock()
 	if err := s.initStatuses(); err != nil {
+		s.mux.Unlock()
 		return err
 	}
 
 	if err := s.clientSyncedState.SetPackageStatuses(s.statuses); err != nil {
+		s.mux.Unlock()
 		return err
 	}
 
-	// Now do the actual syncing in the background.
+	// Now do the actual syncing in the background and release the lock from
+	// inside of the goroutine.
 	go s.doSync(ctx)
 
 	return nil
@@ -99,6 +112,10 @@ func (s *packagesSyncer) initStatuses() error {
 
 // doSync performs the actual syncing process.
 func (s *packagesSyncer) doSync(ctx context.Context) {
+	// Once doSync returns  in a separate goroutine, make sure to release the
+	// mutex so that a new syncing process can take place.
+	defer s.mux.Unlock()
+
 	hash, err := s.localState.AllPackagesHash()
 	if err != nil {
 		s.logger.Errorf(ctx, "Package syncing failed: %V", err)

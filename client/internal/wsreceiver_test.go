@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -87,7 +88,7 @@ func TestServerToAgentCommand(t *testing.T) {
 			}
 			sender := WSSender{}
 			capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
-			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, &sender, &clientSyncedState, nil, capabilities)
+			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, &sender, &clientSyncedState, nil, capabilities, new(sync.Mutex))
 			receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 				Command: test.command,
 			})
@@ -141,7 +142,7 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 			},
 		}
 		clientSyncedState := ClientSyncedState{}
-		receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, test.capabilities)
+		receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, test.capabilities, new(sync.Mutex))
 		receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 			Command: &protobufs.ServerToAgentCommand{
 				Type: protobufs.CommandType_CommandType_Restart,
@@ -204,7 +205,7 @@ func TestReceiverLoopStop(t *testing.T) {
 	}
 	sender := WSSender{}
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
-	receiver := NewWSReceiver(TestLogger{t}, callbacks, conn, &sender, &clientSyncedState, nil, capabilities)
+	receiver := NewWSReceiver(TestLogger{t}, callbacks, conn, &sender, &clientSyncedState, nil, capabilities, new(sync.Mutex))
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -216,4 +217,85 @@ func TestReceiverLoopStop(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		return receiverLoopStopped.Load()
 	}, 2*time.Second, 100*time.Millisecond, "ReceiverLoop should stop when context is cancelled")
+}
+
+func TestWSPackageUpdatesInParallel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var messages atomic.Int32
+	var mux sync.Mutex
+	blockSyncCh := make(chan struct{})
+	doneCh := make([]<-chan struct{}, 0)
+	localPackageState := NewInMemPackagesStore()
+
+	// Use `ch` to simulate blocking behavior on the second call to Sync().
+	// This will allow both Sync() calls to be called in parallel; we will
+	// first make sure that both are inflight before manually releasing the
+	// channel so that both go through in sequence.
+	localPackageState.onAllPackagesHash = func() {
+		if localPackageState.lastReportedStatuses != nil {
+			<-blockSyncCh
+		}
+	}
+	callbacks := types.CallbacksStruct{
+		OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+			err := msg.PackageSyncer.Sync(ctx)
+			assert.NoError(t, err)
+			messages.Add(1)
+			doneCh = append(doneCh, msg.PackageSyncer.Done())
+		},
+	}
+	clientSyncedState := &ClientSyncedState{}
+	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
+	sender := NewSender(&internal.NopLogger{})
+	receiver := NewWSReceiver(&internal.NopLogger{}, callbacks, nil, sender, clientSyncedState, localPackageState, capabilities, &mux)
+
+	receiver.processor.ProcessReceivedMessage(ctx,
+		&protobufs.ServerToAgent{
+			PackagesAvailable: &protobufs.PackagesAvailable{
+				Packages: map[string]*protobufs.PackageAvailable{
+					"package1": {
+						Type:    protobufs.PackageType_PackageType_TopLevel,
+						Version: "1.0.0",
+						File: &protobufs.DownloadableFile{
+							DownloadUrl: "foo",
+							ContentHash: []byte{4, 5},
+						},
+						Hash: []byte{1, 2, 3},
+					},
+				},
+				AllPackagesHash: []byte{1, 2, 3, 4, 5},
+			},
+		})
+	receiver.processor.ProcessReceivedMessage(ctx,
+		&protobufs.ServerToAgent{
+			PackagesAvailable: &protobufs.PackagesAvailable{
+				Packages: map[string]*protobufs.PackageAvailable{
+					"package22": {
+						Type:    protobufs.PackageType_PackageType_TopLevel,
+						Version: "1.0.0",
+						File: &protobufs.DownloadableFile{
+							DownloadUrl: "bar",
+							ContentHash: []byte{4, 5},
+						},
+						Hash: []byte{1, 2, 3},
+					},
+				},
+				AllPackagesHash: []byte{1, 2, 3, 4, 5},
+			},
+		})
+
+	// Make sure that both Sync calls have gone through _before_ releasing the first one.
+	// This means that they're both called in parallel, and that the race
+	// detector would always report a race condition, but proper locking makes
+	// sure that's not the case.
+	assert.Eventually(t, func() bool {
+		return messages.Load() == 2
+	}, 2*time.Second, 100*time.Millisecond, "both messages must have been processed successfully")
+
+	// Release the second Sync call so it can continue and wait for both of them to complete.
+	blockSyncCh <- struct{}{}
+	<-doneCh[0]
+	<-doneCh[1]
+
+	cancel()
 }
