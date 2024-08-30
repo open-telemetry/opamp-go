@@ -22,6 +22,77 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
+func TestWSSenderReportsHeartbeat(t *testing.T) {
+	tests := []struct {
+		name                  string
+		clientEnableHeartbeat bool
+		serverEnableHeartbeat bool
+		expectHeartbeats      bool
+	}{
+		{"enable heartbeat", true, true, true},
+		{"client disable heartbeat", false, true, false},
+		{"server disable heartbeat", true, false, false},
+	}
+
+	for _, tt := range tests {
+		srv := internal.StartMockServer(t)
+
+		var firstMsg atomic.Bool
+		var conn atomic.Value
+		srv.OnWSConnect = func(c *websocket.Conn) {
+			conn.Store(c)
+			firstMsg.Store(true)
+		}
+		var msgCount atomic.Int64
+		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			if firstMsg.Load() {
+				firstMsg.Store(false)
+				resp := &protobufs.ServerToAgent{
+					InstanceUid: msg.InstanceUid,
+					ConnectionSettings: &protobufs.ConnectionSettingsOffers{
+						Opamp: &protobufs.OpAMPConnectionSettings{
+							HeartbeatIntervalSeconds: 1,
+						},
+					},
+				}
+				if !tt.serverEnableHeartbeat {
+					resp.ConnectionSettings.Opamp.HeartbeatIntervalSeconds = 0
+				}
+				return resp
+			}
+			msgCount.Add(1)
+			return nil
+		}
+
+		// Start an OpAMP/WebSocket client.
+		settings := types.StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+		}
+		if tt.clientEnableHeartbeat {
+			settings.Capabilities = protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat
+		}
+		client := NewWebSocket(nil)
+		startClient(t, settings, client)
+
+		// Wait for connection to be established.
+		eventually(t, func() bool { return conn.Load() != nil })
+
+		if tt.expectHeartbeats {
+			assert.Eventually(t, func() bool {
+				return msgCount.Load() >= 2
+			}, 3*time.Second, 10*time.Millisecond)
+		} else {
+			assert.Never(t, func() bool {
+				return msgCount.Load() >= 2
+			}, 3*time.Second, 10*time.Millisecond)
+		}
+
+		// Stop the client.
+		err := client.Stop(context.Background())
+		assert.NoError(t, err)
+	}
+}
+
 func TestDisconnectWSByServer(t *testing.T) {
 	// Start a Server.
 	srv := internal.StartMockServer(t)

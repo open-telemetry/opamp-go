@@ -2,6 +2,8 @@ package internal
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -13,7 +15,8 @@ import (
 )
 
 const (
-	defaultSendCloseMessageTimeout = 5 * time.Second
+	defaultSendCloseMessageTimeout  = 5 * time.Second
+	defaultHeartbeatIntervalSeconds = 30
 )
 
 // WSSender implements the WebSocket client's sending portion of OpAMP protocol.
@@ -25,15 +28,24 @@ type WSSender struct {
 	// Indicates that the sender has fully stopped.
 	stopped chan struct{}
 	err     error
+
+	heartbeatIntervalUpdated chan struct{}
+	heartbeatIntervalSeconds atomic.Int64
+	heartbeatTimer           *time.Timer
 }
 
 // NewSender creates a new Sender that uses WebSocket to send
 // messages to the server.
 func NewSender(logger types.Logger) *WSSender {
-	return &WSSender{
-		logger:       logger,
-		SenderCommon: NewSenderCommon(),
+	s := &WSSender{
+		logger:                   logger,
+		heartbeatIntervalUpdated: make(chan struct{}, 1),
+		heartbeatTimer:           time.NewTimer(0),
+		SenderCommon:             NewSenderCommon(),
 	}
+	s.heartbeatIntervalSeconds.Store(defaultHeartbeatIntervalSeconds)
+
+	return s
 }
 
 // Start the sender and send the first message that was set via NextMessage().Update()
@@ -62,10 +74,51 @@ func (s *WSSender) StoppingErr() error {
 	return s.err
 }
 
+// SetHeartbeatInterval sets the heartbeat interval and triggers timer reset.
+func (s *WSSender) SetHeartbeatInterval(d time.Duration) error {
+	if d < 0 {
+		return errors.New("heartbeat interval for wsclient must be non-negative")
+	}
+
+	s.heartbeatIntervalSeconds.Store(int64(d.Seconds()))
+	select {
+	case s.heartbeatIntervalUpdated <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func (s *WSSender) shouldSendHeartbeat() <-chan time.Time {
+	t := s.heartbeatTimer
+
+	// Before Go 1.23, the only safe way to use Reset was to [Stop] and
+	// explicitly drain the timer first.
+	// ref: https://pkg.go.dev/time#Timer.Reset
+	if !t.Stop() {
+		select {
+		case <-t.C:
+		default:
+		}
+	}
+
+	if d := time.Duration(s.heartbeatIntervalSeconds.Load()) * time.Second; d != 0 {
+		t.Reset(d)
+		return t.C
+	}
+
+	// Heartbeat interval is set to Zero, disable heartbeat.
+	return nil
+}
+
 func (s *WSSender) run(ctx context.Context) {
 out:
 	for {
 		select {
+		case <-s.shouldSendHeartbeat():
+			s.NextMessage().Update(func(msg *protobufs.AgentToServer) {})
+			s.ScheduleSend()
+		case <-s.heartbeatIntervalUpdated:
+			// trigger heartbeat timer reset
 		case <-s.hasPendingMessage:
 			s.sendNextMessage(ctx)
 
@@ -77,6 +130,7 @@ out:
 		}
 	}
 
+	s.heartbeatTimer.Stop()
 	close(s.stopped)
 }
 

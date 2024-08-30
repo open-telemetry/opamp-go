@@ -94,8 +94,8 @@ func CreateClientTLSCertFromCSR(csr *x509.CertificateRequest) (*protobufs.TLSCer
 
 	// We have a client certificate with a public and private key.
 	certificate := &protobufs.TLSCertificate{
-		PublicKey:   certPEM.Bytes(),
-		CaPublicKey: caCertBytes,
+		Cert:   certPEM.Bytes(),
+		CaCert: caCertBytes,
 	}
 
 	return certificate, nil
@@ -144,9 +144,9 @@ func CreateClientTLSCert() (*protobufs.TLSCertificate, error) {
 
 	// We have a client certificate with a public and private key.
 	certificate := &protobufs.TLSCertificate{
-		PublicKey:   certPEM.Bytes(),
-		PrivateKey:  privateKeyPEM.Bytes(),
-		CaPublicKey: caCertBytes,
+		Cert:       certPEM.Bytes(),
+		PrivateKey: privateKeyPEM.Bytes(),
+		CaCert:     caCertBytes,
 	}
 
 	return certificate, nil

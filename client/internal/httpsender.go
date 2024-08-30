@@ -277,6 +277,18 @@ func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
 	h.receiveProcessor.ProcessReceivedMessage(ctx, &response)
 }
 
+func (h *HTTPSender) SetHeartbeatInterval(duration time.Duration) error {
+	if duration <= 0 {
+		return errors.New("heartbeat interval for httpclient must be greater than zero")
+	}
+
+	if duration != 0 {
+		h.SetPollingInterval(duration)
+	}
+
+	return nil
+}
+
 // SetPollingInterval sets the interval between polling. Has effect starting from the
 // next polling cycle.
 func (h *HTTPSender) SetPollingInterval(duration time.Duration) {
