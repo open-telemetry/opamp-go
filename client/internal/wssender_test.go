@@ -15,10 +15,10 @@ func TestWSSenderSetHeartbeatInterval(t *testing.T) {
 	assert.Equal(t, int64((30 * time.Second).Seconds()), sender.heartbeatIntervalSeconds.Load())
 
 	// zero is valid for ws sender
-	sender.SetHeartbeatInterval(0)
+	assert.NoError(t, sender.SetHeartbeatInterval(0))
 	assert.Equal(t, int64(0), sender.heartbeatIntervalSeconds.Load())
 
 	var expected int64 = 10
-	sender.SetHeartbeatInterval(time.Duration(expected) * time.Second)
+	assert.NoError(t, sender.SetHeartbeatInterval(time.Duration(expected)*time.Second))
 	assert.Equal(t, expected, sender.heartbeatIntervalSeconds.Load())
 }

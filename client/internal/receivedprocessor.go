@@ -218,7 +218,10 @@ func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, sett
 	}
 
 	if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat) {
-		r.sender.SetHeartbeatInterval(time.Duration(settings.Opamp.HeartbeatIntervalSeconds) * time.Second)
+		interval := time.Duration(settings.Opamp.HeartbeatIntervalSeconds) * time.Second
+		if err := r.sender.SetHeartbeatInterval(interval); err != nil {
+			r.logger.Errorf(ctx, "Failed to set heartbeat interval: %v", err)
+		}
 	}
 
 	if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings) {

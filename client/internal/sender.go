@@ -25,7 +25,7 @@ type Sender interface {
 	SetInstanceUid(instanceUid types.InstanceUid) error
 
 	// SetHeartbeatInterval sets the interval for the agent heartbeats.
-	SetHeartbeatInterval(duration time.Duration)
+	SetHeartbeatInterval(duration time.Duration) error
 }
 
 // SenderCommon is partial Sender implementation that is common between WebSocket and plain

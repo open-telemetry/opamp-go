@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -74,12 +75,17 @@ func (s *WSSender) StoppingErr() error {
 }
 
 // SetHeartbeatInterval sets the heartbeat interval and triggers timer reset.
-func (s *WSSender) SetHeartbeatInterval(d time.Duration) {
+func (s *WSSender) SetHeartbeatInterval(d time.Duration) error {
+	if d < 0 {
+		return errors.New("heartbeat interval for wsclient must be non-negative")
+	}
+
 	s.heartbeatIntervalSeconds.Store(int64(d.Seconds()))
 	select {
 	case s.heartbeatIntervalUpdated <- struct{}{}:
 	default:
 	}
+	return nil
 }
 
 func (s *WSSender) shouldSendHeartbeat() <-chan time.Time {
