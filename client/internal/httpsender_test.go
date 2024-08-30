@@ -69,7 +69,11 @@ func TestHTTPSenderSetHeartbeatInterval(t *testing.T) {
 	assert.Equal(t, (30 * time.Second).Milliseconds(), sender.pollingIntervalMs)
 
 	// zero is invalid for http sender
-	assert.NoError(t, sender.SetHeartbeatInterval(0))
+	assert.Error(t, sender.SetHeartbeatInterval(0))
+	assert.Equal(t, (30 * time.Second).Milliseconds(), sender.pollingIntervalMs)
+
+	// negative interval is invalid for http sender
+	assert.Error(t, sender.SetHeartbeatInterval(-1))
 	assert.Equal(t, (30 * time.Second).Milliseconds(), sender.pollingIntervalMs)
 
 	// zero should be valid for http sender

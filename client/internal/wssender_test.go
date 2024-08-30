@@ -14,6 +14,10 @@ func TestWSSenderSetHeartbeatInterval(t *testing.T) {
 	// Default interval should be 30s as per OpAMP Specification
 	assert.Equal(t, int64((30 * time.Second).Seconds()), sender.heartbeatIntervalSeconds.Load())
 
+	// negative interval is invalid for http sender
+	assert.Error(t, sender.SetHeartbeatInterval(-1))
+	assert.Equal(t, int64((30 * time.Second).Seconds()), sender.heartbeatIntervalSeconds.Load())
+
 	// zero is valid for ws sender
 	assert.NoError(t, sender.SetHeartbeatInterval(0))
 	assert.Equal(t, int64(0), sender.heartbeatIntervalSeconds.Load())
