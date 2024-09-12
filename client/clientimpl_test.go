@@ -340,6 +340,79 @@ func TestConnectWithHeader(t *testing.T) {
 	})
 }
 
+func TestConnectWithHeaderFunc(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a server.
+		srv := internal.StartMockServer(t)
+		var conn atomic.Value
+		srv.OnConnect = func(r *http.Request) {
+			authHdr := r.Header.Get("Authorization")
+			assert.EqualValues(t, "Bearer 12345678", authHdr)
+			userAgentHdr := r.Header.Get("User-Agent")
+			assert.EqualValues(t, "custom-agent/1.0", userAgentHdr)
+			conn.Store(true)
+		}
+
+		hf := func(header http.Header) http.Header {
+			header.Set("Authorization", "Bearer 12345678")
+			header.Set("User-Agent", "custom-agent/1.0")
+			return header
+		}
+
+		// Start a client.
+		settings := types.StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			HeaderFunc:     hf,
+		}
+		startClient(t, settings, client)
+
+		// Wait for connection to be established.
+		eventually(t, func() bool { return conn.Load() != nil })
+
+		// Shutdown the Server and the client.
+		srv.Close()
+		_ = client.Stop(context.Background())
+	})
+}
+
+func TestConnectWithHeaderAndHeaderFunc(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a server.
+		srv := internal.StartMockServer(t)
+		var conn atomic.Value
+		srv.OnConnect = func(r *http.Request) {
+			authHdr := r.Header.Get("Authorization")
+			assert.EqualValues(t, "Bearer 12345678", authHdr)
+			userAgentHdr := r.Header.Get("User-Agent")
+			assert.EqualValues(t, "custom-agent/1.0", userAgentHdr)
+			conn.Store(true)
+		}
+
+		baseHeader := http.Header{}
+		baseHeader.Set("User-Agent", "custom-agent/1.0")
+
+		hf := func(header http.Header) http.Header {
+			header.Set("Authorization", "Bearer 12345678")
+			return header
+		}
+
+		// Start a client.
+		settings := types.StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			Header:         baseHeader,
+			HeaderFunc:     hf,
+		}
+		startClient(t, settings, client)
+
+		// Wait for connection to be established.
+		eventually(t, func() bool { return conn.Load() != nil })
+
+		// Shutdown the Server and the client.
+		srv.Close()
+		_ = client.Stop(context.Background())
+	})
+}
+
 func TestConnectWithTLS(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a server.

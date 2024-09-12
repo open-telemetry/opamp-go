@@ -59,7 +59,7 @@ type HTTPSender struct {
 	compressionEnabled bool
 
 	// Headers to send with all requests.
-	requestHeader http.Header
+	getHeader func() http.Header
 
 	// Processor to handle received messages.
 	receiveProcessor receivedProcessor
@@ -75,7 +75,7 @@ func NewHTTPSender(logger types.Logger) *HTTPSender {
 		pollingIntervalMs: defaultPollingIntervalMs,
 	}
 	// initialize the headers with no additional headers
-	h.SetRequestHeader(nil)
+	h.SetRequestHeader(nil, nil)
 	return h
 }
 
@@ -121,12 +121,26 @@ func (h *HTTPSender) Run(
 
 // SetRequestHeader sets additional HTTP headers to send with all future requests.
 // Should not be called concurrently with any other method.
-func (h *HTTPSender) SetRequestHeader(header http.Header) {
-	if header == nil {
-		header = http.Header{}
+func (h *HTTPSender) SetRequestHeader(baseHeaders http.Header, headerFunc func(http.Header) http.Header) {
+	if baseHeaders == nil {
+		baseHeaders = http.Header{}
 	}
-	h.requestHeader = header
-	h.requestHeader.Set(headerContentType, contentTypeProtobuf)
+
+	if headerFunc == nil {
+		headerFunc = func(h http.Header) http.Header {
+			return h
+		}
+	}
+
+	h.getHeader = func() http.Header {
+		requestHeader := headerFunc(baseHeaders.Clone())
+		requestHeader.Set(headerContentType, contentTypeProtobuf)
+		if h.compressionEnabled {
+			requestHeader.Set(headerContentEncoding, encodingTypeGZip)
+		}
+
+		return requestHeader
+	}
 }
 
 // makeOneRequestRoundtrip sends a request and receives a response.
@@ -255,7 +269,7 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 		return nil, err
 	}
 
-	req.Header = h.requestHeader
+	req.Header = h.getHeader()
 	return &req, nil
 }
 
@@ -295,9 +309,10 @@ func (h *HTTPSender) SetPollingInterval(duration time.Duration) {
 	atomic.StoreInt64(&h.pollingIntervalMs, duration.Milliseconds())
 }
 
+// EnableCompression enables compression for the sender.
+// Should not be called concurrently with Run.
 func (h *HTTPSender) EnableCompression() {
 	h.compressionEnabled = true
-	h.requestHeader.Set(headerContentEncoding, encodingTypeGZip)
 }
 
 func (h *HTTPSender) AddTLSConfig(config *tls.Config) {

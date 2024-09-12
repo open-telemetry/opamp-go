@@ -17,6 +17,11 @@ type StartSettings struct {
 	// Optional additional HTTP headers to send with all HTTP requests.
 	Header http.Header
 
+	// Optional function that can be used to modify the HTTP headers
+	// before each HTTP request.
+	// Can modify and return the argument or return the argument without modifying.
+	HeaderFunc func(http.Header) http.Header
+
 	// Optional TLS config for HTTP connection.
 	TLSConfig *tls.Config
 
