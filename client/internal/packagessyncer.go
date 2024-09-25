@@ -290,10 +290,7 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 		return fmt.Errorf("cannot download file from %s, HTTP response=%v", file.DownloadUrl, resp.StatusCode)
 	}
 
-	// TODO: either add a callback to verify file.Signature or pass the Signature
-	// as a parameter to UpdateContent.
-
-	err = s.localState.UpdateContent(ctx, pkgName, resp.Body, file.ContentHash)
+	err = s.localState.UpdateContent(ctx, pkgName, resp.Body, file.ContentHash, file.Signature)
 	if err != nil {
 		return fmt.Errorf("failed to install/update the package %s downloaded from %s: %v", pkgName, file.DownloadUrl, err)
 	}
