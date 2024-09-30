@@ -13,6 +13,7 @@ type InMemPackagesStore struct {
 	allPackagesHash      []byte
 	pkgState             map[string]types.PackageState
 	fileContents         map[string][]byte
+	fileSignatures       map[string][]byte
 	fileHashes           map[string][]byte
 	lastReportedStatuses *protobufs.PackageStatuses
 
@@ -23,9 +24,10 @@ var _ types.PackagesStateProvider = (*InMemPackagesStore)(nil)
 
 func NewInMemPackagesStore() *InMemPackagesStore {
 	return &InMemPackagesStore{
-		fileContents: map[string][]byte{},
-		fileHashes:   map[string][]byte{},
-		pkgState:     map[string]types.PackageState{},
+		fileContents:   map[string][]byte{},
+		fileSignatures: map[string][]byte{},
+		fileHashes:     map[string][]byte{},
+		pkgState:       map[string]types.PackageState{},
 	}
 }
 
@@ -63,12 +65,13 @@ func (l *InMemPackagesStore) FileContentHash(packageName string) ([]byte, error)
 	return l.fileHashes[packageName], nil
 }
 
-func (l *InMemPackagesStore) UpdateContent(_ context.Context, packageName string, data io.Reader, contentHash []byte) error {
+func (l *InMemPackagesStore) UpdateContent(_ context.Context, packageName string, data io.Reader, contentHash, signature []byte) error {
 	b, err := io.ReadAll(data)
 	if err != nil {
 		return err
 	}
 	l.fileContents[packageName] = b
+	l.fileSignatures[packageName] = signature
 	l.fileHashes[packageName] = contentHash
 	return nil
 }
@@ -90,6 +93,10 @@ func (l *InMemPackagesStore) SetAllPackagesHash(hash []byte) error {
 
 func (l *InMemPackagesStore) GetContent() map[string][]byte {
 	return l.fileContents
+}
+
+func (l *InMemPackagesStore) GetSignature() map[string][]byte {
+	return l.fileSignatures
 }
 
 func (l *InMemPackagesStore) LastReportedStatuses() (*protobufs.PackageStatuses, error) {

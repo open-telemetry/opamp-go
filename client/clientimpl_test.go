@@ -1272,6 +1272,7 @@ type packageTestCase struct {
 	available           *protobufs.PackagesAvailable
 	expectedStatus      *protobufs.PackageStatuses
 	expectedFileContent map[string][]byte
+	expectedSignature   map[string][]byte
 	expectedError       string
 }
 
@@ -1393,6 +1394,10 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 			for pkgName, receivedContent := range localPackageState.GetContent() {
 				expectedContent := testCase.expectedFileContent[pkgName]
 				assert.EqualValues(t, expectedContent, receivedContent)
+
+				actualSignature := localPackageState.GetSignature()[pkgName]
+				expectedSignature := testCase.expectedSignature[pkgName]
+				assert.EqualValues(t, expectedSignature, actualSignature)
 			}
 		}
 
@@ -1467,6 +1472,7 @@ func createPackageTestCase(name string, downloadSrv *httptest.Server) packageTes
 					File: &protobufs.DownloadableFile{
 						DownloadUrl: downloadSrv.URL + packageFileURL,
 						ContentHash: []byte{4, 5},
+						Signature:   []byte{6, 7},
 					},
 					Hash: []byte{1, 2, 3},
 				},
@@ -1491,6 +1497,10 @@ func createPackageTestCase(name string, downloadSrv *httptest.Server) packageTes
 
 		expectedFileContent: map[string][]byte{
 			"package1": packageFileContent,
+		},
+
+		expectedSignature: map[string][]byte{
+			"package1": {6, 7},
 		},
 	}
 }
