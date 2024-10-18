@@ -72,7 +72,7 @@ func NewMetricReporter(
 		opts = append(opts, otlpmetrichttp.WithInsecure())
 	}
 
-	metricExporter, err := otlpmetrichttp.New(context.Background())
+	metricExporter, err := otlpmetrichttp.New(context.Background(), opts...)
 	if err != nil {
 		err := fmt.Errorf("failed to initialize stdoutmetric export pipeline: %v", err)
 		return nil, err
