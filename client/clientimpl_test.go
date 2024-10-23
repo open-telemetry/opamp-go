@@ -1507,12 +1507,22 @@ func createPackageTestCase(name string, downloadSrv *httptest.Server) packageTes
 
 func TestUpdatePackages(t *testing.T) {
 
+	// Create a download server and defer its closure.
 	downloadSrv := createDownloadSrv(t)
 	defer downloadSrv.Close()
 
-	// A success case.
-	var tests []packageTestCase
-	tests = append(tests, createPackageTestCase("success", downloadSrv))
+	// A success case with headers set in the DownloadableFile.
+	successWithHeaders := createPackageTestCase("success with headers", downloadSrv)
+	// Add headers to the downloadable file.
+	successWithHeaders.available.Packages["package1"].File.Headers = &protobufs.Headers{
+		Headers: []*protobufs.Header{
+			{Key: "Authorization", Value: "Bearer test-token"},
+		},
+	}
+	successWithHeaders.expectedStatus.Packages["package1"].Status = protobufs.PackageStatusEnum_PackageStatusEnum_Installed
+	successWithHeaders.expectedStatus.Packages["package1"].ErrorMessage = ""
+	// Append the test case to the list of tests.
+	tests := []packageTestCase{successWithHeaders}
 
 	// A case when downloading the file fails because the URL is incorrect.
 	notFound := createPackageTestCase("downloadable file not found", downloadSrv)
@@ -1527,11 +1537,33 @@ func TestUpdatePackages(t *testing.T) {
 	errorOnCallback.errorOnCallback = true
 	tests = append(tests, errorOnCallback)
 
+	// Run each test case.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			verifyUpdatePackages(t, test)
 		})
 	}
+}
+
+// Mock download server that checks headers in the request.
+func createDownloadSrv(t *testing.T) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check for the presence of the expected Authorization header in the successWithHeaders case.
+		if r.Header.Get("Authorization") != "" {
+			expectedHeader := "Bearer test-token"
+			if r.Header.Get("Authorization") != expectedHeader {
+				t.Errorf("Expected Authorization header to be '%s', but got '%s'", expectedHeader, r.Header.Get("Authorization"))
+			}
+		}
+		// Handle file not found scenario.
+		if r.URL.Path == "/notfound" {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		// Simulate a successful file download for valid requests.
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("file content"))
+	}))
 }
 
 func TestMissingCapabilities(t *testing.T) {
