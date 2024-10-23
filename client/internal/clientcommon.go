@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -135,6 +136,12 @@ func (c *ClientCommon) PrepareStart(
 	if c.Callbacks == nil {
 		// Make sure it is always safe to call Callbacks.
 		c.Callbacks = types.CallbacksStruct{}
+	}
+
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat != 0 && settings.HeartbeatIntervalSecond != nil {
+		if err := c.sender.SetHeartbeatInterval(time.Duration(*settings.HeartbeatIntervalSecond) * time.Second); err != nil {
+			return err
+		}
 	}
 
 	if err := c.sender.SetInstanceUid(settings.InstanceUid); err != nil {

@@ -93,6 +93,62 @@ func TestWSSenderReportsHeartbeat(t *testing.T) {
 	}
 }
 
+func TestWSClientStartWithHeartbeatInterval(t *testing.T) {
+	tests := []struct {
+		name                  string
+		clientEnableHeartbeat bool
+		expectHeartbeats      bool
+	}{
+		{"client enable heartbeat", true, true},
+		{"client disable heartbeat", false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := internal.StartMockServer(t)
+
+			var conn atomic.Value
+			srv.OnWSConnect = func(c *websocket.Conn) {
+				conn.Store(c)
+			}
+			var msgCount atomic.Int64
+			srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				msgCount.Add(1)
+				return nil
+			}
+
+			// Start an OpAMP/WebSocket client.
+			heartbeatSec := 1
+			settings := types.StartSettings{
+				OpAMPServerURL:          "ws://" + srv.Endpoint,
+				HeartbeatIntervalSecond: &heartbeatSec,
+			}
+			if tt.clientEnableHeartbeat {
+				settings.Capabilities = protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat
+			}
+			client := NewWebSocket(nil)
+			startClient(t, settings, client)
+
+			// Wait for connection to be established.
+			eventually(t, func() bool { return conn.Load() != nil })
+
+			if tt.expectHeartbeats {
+				assert.Eventually(t, func() bool {
+					return msgCount.Load() >= 2
+				}, 3*time.Second, 100*time.Millisecond)
+			} else {
+				assert.Never(t, func() bool {
+					return msgCount.Load() >= 2
+				}, 3*time.Second, 100*time.Millisecond)
+			}
+
+			// Stop the client.
+			err := client.Stop(context.Background())
+			assert.NoError(t, err)
+		})
+	}
+}
+
 func TestDisconnectWSByServer(t *testing.T) {
 	// Start a Server.
 	srv := internal.StartMockServer(t)

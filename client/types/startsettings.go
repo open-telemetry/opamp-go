@@ -53,4 +53,14 @@ type StartSettings struct {
 	// the compression is only effectively enabled if the Server also supports compression.
 	// The data will be compressed in both directions.
 	EnableCompression bool
+
+	// Optional HeartbeatIntervalSecond to configure the heartbeat interval for client.
+	// If nil, the default heartbeat interval (30s) will be used.
+	// If zero, heartbeat will be disabled for a Websocket-based client.
+	//
+	// Note that an HTTP-based client will use the heartbeat interval as its polling interval
+	// and zero is invalid for an HTTP-based client.
+	//
+	// If the ReportsHeartbeat capability is disabled, this option has no effect.
+	HeartbeatIntervalSecond *int
 }
