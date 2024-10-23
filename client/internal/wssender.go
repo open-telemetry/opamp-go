@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	defaultSendCloseMessageTimeout  = 5 * time.Second
-	defaultHeartbeatIntervalSeconds = 30
+	defaultSendCloseMessageTimeout = 5 * time.Second
+	defaultHeartbeatIntervalMs     = 30 * 1000
 )
 
 // WSSender implements the WebSocket client's sending portion of OpAMP protocol.
@@ -30,7 +30,7 @@ type WSSender struct {
 	err     error
 
 	heartbeatIntervalUpdated chan struct{}
-	heartbeatIntervalSeconds atomic.Int64
+	heartbeatIntervalMs      atomic.Int64
 	heartbeatTimer           *time.Timer
 }
 
@@ -43,7 +43,7 @@ func NewSender(logger types.Logger) *WSSender {
 		heartbeatTimer:           time.NewTimer(0),
 		SenderCommon:             NewSenderCommon(),
 	}
-	s.heartbeatIntervalSeconds.Store(defaultHeartbeatIntervalSeconds)
+	s.heartbeatIntervalMs.Store(defaultHeartbeatIntervalMs)
 
 	return s
 }
@@ -80,7 +80,7 @@ func (s *WSSender) SetHeartbeatInterval(d time.Duration) error {
 		return errors.New("heartbeat interval for wsclient must be non-negative")
 	}
 
-	s.heartbeatIntervalSeconds.Store(int64(d.Seconds()))
+	s.heartbeatIntervalMs.Store(int64(d.Milliseconds()))
 	select {
 	case s.heartbeatIntervalUpdated <- struct{}{}:
 	default:
@@ -101,7 +101,7 @@ func (s *WSSender) shouldSendHeartbeat() <-chan time.Time {
 		}
 	}
 
-	if d := time.Duration(s.heartbeatIntervalSeconds.Load()) * time.Second; d != 0 {
+	if d := time.Duration(s.heartbeatIntervalMs.Load()) * time.Millisecond; d != 0 {
 		t.Reset(d)
 		return t.C
 	}

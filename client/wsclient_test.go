@@ -118,10 +118,10 @@ func TestWSClientStartWithHeartbeatInterval(t *testing.T) {
 			}
 
 			// Start an OpAMP/WebSocket client.
-			heartbeatSec := 1
+			heartbeat := 10 * time.Millisecond
 			settings := types.StartSettings{
-				OpAMPServerURL:          "ws://" + srv.Endpoint,
-				HeartbeatIntervalSecond: &heartbeatSec,
+				OpAMPServerURL:    "ws://" + srv.Endpoint,
+				HeartbeatInterval: &heartbeat,
 			}
 			if tt.clientEnableHeartbeat {
 				settings.Capabilities = protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat
@@ -135,11 +135,11 @@ func TestWSClientStartWithHeartbeatInterval(t *testing.T) {
 			if tt.expectHeartbeats {
 				assert.Eventually(t, func() bool {
 					return msgCount.Load() >= 2
-				}, 3*time.Second, 100*time.Millisecond)
+				}, 50*time.Millisecond, 10*time.Millisecond)
 			} else {
 				assert.Never(t, func() bool {
 					return msgCount.Load() >= 2
-				}, 3*time.Second, 100*time.Millisecond)
+				}, 50*time.Millisecond, 10*time.Millisecond)
 			}
 
 			// Stop the client.

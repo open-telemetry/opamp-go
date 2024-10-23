@@ -172,10 +172,10 @@ func TestHTTPClientStartWithHeartbeatInterval(t *testing.T) {
 			}
 
 			// Start a client.
-			heartbeatSec := 1
+			heartbeat := 10 * time.Millisecond
 			settings := types.StartSettings{
-				OpAMPServerURL:          "http://" + srv.Endpoint,
-				HeartbeatIntervalSecond: &heartbeatSec,
+				OpAMPServerURL:    "http://" + srv.Endpoint,
+				HeartbeatInterval: &heartbeat,
 			}
 			if tt.enableHeartbeat {
 				settings.Capabilities = protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat
@@ -189,10 +189,10 @@ func TestHTTPClientStartWithHeartbeatInterval(t *testing.T) {
 			eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) == 1 })
 
 			if tt.expectHeartbeats {
-				// Verify that status report is delivered again. no call is made for next 100ms
-				assert.Eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) == 2 }, 5*time.Second, 100*time.Millisecond)
+				// Verify that status report is delivered again. no call is made for next 10ms
+				assert.Eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) >= 2 }, 50*time.Second, 10*time.Millisecond)
 			} else {
-				assert.Never(t, func() bool { return atomic.LoadInt64(&rcvCounter) == 2 }, 5*time.Second, 100*time.Millisecond)
+				assert.Never(t, func() bool { return atomic.LoadInt64(&rcvCounter) >= 2 }, 50*time.Millisecond, 10*time.Millisecond)
 			}
 
 			// Shutdown the Server.
@@ -209,11 +209,11 @@ func TestHTTPClientStartWithZeroHeartbeatInterval(t *testing.T) {
 	srv := internal.StartMockServer(t)
 
 	// Start a client.
-	heartbeat := 0
+	heartbeat := 0 * time.Millisecond
 	settings := types.StartSettings{
-		OpAMPServerURL:          "http://" + srv.Endpoint,
-		HeartbeatIntervalSecond: &heartbeat,
-		Capabilities:            protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat,
+		OpAMPServerURL:    "http://" + srv.Endpoint,
+		HeartbeatInterval: &heartbeat,
+		Capabilities:      protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat,
 	}
 	client := NewHTTP(nil)
 	prepareClient(t, &settings, client)
