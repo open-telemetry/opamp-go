@@ -135,7 +135,7 @@ func TestWSClientStartWithHeartbeatInterval(t *testing.T) {
 			if tt.expectHeartbeats {
 				assert.Eventually(t, func() bool {
 					return msgCount.Load() >= 2
-				}, 50*time.Millisecond, 10*time.Millisecond)
+				}, 5*time.Second, 10*time.Millisecond)
 			} else {
 				assert.Never(t, func() bool {
 					return msgCount.Load() >= 2

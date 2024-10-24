@@ -189,8 +189,7 @@ func TestHTTPClientStartWithHeartbeatInterval(t *testing.T) {
 			eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) == 1 })
 
 			if tt.expectHeartbeats {
-				// Verify that status report is delivered again. no call is made for next 10ms
-				assert.Eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) >= 2 }, 50*time.Second, 10*time.Millisecond)
+				assert.Eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) >= 2 }, 5*time.Second, 10*time.Millisecond)
 			} else {
 				assert.Never(t, func() bool { return atomic.LoadInt64(&rcvCounter) >= 2 }, 50*time.Millisecond, 10*time.Millisecond)
 			}
