@@ -145,3 +145,81 @@ func TestHTTPClientSetPollingInterval(t *testing.T) {
 	err := client.Stop(context.Background())
 	assert.NoError(t, err)
 }
+
+func TestHTTPClientStartWithHeartbeatInterval(t *testing.T) {
+	tests := []struct {
+		name             string
+		enableHeartbeat  bool
+		expectHeartbeats bool
+	}{
+		{"client enable heartbeat", true, true},
+		{"client disable heartbeat", false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Start a Server.
+			srv := internal.StartMockServer(t)
+			var rcvCounter int64
+			srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				if msg == nil {
+					t.Error("unexpected nil msg")
+					return nil
+				}
+				assert.EqualValues(t, rcvCounter, msg.SequenceNum)
+				atomic.AddInt64(&rcvCounter, 1)
+				return nil
+			}
+
+			// Start a client.
+			heartbeat := 10 * time.Millisecond
+			settings := types.StartSettings{
+				OpAMPServerURL:    "http://" + srv.Endpoint,
+				HeartbeatInterval: &heartbeat,
+			}
+			if tt.enableHeartbeat {
+				settings.Capabilities = protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat
+			}
+			client := NewHTTP(nil)
+			prepareClient(t, &settings, client)
+
+			assert.NoError(t, client.Start(context.Background(), settings))
+
+			// Verify that status report is delivered.
+			eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) == 1 })
+
+			if tt.expectHeartbeats {
+				assert.Eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) >= 2 }, 5*time.Second, 10*time.Millisecond)
+			} else {
+				assert.Never(t, func() bool { return atomic.LoadInt64(&rcvCounter) >= 2 }, 50*time.Millisecond, 10*time.Millisecond)
+			}
+
+			// Shutdown the Server.
+			srv.Close()
+
+			// Shutdown the client.
+			err := client.Stop(context.Background())
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestHTTPClientStartWithZeroHeartbeatInterval(t *testing.T) {
+	srv := internal.StartMockServer(t)
+
+	// Start a client.
+	heartbeat := 0 * time.Millisecond
+	settings := types.StartSettings{
+		OpAMPServerURL:    "http://" + srv.Endpoint,
+		HeartbeatInterval: &heartbeat,
+		Capabilities:      protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat,
+	}
+	client := NewHTTP(nil)
+	prepareClient(t, &settings, client)
+
+	// Zero heartbeat interval is invalid for http client.
+	assert.Error(t, client.Start(context.Background(), settings))
+
+	// Shutdown the Server.
+	srv.Close()
+}

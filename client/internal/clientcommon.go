@@ -137,6 +137,12 @@ func (c *ClientCommon) PrepareStart(
 		c.Callbacks = types.CallbacksStruct{}
 	}
 
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat != 0 && settings.HeartbeatInterval != nil {
+		if err := c.sender.SetHeartbeatInterval(*settings.HeartbeatInterval); err != nil {
+			return err
+		}
+	}
+
 	if err := c.sender.SetInstanceUid(settings.InstanceUid); err != nil {
 		return err
 	}
