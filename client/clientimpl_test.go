@@ -1439,7 +1439,7 @@ const packageFileURL = "/validfile.pkg"
 
 var packageFileContent = []byte("Package File Content")
 
-func createDownloadSrv(t *testing.T) *httptest.Server {
+func createDownloadSrvBasic(t *testing.T) *httptest.Server {
 	m := http.NewServeMux()
 	m.HandleFunc(packageFileURL,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -1546,7 +1546,7 @@ func TestUpdatePackages(t *testing.T) {
 }
 
 // Mock download server that checks headers in the request.
-func createDownloadSrv(t *testing.T) *httptest.Server {
+func createDownloadServWithAuth(t *testing.T) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check for the presence of the expected Authorization header in the successWithHeaders case.
 		if r.Header.Get("Authorization") != "" {
