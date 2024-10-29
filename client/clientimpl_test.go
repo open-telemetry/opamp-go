@@ -1439,7 +1439,7 @@ const packageFileURL = "/validfile.pkg"
 
 var packageFileContent = []byte("Package File Content")
 
-func createDownloadSrvBasic(t *testing.T) *httptest.Server {
+func createDownloadSrv(t *testing.T) *httptest.Server {
 	m := http.NewServeMux()
 	m.HandleFunc(packageFileURL,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -1527,46 +1527,6 @@ func TestUpdatePackages(t *testing.T) {
 	errorOnCallback.errorOnCallback = true
 	tests = append(tests, errorOnCallback)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			verifyUpdatePackages(t, test)
-		})
-	}
-}
-
-func TestUpdatePackages(t *testing.T) {
-
-	// Create a download server and defer its closure.
-	downloadSrv := createDownloadSrv(t)
-	defer downloadSrv.Close()
-
-	// A success case with headers set in the DownloadableFile.
-	successWithHeaders := createPackageTestCase("success with headers", downloadSrv)
-	// Add headers to the downloadable file.
-	successWithHeaders.available.Packages["package1"].File.Headers = &protobufs.Headers{
-		Headers: []*protobufs.Header{
-			{Key: "Authorization", Value: "Bearer test-token"},
-		},
-	}
-	successWithHeaders.expectedStatus.Packages["package1"].Status = protobufs.PackageStatusEnum_PackageStatusEnum_Installed
-	successWithHeaders.expectedStatus.Packages["package1"].ErrorMessage = ""
-	// Append the test case to the list of tests.
-	tests := []packageTestCase{successWithHeaders}
-
-	// A case when downloading the file fails because the URL is incorrect.
-	notFound := createPackageTestCase("downloadable file not found", downloadSrv)
-	notFound.available.Packages["package1"].File.DownloadUrl = downloadSrv.URL + "/notfound"
-	notFound.expectedStatus.Packages["package1"].Status = protobufs.PackageStatusEnum_PackageStatusEnum_InstallFailed
-	notFound.expectedStatus.Packages["package1"].ErrorMessage = "cannot download"
-	tests = append(tests, notFound)
-
-	// A case when OnPackagesAvailable callback returns an error.
-	errorOnCallback := createPackageTestCase("error on callback", downloadSrv)
-	errorOnCallback.expectedError = packageUpdateErrorMsg
-	errorOnCallback.errorOnCallback = true
-	tests = append(tests, errorOnCallback)
-
-	// Run each test case.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			verifyUpdatePackages(t, test)
