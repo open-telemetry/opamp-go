@@ -1545,27 +1545,6 @@ func TestUpdatePackages(t *testing.T) {
 	}
 }
 
-// Mock download server that checks headers in the request.
-func createDownloadServWithAuth(t *testing.T) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Check for the presence of the expected Authorization header in the successWithHeaders case.
-		if r.Header.Get("Authorization") != "" {
-			expectedHeader := "Bearer test-token"
-			if r.Header.Get("Authorization") != expectedHeader {
-				t.Errorf("Expected Authorization header to be '%s', but got '%s'", expectedHeader, r.Header.Get("Authorization"))
-			}
-		}
-		// Handle file not found scenario.
-		if r.URL.Path == "/notfound" {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		// Simulate a successful file download for valid requests.
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("file content"))
-	}))
-}
-
 func TestMissingCapabilities(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a server.
