@@ -1507,6 +1507,35 @@ func createPackageTestCase(name string, downloadSrv *httptest.Server) packageTes
 
 func TestUpdatePackages(t *testing.T) {
 
+	downloadSrv := createDownloadSrv(t)
+	defer downloadSrv.Close()
+
+	// A success case.
+	var tests []packageTestCase
+	tests = append(tests, createPackageTestCase("success", downloadSrv))
+
+	// A case when downloading the file fails because the URL is incorrect.
+	notFound := createPackageTestCase("downloadable file not found", downloadSrv)
+	notFound.available.Packages["package1"].File.DownloadUrl = downloadSrv.URL + "/notfound"
+	notFound.expectedStatus.Packages["package1"].Status = protobufs.PackageStatusEnum_PackageStatusEnum_InstallFailed
+	notFound.expectedStatus.Packages["package1"].ErrorMessage = "cannot download"
+	tests = append(tests, notFound)
+
+	// A case when OnPackagesAvailable callback returns an error.
+	errorOnCallback := createPackageTestCase("error on callback", downloadSrv)
+	errorOnCallback.expectedError = packageUpdateErrorMsg
+	errorOnCallback.errorOnCallback = true
+	tests = append(tests, errorOnCallback)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			verifyUpdatePackages(t, test)
+		})
+	}
+}
+
+func TestUpdatePackages(t *testing.T) {
+
 	// Create a download server and defer its closure.
 	downloadSrv := createDownloadSrv(t)
 	defer downloadSrv.Close()
