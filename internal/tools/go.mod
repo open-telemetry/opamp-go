@@ -1,6 +1,6 @@
 module github.com/open-telemetry/opamp-go/internal/tools
 
-go 1.20
+go 1.22
 
 require github.com/ory/go-acc v0.2.8
 
