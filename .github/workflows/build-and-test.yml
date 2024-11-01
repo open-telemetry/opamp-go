@@ -5,6 +5,7 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+*"
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 jobs:
   setup-environment:

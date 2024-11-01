@@ -2,6 +2,7 @@ name: static-check
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     tags:
       - 'v*'
