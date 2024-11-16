@@ -31,7 +31,7 @@ type wsClient struct {
 	url *url.URL
 
 	// HTTP request headers to use when connecting to OpAMP Server.
-	requestHeader http.Header
+	getHeader func() http.Header
 
 	// Websocket dialer and connection.
 	dialer    websocket.Dialer
@@ -86,7 +86,21 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 	}
 	c.dialer.TLSClientConfig = settings.TLSConfig
 
-	c.requestHeader = settings.Header
+	headerFunc := settings.HeaderFunc
+	if headerFunc == nil {
+		headerFunc = func(h http.Header) http.Header {
+			return h
+		}
+	}
+
+	baseHeader := settings.Header
+	if baseHeader == nil {
+		baseHeader = http.Header{}
+	}
+
+	c.getHeader = func() http.Header {
+		return headerFunc(baseHeader.Clone())
+	}
 
 	c.common.StartConnectAndRun(c.runUntilStopped)
 
@@ -142,7 +156,7 @@ func (c *wsClient) SendCustomMessage(message *protobufs.CustomMessage) (messageS
 // by the Server.
 func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinternal.OptionalDuration, err error) {
 	var resp *http.Response
-	conn, resp, err := c.dialer.DialContext(ctx, c.url.String(), c.requestHeader)
+	conn, resp, err := c.dialer.DialContext(ctx, c.url.String(), c.getHeader())
 	if err != nil {
 		if c.common.Callbacks != nil && !c.common.IsStopping() {
 			c.common.Callbacks.OnConnectFailed(ctx, err)
@@ -286,6 +300,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		&c.common.ClientSyncedState,
 		c.common.PackagesStateProvider,
 		c.common.Capabilities,
+		&c.common.PackageSyncMutex,
 	)
 
 	// When the wsclient is closed, the context passed to runOneCycle will be canceled.

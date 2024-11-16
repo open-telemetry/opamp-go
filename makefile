@@ -69,3 +69,10 @@ gomoddownload:
 .PHONY: install-tools
 install-tools:
 	cd $(TOOLS_MOD_DIR) && go install github.com/ory/go-acc
+
+.PHONY: tidy
+tidy:
+	rm -fr go.sum
+	go mod tidy
+	cd internal/examples && rm -fr go.sum && go mod tidy
+	cd internal/tools && rm -fr go.sum && go mod tidy

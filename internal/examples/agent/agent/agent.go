@@ -536,7 +536,7 @@ func (agent *Agent) getCertFromSettings(certificate *protobufs.TLSCertificate) (
 		// Client-initiated CSR flow. This is currently initiated when connecting
 		// to the Server for the first time (see requestClientCertificate()).
 		cert, err = tls.X509KeyPair(
-			certificate.PublicKey,     // We received the certificate from the Server.
+			certificate.Cert,          // We received the certificate from the Server.
 			agent.clientPrivateKeyPEM, // Private key was earlier locally generated.
 		)
 	} else {
@@ -544,7 +544,7 @@ func (agent *Agent) getCertFromSettings(certificate *protobufs.TLSCertificate) (
 		// the Server UI.
 		// Both certificate and private key are from the Server.
 		cert, err = tls.X509KeyPair(
-			certificate.PublicKey,
+			certificate.Cert,
 			certificate.PrivateKey,
 		)
 	}
@@ -554,8 +554,8 @@ func (agent *Agent) getCertFromSettings(certificate *protobufs.TLSCertificate) (
 		return nil, err
 	}
 
-	if len(certificate.CaPublicKey) != 0 {
-		caCertPB, _ := pem.Decode(certificate.CaPublicKey)
+	if len(certificate.CaCert) != 0 {
+		caCertPB, _ := pem.Decode(certificate.CaCert)
 		caCert, err := x509.ParseCertificate(caCertPB.Bytes)
 		if err != nil {
 			agent.logger.Errorf(context.Background(), "Cannot parse CA cert: %v", err)

@@ -3,6 +3,8 @@ package internal
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -24,6 +26,9 @@ type receivedProcessor struct {
 
 	packagesStateProvider types.PackagesStateProvider
 
+	// packageSyncMutex protects against multiple package syncing operations at the same time.
+	packageSyncMutex *sync.Mutex
+
 	// Agent's capabilities defined at Start() time.
 	capabilities protobufs.AgentCapabilities
 }
@@ -35,6 +40,7 @@ func newReceivedProcessor(
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
+	packageSyncMutex *sync.Mutex,
 ) receivedProcessor {
 	return receivedProcessor{
 		logger:                logger,
@@ -43,6 +49,7 @@ func newReceivedProcessor(
 		clientSyncedState:     clientSyncedState,
 		packagesStateProvider: packagesStateProvider,
 		capabilities:          capabilities,
+		packageSyncMutex:      packageSyncMutex,
 	}
 }
 
@@ -122,6 +129,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 					r.sender,
 					r.clientSyncedState,
 					r.packagesStateProvider,
+					r.packageSyncMutex,
 				)
 			} else {
 				r.logger.Debugf(ctx, "Ignoring PackagesAvailable, agent does not have AcceptsPackages capability")
@@ -207,6 +215,13 @@ func (r *receivedProcessor) rcvFlags(
 func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, settings *protobufs.ConnectionSettingsOffers) {
 	if settings == nil || settings.Opamp == nil {
 		return
+	}
+
+	if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat) {
+		interval := time.Duration(settings.Opamp.HeartbeatIntervalSeconds) * time.Second
+		if err := r.sender.SetHeartbeatInterval(interval); err != nil {
+			r.logger.Errorf(ctx, "Failed to set heartbeat interval: %v", err)
+		}
 	}
 
 	if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings) {

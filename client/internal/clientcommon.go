@@ -41,6 +41,9 @@ type ClientCommon struct {
 	// PackagesStateProvider provides access to the local state of packages.
 	PackagesStateProvider types.PackagesStateProvider
 
+	// PackageSyncMutex makes sure only one package syncing operation happens at a time.
+	PackageSyncMutex sync.Mutex
+
 	// The transport-specific sender.
 	sender Sender
 
@@ -132,6 +135,12 @@ func (c *ClientCommon) PrepareStart(
 	if c.Callbacks == nil {
 		// Make sure it is always safe to call Callbacks.
 		c.Callbacks = types.CallbacksStruct{}
+	}
+
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat != 0 && settings.HeartbeatInterval != nil {
+		if err := c.sender.SetHeartbeatInterval(*settings.HeartbeatInterval); err != nil {
+			return err
+		}
 	}
 
 	if err := c.sender.SetInstanceUid(settings.InstanceUid); err != nil {

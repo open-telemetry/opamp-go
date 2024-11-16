@@ -340,6 +340,79 @@ func TestConnectWithHeader(t *testing.T) {
 	})
 }
 
+func TestConnectWithHeaderFunc(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a server.
+		srv := internal.StartMockServer(t)
+		var conn atomic.Value
+		srv.OnConnect = func(r *http.Request) {
+			authHdr := r.Header.Get("Authorization")
+			assert.EqualValues(t, "Bearer 12345678", authHdr)
+			userAgentHdr := r.Header.Get("User-Agent")
+			assert.EqualValues(t, "custom-agent/1.0", userAgentHdr)
+			conn.Store(true)
+		}
+
+		hf := func(header http.Header) http.Header {
+			header.Set("Authorization", "Bearer 12345678")
+			header.Set("User-Agent", "custom-agent/1.0")
+			return header
+		}
+
+		// Start a client.
+		settings := types.StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			HeaderFunc:     hf,
+		}
+		startClient(t, settings, client)
+
+		// Wait for connection to be established.
+		eventually(t, func() bool { return conn.Load() != nil })
+
+		// Shutdown the Server and the client.
+		srv.Close()
+		_ = client.Stop(context.Background())
+	})
+}
+
+func TestConnectWithHeaderAndHeaderFunc(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a server.
+		srv := internal.StartMockServer(t)
+		var conn atomic.Value
+		srv.OnConnect = func(r *http.Request) {
+			authHdr := r.Header.Get("Authorization")
+			assert.EqualValues(t, "Bearer 12345678", authHdr)
+			userAgentHdr := r.Header.Get("User-Agent")
+			assert.EqualValues(t, "custom-agent/1.0", userAgentHdr)
+			conn.Store(true)
+		}
+
+		baseHeader := http.Header{}
+		baseHeader.Set("User-Agent", "custom-agent/1.0")
+
+		hf := func(header http.Header) http.Header {
+			header.Set("Authorization", "Bearer 12345678")
+			return header
+		}
+
+		// Start a client.
+		settings := types.StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			Header:         baseHeader,
+			HeaderFunc:     hf,
+		}
+		startClient(t, settings, client)
+
+		// Wait for connection to be established.
+		eventually(t, func() bool { return conn.Load() != nil })
+
+		// Shutdown the Server and the client.
+		srv.Close()
+		_ = client.Stop(context.Background())
+	})
+}
+
 func TestConnectWithTLS(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a server.
@@ -1199,6 +1272,7 @@ type packageTestCase struct {
 	available           *protobufs.PackagesAvailable
 	expectedStatus      *protobufs.PackageStatuses
 	expectedFileContent map[string][]byte
+	expectedSignature   map[string][]byte
 	expectedError       string
 }
 
@@ -1320,6 +1394,10 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 			for pkgName, receivedContent := range localPackageState.GetContent() {
 				expectedContent := testCase.expectedFileContent[pkgName]
 				assert.EqualValues(t, expectedContent, receivedContent)
+
+				actualSignature := localPackageState.GetSignature()[pkgName]
+				expectedSignature := testCase.expectedSignature[pkgName]
+				assert.EqualValues(t, expectedSignature, actualSignature)
 			}
 		}
 
@@ -1394,6 +1472,7 @@ func createPackageTestCase(name string, downloadSrv *httptest.Server) packageTes
 					File: &protobufs.DownloadableFile{
 						DownloadUrl: downloadSrv.URL + packageFileURL,
 						ContentHash: []byte{4, 5},
+						Signature:   []byte{6, 7},
 					},
 					Hash: []byte{1, 2, 3},
 				},
@@ -1418,6 +1497,10 @@ func createPackageTestCase(name string, downloadSrv *httptest.Server) packageTes
 
 		expectedFileContent: map[string][]byte{
 			"package1": packageFileContent,
+		},
+
+		expectedSignature: map[string][]byte{
+			"package1": {6, 7},
 		},
 	}
 }
@@ -1905,8 +1988,6 @@ func TestSendCustomMessagePendingError(t *testing.T) {
 		}
 		client.SetCustomCapabilities(clientCustomCapabilities)
 
-		assert.NoError(t, client.Start(context.Background(), settings))
-
 		customMessage1 := &protobufs.CustomMessage{
 			Capability: "local.test.example",
 			Type:       "hello",
@@ -1918,6 +1999,7 @@ func TestSendCustomMessagePendingError(t *testing.T) {
 			Data:       []byte("test message 2"),
 		}
 
+		// Send a message to the unstarted client.
 		_, err := client.SendCustomMessage(customMessage1)
 		assert.NoError(t, err)
 
@@ -1925,6 +2007,9 @@ func TestSendCustomMessagePendingError(t *testing.T) {
 		sendingChan, err := client.SendCustomMessage(customMessage2)
 		assert.ErrorIs(t, err, types.ErrCustomMessagePending)
 		assert.NotNil(t, sendingChan)
+
+		// Start the client so we can start processing messages properly.
+		assert.NoError(t, client.Start(context.Background(), settings))
 
 		// Receive the first custom message
 		eventually(
