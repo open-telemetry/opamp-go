@@ -12,6 +12,9 @@ on:
 jobs:
   staticcheck:
     name: staticcheck (project)
+    strategy:
+      matrix:
+        dir: ["client", "internal", "server", "protobufshelpers"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,3 +28,4 @@ jobs:
         with:
           install-go: false
           version: "2023.1.7"
+          working-directory: ${{ matrix.dir }}
