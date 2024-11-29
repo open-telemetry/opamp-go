@@ -328,22 +328,31 @@ type checkRedirectMock struct {
 	mock.Mock
 	t      testing.TB
 	viaLen int
+	http   bool
 }
 
-func (c *checkRedirectMock) CheckRedirect(req *http.Request, via []*http.Response) error {
+func (c *checkRedirectMock) CheckRedirect(req *http.Request, viaReq []*http.Request, via []*http.Response) error {
 	if req == nil {
 		c.t.Error("nil request in CheckRedirect")
 		return errors.New("nil request in CheckRedirect")
 	}
-	if len(via) > c.viaLen {
-		c.t.Error("via should be shorter than viaLen")
+	if len(viaReq) > c.viaLen {
+		c.t.Error("viaReq should be shorter than viaLen")
 	}
-	location, err := via[len(via)-1].Location()
-	if err != nil {
-		c.t.Error(err)
+	if !c.http {
+		// websocket transport
+		if len(via) > c.viaLen {
+			c.t.Error("via should be shorter than viaLen")
+		}
 	}
-	// the URL of the request should match the location header of the last response
-	assert.Equal(c.t, req.URL, location, "request URL should equal the location in the response")
+	if !c.http && len(via) > 0 {
+		location, err := via[len(via)-1].Location()
+		if err != nil {
+			c.t.Error(err)
+		}
+		// the URL of the request should match the location header of the last response
+		assert.Equal(c.t, req.URL, location, "request URL should equal the location in the response")
+	}
 	return c.Called(req, via).Error(0)
 }
 
@@ -352,7 +361,7 @@ func mockRedirect(t testing.TB, viaLen int, err error) *checkRedirectMock {
 		t:      t,
 		viaLen: viaLen,
 	}
-	m.On("CheckRedirect", mock.Anything, mock.Anything).Return(err)
+	m.On("CheckRedirect", mock.Anything, mock.Anything, mock.Anything).Return(err)
 	return m
 }
 

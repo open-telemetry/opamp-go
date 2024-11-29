@@ -123,7 +123,7 @@ type Callbacks interface {
 	// status were. The request itself can be obtained from the response.
 	//
 	// The responses in the via parameter are passed with their bodies closed.
-	CheckRedirect(req *http.Request, via []*http.Response) error
+	CheckRedirect(req *http.Request, viaReq []*http.Request, via []*http.Response) error
 }
 
 // CallbacksStruct is a struct that implements Callbacks interface and allows
@@ -147,7 +147,7 @@ type CallbacksStruct struct {
 
 	// CheckRedirectFunc is called before following a redirect. It is similar in
 	// nature to the CheckRedirect in net/http's Client.
-	CheckRedirectFunc func(req *http.Request, via []*http.Response) error
+	CheckRedirectFunc func(req *http.Request, viaReq []*http.Request, via []*http.Response) error
 }
 
 var _ Callbacks = (*CallbacksStruct)(nil)
@@ -214,9 +214,9 @@ func (c CallbacksStruct) OnCommand(ctx context.Context, command *protobufs.Serve
 }
 
 // CheckRedirect implements Callbacks.CheckRedirect.
-func (c CallbacksStruct) CheckRedirect(req *http.Request, via []*http.Response) error {
+func (c CallbacksStruct) CheckRedirect(req *http.Request, viaReq []*http.Request, via []*http.Response) error {
 	if fn := c.CheckRedirectFunc; fn != nil {
-		return fn(req, via)
+		return fn(req, viaReq, via)
 	}
 	return nil
 }

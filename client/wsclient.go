@@ -157,6 +157,14 @@ func (c *wsClient) SendCustomMessage(message *protobufs.CustomMessage) (messageS
 	return c.common.SendCustomMessage(message)
 }
 
+func viaReq(resps []*http.Response) []*http.Request {
+	reqs := make([]*http.Request, 0, len(resps))
+	for _, resp := range resps {
+		reqs = append(reqs, resp.Request)
+	}
+	return reqs
+}
+
 // handleRedirect checks a failed websocket upgrade response for a 3xx response
 // and a Location header. If found, it sets the URL to the location found in the
 // header so that it is tried on the next retry, instead of the current URL.
@@ -181,7 +189,7 @@ func (c *wsClient) handleRedirect(ctx context.Context, resp *http.Response) erro
 
 	// if CheckRedirect results in an error, it gets returned, terminating
 	// redirection. As with stdlib, the error is wrapped in url.Error.
-	if err := c.common.Callbacks.CheckRedirect(nextRequest, c.responseChain); err != nil {
+	if err := c.common.Callbacks.CheckRedirect(nextRequest, viaReq(c.responseChain), c.responseChain); err != nil {
 		return &url.Error{
 			Op:  "Get",
 			URL: nextRequest.URL.String(),
