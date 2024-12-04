@@ -98,6 +98,19 @@ func (h *HTTPSender) Run(
 	h.callbacks = callbacks
 	h.receiveProcessor = newReceivedProcessor(h.logger, callbacks, h, clientSyncedState, packagesStateProvider, capabilities, packageSyncMutex)
 
+	if callbacks != nil {
+		cs, ok := callbacks.(types.CallbacksStruct)
+		if ok {
+			// we need to detect if the redirect was ever set, if not, we want default behaviour
+			if cs.CheckRedirectFunc != nil {
+				h.client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+					// viaResp only non-nil for ws client
+					return callbacks.CheckRedirect(req, via, nil)
+				}
+			}
+		}
+	}
+
 	for {
 		pollingTimer := time.NewTimer(time.Millisecond * time.Duration(atomic.LoadInt64(&h.pollingIntervalMs)))
 		select {
