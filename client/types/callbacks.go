@@ -2,6 +2,7 @@ package types
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
@@ -110,6 +111,19 @@ type Callbacks interface {
 
 	// OnCommand is called when the Server requests that the connected Agent perform a command.
 	OnCommand(ctx context.Context, command *protobufs.ServerToAgentCommand) error
+
+	// CheckRedirect is called before following a redirect, allowing the client
+	// the opportunity to observe the redirect chain, and optionally terminate
+	// following redirects early.
+	//
+	// CheckRedirect is intended to be similar, although not exactly equivalent,
+	// to net/http.Client's CheckRedirect feature. Unlike in net/http, the via
+	// parameter is a slice of HTTP responses, instead of requests. This gives
+	// an opportunity to users to know what the exact response headers and
+	// status were. The request itself can be obtained from the response.
+	//
+	// The responses in the via parameter are passed with their bodies closed.
+	CheckRedirect(req *http.Request, viaReq []*http.Request, via []*http.Response) error
 }
 
 // CallbacksStruct is a struct that implements Callbacks interface and allows
@@ -130,6 +144,10 @@ type CallbacksStruct struct {
 
 	SaveRemoteConfigStatusFunc func(ctx context.Context, status *protobufs.RemoteConfigStatus)
 	GetEffectiveConfigFunc     func(ctx context.Context) (*protobufs.EffectiveConfig, error)
+
+	// CheckRedirectFunc is called before following a redirect. It is similar in
+	// nature to the CheckRedirect in net/http's Client.
+	CheckRedirectFunc func(req *http.Request, viaReq []*http.Request, via []*http.Response) error
 }
 
 var _ Callbacks = (*CallbacksStruct)(nil)
@@ -191,6 +209,14 @@ func (c CallbacksStruct) OnOpampConnectionSettings(
 func (c CallbacksStruct) OnCommand(ctx context.Context, command *protobufs.ServerToAgentCommand) error {
 	if c.OnCommandFunc != nil {
 		return c.OnCommandFunc(ctx, command)
+	}
+	return nil
+}
+
+// CheckRedirect implements Callbacks.CheckRedirect.
+func (c CallbacksStruct) CheckRedirect(req *http.Request, viaReq []*http.Request, via []*http.Response) error {
+	if fn := c.CheckRedirectFunc; fn != nil {
+		return fn(req, viaReq, via)
 	}
 	return nil
 }
