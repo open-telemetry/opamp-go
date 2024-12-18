@@ -162,11 +162,11 @@ func TestDisconnectWSByServer(t *testing.T) {
 	var connected int64
 	var connectErr atomic.Value
 	settings := types.StartSettings{
-		Callbacks: types.CallbacksStruct{
-			OnConnectFunc: func(ctx context.Context) {
+		Callbacks: types.Callbacks{
+			OnConnect: func(ctx context.Context) {
 				atomic.StoreInt64(&connected, 1)
 			},
-			OnConnectFailedFunc: func(ctx context.Context, err error) {
+			OnConnectFailed: func(ctx context.Context, err error) {
 				connectErr.Store(err)
 			},
 		},
@@ -212,13 +212,13 @@ func TestVerifyWSCompress(t *testing.T) {
 			// Start an OpAMP/WebSocket client.
 			var clientGotRemoteConfig atomic.Value
 			settings := types.StartSettings{
-				Callbacks: types.CallbacksStruct{
-					OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+				Callbacks: types.Callbacks{
+					OnMessage: func(ctx context.Context, msg *types.MessageData) {
 						if msg.RemoteConfig != nil {
 							clientGotRemoteConfig.Store(msg.RemoteConfig)
 						}
 					},
-					GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+					GetEffectiveConfig: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 						// If the client already received a remote config offer make sure to report
 						// the effective config back to the server.
 						var effCfg []byte
@@ -355,11 +355,11 @@ func TestRedirectWS(t *testing.T) {
 			var connected int64
 			var connectErr atomic.Value
 			settings := types.StartSettings{
-				Callbacks: types.CallbacksStruct{
-					OnConnectFunc: func(ctx context.Context) {
+				Callbacks: types.Callbacks{
+					OnConnect: func(ctx context.Context) {
 						atomic.StoreInt64(&connected, 1)
 					},
-					OnConnectFailedFunc: func(ctx context.Context, err error) {
+					OnConnectFailed: func(ctx context.Context, err error) {
 						if err != websocket.ErrBadHandshake {
 							connectErr.Store(err)
 						}
