@@ -158,7 +158,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinterna
 	var resp *http.Response
 	conn, resp, err := c.dialer.DialContext(ctx, c.url.String(), c.getHeader())
 	if err != nil {
-		if c.common.Callbacks != nil && !c.common.IsStopping() {
+		if !c.common.IsStopping() {
 			c.common.Callbacks.OnConnectFailed(ctx, err)
 		}
 		if resp != nil {
@@ -192,9 +192,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinterna
 	c.connMutex.Lock()
 	c.conn = conn
 	c.connMutex.Unlock()
-	if c.common.Callbacks != nil {
-		c.common.Callbacks.OnConnect(ctx)
-	}
+	c.common.Callbacks.OnConnect(ctx)
 
 	return sharedinternal.OptionalDuration{Defined: false}, nil
 }

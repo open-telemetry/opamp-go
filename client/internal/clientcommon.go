@@ -132,10 +132,7 @@ func (c *ClientCommon) PrepareStart(
 
 	// Prepare callbacks.
 	c.Callbacks = settings.Callbacks
-	if c.Callbacks == nil {
-		// Make sure it is always safe to call Callbacks.
-		c.Callbacks = types.CallbacksStruct{}
-	}
+	c.Callbacks.SetDefaults()
 
 	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat != 0 && settings.HeartbeatInterval != nil {
 		if err := c.sender.SetHeartbeatInterval(*settings.HeartbeatInterval); err != nil {
