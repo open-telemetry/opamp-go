@@ -68,6 +68,7 @@ func New(logger types.Logger) *server {
 
 func (s *server) Attach(settings Settings) (HTTPHandlerFunc, ConnContext, error) {
 	s.settings = settings
+	s.settings.Callbacks.SetDefaults()
 	s.wsUpgrader = websocket.Upgrader{
 		EnableCompression: settings.EnableCompression,
 	}
@@ -169,26 +170,25 @@ func (s *server) Addr() net.Addr {
 
 func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 	var connectionCallbacks serverTypes.ConnectionCallbacks
-	if s.settings.Callbacks != nil {
-		resp := s.settings.Callbacks.OnConnecting(req)
-		if !resp.Accept {
-			// HTTP connection is not accepted. Set the response headers.
-			for k, v := range resp.HTTPResponseHeader {
-				w.Header().Set(k, v)
-			}
-			// And write the response status code.
-			w.WriteHeader(resp.HTTPStatusCode)
-			return
+	resp := s.settings.Callbacks.OnConnecting(req)
+	if !resp.Accept {
+		// HTTP connection is not accepted. Set the response headers.
+		for k, v := range resp.HTTPResponseHeader {
+			w.Header().Set(k, v)
 		}
-		// use connection-specific handler provided by ConnectionResponse
-		connectionCallbacks = resp.ConnectionCallbacks
+		// And write the response status code.
+		w.WriteHeader(resp.HTTPStatusCode)
+		return
 	}
+	// use connection-specific handler provided by ConnectionResponse
+	connectionCallbacks = resp.ConnectionCallbacks
+	connectionCallbacks.SetDefaults()
 
 	// HTTP connection is accepted. Check if it is a plain HTTP request.
 
 	if req.Header.Get(headerContentType) == contentTypeProtobuf {
 		// Yes, a plain HTTP request.
-		s.handlePlainHTTPRequest(req, w, connectionCallbacks)
+		s.handlePlainHTTPRequest(req, w, &connectionCallbacks)
 		return
 	}
 
@@ -201,10 +201,10 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 
 	// Return from this func to reduce memory usage.
 	// Handle the connection on a separate goroutine.
-	go s.handleWSConnection(req.Context(), conn, connectionCallbacks)
+	go s.handleWSConnection(req.Context(), conn, &connectionCallbacks)
 }
 
-func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Conn, connectionCallbacks serverTypes.ConnectionCallbacks) {
+func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Conn, connectionCallbacks *serverTypes.ConnectionCallbacks) {
 	agentConn := wsConnection{wsConn: wsConn, connMutex: &sync.Mutex{}}
 
 	defer func() {
@@ -216,14 +216,10 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			}
 		}()
 
-		if connectionCallbacks != nil {
-			connectionCallbacks.OnConnectionClose(agentConn)
-		}
+		connectionCallbacks.OnConnectionClose(agentConn)
 	}()
 
-	if connectionCallbacks != nil {
-		connectionCallbacks.OnConnected(reqCtx, agentConn)
-	}
+	connectionCallbacks.OnConnected(reqCtx, agentConn)
 
 	sentCustomCapabilities := false
 
@@ -254,21 +250,19 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			continue
 		}
 
-		if connectionCallbacks != nil {
-			response := connectionCallbacks.OnMessage(msgContext, agentConn, &request)
-			if len(response.InstanceUid) == 0 {
-				response.InstanceUid = request.InstanceUid
+		response := connectionCallbacks.OnMessage(msgContext, agentConn, &request)
+		if len(response.InstanceUid) == 0 {
+			response.InstanceUid = request.InstanceUid
+		}
+		if !sentCustomCapabilities {
+			response.CustomCapabilities = &protobufs.CustomCapabilities{
+				Capabilities: s.settings.CustomCapabilities,
 			}
-			if !sentCustomCapabilities {
-				response.CustomCapabilities = &protobufs.CustomCapabilities{
-					Capabilities: s.settings.CustomCapabilities,
-				}
-				sentCustomCapabilities = true
-			}
-			err = agentConn.Send(msgContext, response)
-			if err != nil {
-				s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
-			}
+			sentCustomCapabilities = true
+		}
+		err = agentConn.Send(msgContext, response)
+		if err != nil {
+			s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
 		}
 	}
 }
@@ -310,7 +304,7 @@ func compressGzip(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter, connectionCallbacks serverTypes.ConnectionCallbacks) {
+func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter, connectionCallbacks *serverTypes.ConnectionCallbacks) {
 	bodyBytes, err := s.readReqBody(req)
 	if err != nil {
 		s.logger.Debugf(req.Context(), "Cannot read HTTP body: %v", err)
@@ -329,11 +323,6 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 
 	agentConn := httpConnection{
 		conn: connFromRequest(req),
-	}
-
-	if connectionCallbacks == nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
 	}
 
 	connectionCallbacks.OnConnected(req.Context(), agentConn)
