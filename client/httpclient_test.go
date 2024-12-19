@@ -3,13 +3,17 @@ package client
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/internal"
@@ -222,4 +226,88 @@ func TestHTTPClientStartWithZeroHeartbeatInterval(t *testing.T) {
 
 	// Shutdown the Server.
 	srv.Close()
+}
+
+func mockRedirectHTTP(t testing.TB, viaLen int, err error) *checkRedirectMock {
+	m := &checkRedirectMock{
+		t:      t,
+		viaLen: viaLen,
+		http:   true,
+	}
+	m.On("CheckRedirect", mock.Anything, mock.Anything, mock.Anything).Return(err)
+	return m
+}
+
+func TestRedirectHTTP(t *testing.T) {
+	redirectee := internal.StartMockServer(t)
+	tests := []struct {
+		Name         string
+		Redirector   *httptest.Server
+		ExpError     bool
+		MockRedirect *checkRedirectMock
+	}{
+		{
+			Name:       "simple redirect",
+			Redirector: redirectServer("http://"+redirectee.Endpoint, 302),
+		},
+		{
+			Name:         "check redirect",
+			Redirector:   redirectServer("http://"+redirectee.Endpoint, 302),
+			MockRedirect: mockRedirectHTTP(t, 1, nil),
+		},
+		{
+			Name:         "check redirect returns error",
+			Redirector:   redirectServer("http://"+redirectee.Endpoint, 302),
+			MockRedirect: mockRedirect(t, 1, errors.New("hello")),
+			ExpError:     true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			var connectErr atomic.Value
+			var connected atomic.Value
+
+			settings := &types.StartSettings{
+				Callbacks: types.Callbacks{
+					OnConnect: func(ctx context.Context) {
+						connected.Store(1)
+					},
+					OnConnectFailed: func(ctx context.Context, err error) {
+						connectErr.Store(err)
+					},
+				},
+			}
+			if test.MockRedirect != nil {
+				settings.Callbacks = types.Callbacks{
+					OnConnect: func(ctx context.Context) {
+						connected.Store(1)
+					},
+					OnConnectFailed: func(ctx context.Context, err error) {
+						connectErr.Store(err)
+					},
+					CheckRedirect: test.MockRedirect.CheckRedirect,
+				}
+			}
+			reURL, _ := url.Parse(test.Redirector.URL) // err can't be non-nil
+			settings.OpAMPServerURL = reURL.String()
+			client := NewHTTP(nil)
+			prepareClient(t, settings, client)
+
+			err := client.Start(context.Background(), *settings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Stop(context.Background())
+			// Wait for connection to be established.
+			eventually(t, func() bool {
+				return connected.Load() != nil || connectErr.Load() != nil
+			})
+			if test.ExpError && connectErr.Load() == nil {
+				t.Error("expected non-nil error")
+			} else if err := connectErr.Load(); !test.ExpError && err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }
