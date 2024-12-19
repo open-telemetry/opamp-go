@@ -127,8 +127,8 @@ func TestServerAddrWithZeroPort(t *testing.T) {
 }
 
 func TestServerStartRejectConnection(t *testing.T) {
-	callbacks := CallbacksStruct{
-		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
 			// Reject the incoming HTTP connection.
 			return types.ConnectionResponse{
 				Accept:             false,
@@ -161,14 +161,14 @@ func TestServerStartAcceptConnection(t *testing.T) {
 	connectedCalled := int32(0)
 	connectionCloseCalled := int32(0)
 	var srvConn types.Connection
-	callbacks := CallbacksStruct{
-		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnConnected: func(ctx context.Context, conn types.Connection) {
 					srvConn = conn
 					atomic.StoreInt32(&connectedCalled, 1)
 				},
-				OnConnectionCloseFunc: func(conn types.Connection) {
+				OnConnectionClose: func(conn types.Connection) {
 					atomic.StoreInt32(&connectionCloseCalled, 1)
 					assert.EqualValues(t, srvConn, conn)
 				},
@@ -211,10 +211,10 @@ func TestDisconnectHttpConnection(t *testing.T) {
 
 func TestDisconnectWSConnection(t *testing.T) {
 	connectionCloseCalled := int32(0)
-	callback := CallbacksStruct{
-		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectionCloseFunc: func(conn types.Connection) {
+	callback := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnConnectionClose: func(conn types.Connection) {
 					atomic.StoreInt32(&connectionCloseCalled, 1)
 				},
 			}}
@@ -251,10 +251,10 @@ var testInstanceUid = []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}
 
 func TestServerReceiveSendMessage(t *testing.T) {
 	var rcvMsg atomic.Value
-	callbacks := CallbacksStruct{
-		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnMessageFunc: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 					// Remember received message.
 					rcvMsg.Store(message)
 
@@ -322,10 +322,10 @@ func TestServerReceiveSendMessageWithCompression(t *testing.T) {
 	for _, withCompression := range tests {
 		t.Run(fmt.Sprintf("%v", withCompression), func(t *testing.T) {
 			var rcvMsg atomic.Value
-			callbacks := CallbacksStruct{
-				OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-					return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-						OnMessageFunc: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			callbacks := types.Callbacks{
+				OnConnecting: func(request *http.Request) types.ConnectionResponse {
+					return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+						OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 							// Remember received message.
 							rcvMsg.Store(message)
 
@@ -420,13 +420,13 @@ func TestServerReceiveSendMessageWithCompression(t *testing.T) {
 func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
 	var rcvMsg atomic.Value
 	var onConnectedCalled, onCloseCalled int32
-	callbacks := CallbacksStruct{
-		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnConnected: func(ctx context.Context, conn types.Connection) {
 					atomic.StoreInt32(&onConnectedCalled, 1)
 				},
-				OnMessageFunc: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 					// Remember received message.
 					rcvMsg.Store(message)
 
@@ -437,7 +437,7 @@ func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
 					}
 					return &response
 				},
-				OnConnectionCloseFunc: func(conn types.Connection) {
+				OnConnectionClose: func(conn types.Connection) {
 					atomic.StoreInt32(&onCloseCalled, 1)
 				},
 			}}
@@ -492,14 +492,14 @@ func TestServerAttachAcceptConnection(t *testing.T) {
 	connectedCalled := int32(0)
 	connectionCloseCalled := int32(0)
 	var srvConn types.Connection
-	callbacks := CallbacksStruct{
-		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnConnected: func(ctx context.Context, conn types.Connection) {
 					atomic.StoreInt32(&connectedCalled, 1)
 					srvConn = conn
 				},
-				OnConnectionCloseFunc: func(conn types.Connection) {
+				OnConnectionClose: func(conn types.Connection) {
 					atomic.StoreInt32(&connectionCloseCalled, 1)
 					assert.EqualValues(t, srvConn, conn)
 				},
@@ -542,14 +542,14 @@ func TestServerAttachSendMessagePlainHTTP(t *testing.T) {
 	var rcvMsg atomic.Value
 
 	var srvConn types.Connection
-	callbacks := CallbacksStruct{
-		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnConnected: func(ctx context.Context, conn types.Connection) {
 					atomic.StoreInt32(&connectedCalled, 1)
 					srvConn = conn
 				},
-				OnMessageFunc: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 					// Remember received message.
 					rcvMsg.Store(message)
 
@@ -560,7 +560,7 @@ func TestServerAttachSendMessagePlainHTTP(t *testing.T) {
 					}
 					return &response
 				},
-				OnConnectionCloseFunc: func(conn types.Connection) {
+				OnConnectionClose: func(conn types.Connection) {
 					atomic.StoreInt32(&connectionCloseCalled, 1)
 					assert.EqualValues(t, srvConn, conn)
 				},
@@ -624,13 +624,13 @@ func TestServerHonoursClientRequestContentEncoding(t *testing.T) {
 	hc := http.Client{}
 	var rcvMsg atomic.Value
 	var onConnectedCalled, onCloseCalled int32
-	callbacks := CallbacksStruct{
-		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnConnected: func(ctx context.Context, conn types.Connection) {
 					atomic.StoreInt32(&onConnectedCalled, 1)
 				},
-				OnMessageFunc: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 					// Remember received message.
 					rcvMsg.Store(message)
 
@@ -641,7 +641,7 @@ func TestServerHonoursClientRequestContentEncoding(t *testing.T) {
 					}
 					return &response
 				},
-				OnConnectionCloseFunc: func(conn types.Connection) {
+				OnConnectionClose: func(conn types.Connection) {
 					atomic.StoreInt32(&onCloseCalled, 1)
 				},
 			}}
@@ -702,13 +702,13 @@ func TestServerHonoursAcceptEncoding(t *testing.T) {
 	hc := http.Client{}
 	var rcvMsg atomic.Value
 	var onConnectedCalled, onCloseCalled int32
-	callbacks := CallbacksStruct{
-		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnConnected: func(ctx context.Context, conn types.Connection) {
 					atomic.StoreInt32(&onConnectedCalled, 1)
 				},
-				OnMessageFunc: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
 					// Remember received message.
 					rcvMsg.Store(message)
 
@@ -719,7 +719,7 @@ func TestServerHonoursAcceptEncoding(t *testing.T) {
 					}
 					return &response
 				},
-				OnConnectionCloseFunc: func(conn types.Connection) {
+				OnConnectionClose: func(conn types.Connection) {
 					atomic.StoreInt32(&onCloseCalled, 1)
 				},
 			}}
@@ -809,10 +809,10 @@ func TestDecodeMessage(t *testing.T) {
 func TestConnectionAllowsConcurrentWrites(t *testing.T) {
 	ch := make(chan struct{})
 	srvConnVal := atomic.Value{}
-	callbacks := CallbacksStruct{
-		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnConnected: func(ctx context.Context, conn types.Connection) {
 					srvConnVal.Store(conn)
 					ch <- struct{}{}
 				},
@@ -870,11 +870,11 @@ func TestServerCallsHTTPMiddlewareOverWebsocket(t *testing.T) {
 		)
 	}
 
-	callbacks := CallbacksStruct{
-		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{
 				Accept:              true,
-				ConnectionCallbacks: ConnectionCallbacksStruct{},
+				ConnectionCallbacks: types.ConnectionCallbacks{},
 			}
 		},
 	}
@@ -914,11 +914,11 @@ func TestServerCallsHTTPMiddlewareOverHTTP(t *testing.T) {
 		)
 	}
 
-	callbacks := CallbacksStruct{
-		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{
 				Accept:              true,
-				ConnectionCallbacks: ConnectionCallbacksStruct{},
+				ConnectionCallbacks: types.ConnectionCallbacks{},
 			}
 		},
 	}
@@ -965,10 +965,10 @@ func BenchmarkSendToClient(b *testing.B) {
 	clientConnections := []*websocket.Conn{}
 	serverConnections := []types.Connection{}
 	srvConnectionsMutex := sync.Mutex{}
-	callbacks := CallbacksStruct{
-		OnConnectingFunc: func(request *http.Request) types.ConnectionResponse {
-			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: ConnectionCallbacksStruct{
-				OnConnectedFunc: func(ctx context.Context, conn types.Connection) {
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnConnected: func(ctx context.Context, conn types.Connection) {
 					srvConnectionsMutex.Lock()
 					serverConnections = append(serverConnections, conn)
 					srvConnectionsMutex.Unlock()
