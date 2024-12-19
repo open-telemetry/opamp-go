@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/gorilla/websocket"
 
 	"github.com/open-telemetry/opamp-go/client/internal"
@@ -201,9 +201,6 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinterna
 // connected. Will return error if it is cancelled via context.
 func (c *wsClient) ensureConnected(ctx context.Context) error {
 	infiniteBackoff := backoff.NewExponentialBackOff()
-
-	// Make ticker run forever.
-	infiniteBackoff.MaxElapsedTime = 0
 
 	interval := time.Duration(0)
 

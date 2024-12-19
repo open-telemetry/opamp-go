@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/google/uuid"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/yaml"
@@ -424,7 +424,6 @@ func (s *Supervisor) startAgent() {
 	// Prepare health checker
 	healthCheckBackoff := backoff.NewExponentialBackOff()
 	healthCheckBackoff.MaxInterval = 60 * time.Second
-	healthCheckBackoff.MaxElapsedTime = 0 // Never stop
 	if s.healthCheckTicker != nil {
 		s.healthCheckTicker.Stop()
 	}

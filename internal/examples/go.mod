@@ -1,9 +1,11 @@
 module github.com/open-telemetry/opamp-go/internal/examples
 
-go 1.22
+go 1.23
+
+toolchain go1.23.2
 
 require (
-	github.com/cenkalti/backoff/v4 v4.3.0
+	github.com/cenkalti/backoff/v5 v5.0.0
 	github.com/google/uuid v1.6.0
 	github.com/knadh/koanf v1.3.3
 	github.com/oklog/ulid/v2 v2.1.0
@@ -20,6 +22,7 @@ require (
 )
 
 require (
+	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.4.9 // indirect

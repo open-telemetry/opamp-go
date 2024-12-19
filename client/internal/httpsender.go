@@ -13,11 +13,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
-	"github.com/open-telemetry/opamp-go/internal"
+	"github.com/cenkalti/backoff/v5"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/types"
+	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -176,8 +176,6 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 
 	// Repeatedly try requests with a backoff strategy.
 	infiniteBackoff := backoff.NewExponentialBackOff()
-	// Make backoff run forever.
-	infiniteBackoff.MaxElapsedTime = 0
 
 	interval := time.Duration(0)
 
