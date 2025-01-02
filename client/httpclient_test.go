@@ -258,7 +258,7 @@ func TestRedirectHTTP(t *testing.T) {
 		{
 			Name:         "check redirect returns error",
 			Redirector:   redirectServer("http://"+redirectee.Endpoint, 302),
-			MockRedirect: mockRedirect(t, 1, errors.New("hello")),
+			MockRedirect: mockRedirectHTTP(t, 1, errors.New("hello")),
 			ExpError:     true,
 		},
 	}
