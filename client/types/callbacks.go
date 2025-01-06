@@ -46,8 +46,14 @@ type MessageData struct {
 	CustomMessage *protobufs.CustomMessage
 }
 
-// Callbacks is an interface for the Client to handle messages from the Server.
-// Callbacks are expected to honour the context passed to them, meaning they should be aware of cancellations.
+// Callbacks contains functions that are executed when the client encounters
+// particular events.
+//
+// In most cases, defaults will be set when library users
+// opt not to provide one. See SetDefaults for more information.
+//
+// Callbacks are expected to honour the context passed to them, meaning they
+// should be aware of cancellations.
 type Callbacks struct {
 	// OnConnect is called when the connection is successfully established to the Server.
 	// May be called after Start() is called and every time a connection is established to the Server.
