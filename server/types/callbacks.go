@@ -20,7 +20,7 @@ type Callbacks struct {
 	// The handler can examine the request and either accept or reject the connection.
 	// To accept:
 	//   Return ConnectionResponse with Accept=true. ConnectionCallbacks MUST be set to an
-	//   implementation of the ConnectionCallbacks interface to handle the connection.
+	//   instance of the ConnectionCallbacks struct to handle the connection callbacks.
 	//   HTTPStatusCode and HTTPResponseHeader are ignored.
 	//
 	// To reject:
@@ -31,17 +31,19 @@ type Callbacks struct {
 	OnConnecting func(request *http.Request) ConnectionResponse
 }
 
+func defaultOnConnecting(r *http.Request) ConnectionResponse {
+	return ConnectionResponse{Accept: true}
+}
+
 func (c *Callbacks) SetDefaults() {
 	if c.OnConnecting == nil {
-		c.OnConnecting = func(r *http.Request) ConnectionResponse {
-			return ConnectionResponse{Accept: true}
-		}
+		c.OnConnecting = defaultOnConnecting
 	}
 }
 
-// ConnectionCallbacks receives callbacks for a specific connection. An implementation of
-// this interface MUST be set on the ConnectionResponse returned by the OnConnecting
-// callback if Accept=true. The implementation can be shared by all connections or can be
+// ConnectionCallbacks specifies callbacks for a specific connection. An instance of
+// this struct MUST be set on the ConnectionResponse returned by the OnConnecting
+// callback if Accept=true. The instance can be shared by all connections or can be
 // unique for each connection.
 type ConnectionCallbacks struct {
 	// The following callbacks will never be called concurrently for the same
@@ -62,23 +64,29 @@ type ConnectionCallbacks struct {
 	OnConnectionClose func(conn Connection)
 }
 
+func defaultOnConnected(ctx context.Context, conn Connection) {}
+
+func defaultOnMessage(
+	ctx context.Context, conn Connection, message *protobufs.AgentToServer,
+) *protobufs.ServerToAgent {
+	// We will send an empty response since there is no user-defined callback to handle it.
+	return &protobufs.ServerToAgent{
+		InstanceUid: message.InstanceUid,
+	}
+}
+
+func defaultOnConnectionClose(conn Connection) {}
+
 func (c *ConnectionCallbacks) SetDefaults() {
 	if c.OnConnected == nil {
-		c.OnConnected = func(ctx context.Context, conn Connection) {}
+		c.OnConnected = defaultOnConnected
 	}
 
 	if c.OnMessage == nil {
-		c.OnMessage = func(
-			ctx context.Context, conn Connection, message *protobufs.AgentToServer,
-		) *protobufs.ServerToAgent {
-			// We will send an empty response since there is no user-defined callback to handle it.
-			return &protobufs.ServerToAgent{
-				InstanceUid: message.InstanceUid,
-			}
-		}
+		c.OnMessage = defaultOnMessage
 	}
 
 	if c.OnConnectionClose == nil {
-		c.OnConnectionClose = func(conn Connection) {}
+		c.OnConnectionClose = defaultOnConnectionClose
 	}
 }
