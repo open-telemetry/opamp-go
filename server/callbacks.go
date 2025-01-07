@@ -28,9 +28,10 @@ func (c CallbacksStruct) OnConnecting(request *http.Request) types.ConnectionRes
 // ConnectionCallbacksStruct is a struct that implements ConnectionCallbacks interface and allows
 // to override only the methods that are needed.
 type ConnectionCallbacksStruct struct {
-	OnConnectedFunc       func(ctx context.Context, conn types.Connection)
-	OnMessageFunc         func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent
-	OnConnectionCloseFunc func(conn types.Connection)
+	OnConnectedFunc        func(ctx context.Context, conn types.Connection)
+	OnMessageFunc          func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent
+	OnConnectionCloseFunc  func(conn types.Connection)
+	OnReadMessageErrorFunc func(conn types.Connection, mt int, msgByte []byte, err error)
 }
 
 var _ types.ConnectionCallbacks = (*ConnectionCallbacksStruct)(nil)
@@ -59,5 +60,12 @@ func (c ConnectionCallbacksStruct) OnMessage(ctx context.Context, conn types.Con
 func (c ConnectionCallbacksStruct) OnConnectionClose(conn types.Connection) {
 	if c.OnConnectionCloseFunc != nil {
 		c.OnConnectionCloseFunc(conn)
+	}
+}
+
+// OnReadMessageError implements types.ConnectionCallbacks.
+func (c ConnectionCallbacksStruct) OnReadMessageError(conn types.Connection, mt int, msgByte []byte, err error) {
+	if c.OnReadMessageErrorFunc != nil {
+		c.OnReadMessageErrorFunc(conn, mt, msgByte, err)
 	}
 }

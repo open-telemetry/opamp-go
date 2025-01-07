@@ -52,4 +52,7 @@ type ConnectionCallbacks interface {
 
 	// OnConnectionClose is called when the OpAMP connection is closed.
 	OnConnectionClose(conn Connection)
+
+	// OnConnectionError is called when an error occurs while reading or serializing a message.
+	OnReadMessageError(conn Connection, mt int, msgByte []byte, err error)
 }
