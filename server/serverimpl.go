@@ -201,7 +201,7 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 
 	// Return from this func to reduce memory usage.
 	// Handle the connection on a separate goroutine.
-	go s.handleWSConnection(req.Context(), conn, connectionCallbacks)
+	go s.handleWSConnection(Detach(req.Context()), conn, connectionCallbacks)
 }
 
 func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Conn, connectionCallbacks serverTypes.ConnectionCallbacks) {
