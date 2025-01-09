@@ -61,3 +61,4 @@ Thanks to all the people who already contributed!
 <a href="https://github.com/open-telemetry/opamp-go/graphs/contributors">
   <img src="https://contributors-img.web.app/image?repo=open-telemetry/opamp-go" />
 </a>
+
