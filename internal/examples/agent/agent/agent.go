@@ -66,8 +66,18 @@ type Agent struct {
 	// certificate is used.
 	opampClientCert *tls.Certificate
 
+	tls *tls.Config
+
 	certRequested       bool
 	clientPrivateKeyPEM []byte
+}
+
+type tlsOpt func(c *tls.Config)
+
+func SetTLSMinVersion(minTLS uint16) tlsOpt {
+	return func(c *tls.Config) {
+		c.MinVersion = minTLS
+	}
 }
 
 func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent {
@@ -91,7 +101,7 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 	return agent
 }
 
-func (agent *Agent) connect() error {
+func (agent *Agent) connect(tlsOpts ...tlsOpt) error {
 	agent.opampClient = client.NewWebSocket(agent.logger)
 
 	tlsConfig, err := internal.CreateClientTLSConfig(
@@ -101,6 +111,11 @@ func (agent *Agent) connect() error {
 	if err != nil {
 		return err
 	}
+	for _, opt := range tlsOpts {
+		opt(tlsConfig)
+	}
+
+	agent.tls = tlsConfig
 
 	settings := types.StartSettings{
 		OpAMPServerURL: "wss://127.0.0.1:4320/v1/opamp",
@@ -506,19 +521,58 @@ func (agent *Agent) tryChangeOpAMPCert(ctx context.Context, cert *tls.Certificat
 	// agent connects to the server after the restart.
 }
 
+func (agent *Agent) tryChangeOpAMPTLSMin(ctx context.Context, minTLS uint16) {
+	agent.logger.Debugf(ctx, "Reconnecting to verify min TLS version setting.\n")
+	agent.disconnect(ctx)
+
+	oldCfg := agent.tls
+
+	if err := agent.connect(SetTLSMinVersion(minTLS)); err != nil {
+		agent.logger.Errorf(ctx, "Cannot connect after using min tls val: %s. Ignoring the offer\n", err)
+		if err := agent.connect(SetTLSMinVersion(oldCfg.MinVersion)); err != nil {
+			agent.logger.Errorf(ctx, "Unable to reconnect after restoring min tls val: %s\n", err)
+		}
+		return
+	}
+
+	agent.logger.Debugf(ctx, "Successfully connected to server. Accepting new min tls val.\n")
+}
+
 func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *protobufs.OpAMPConnectionSettings) error {
-	if settings == nil || settings.Certificate == nil {
-		agent.logger.Debugf(ctx, "Received nil certificate offer, ignoring.\n")
+	if settings == nil {
+		agent.logger.Debugf(ctx, "Received nil settings, ignoring.\n")
 		return nil
 	}
 
-	cert, err := agent.getCertFromSettings(settings.Certificate)
-	if err != nil {
-		return err
+	if settings.Certificate != nil {
+		cert, err := agent.getCertFromSettings(settings.Certificate)
+		if err != nil {
+			return err
+		}
+
+		// TODO: also use settings.DestinationEndpoint and settings.Headers for future connections.
+		go agent.tryChangeOpAMPCert(ctx, cert)
 	}
 
-	// TODO: also use settings.DestinationEndpoint and settings.Headers for future connections.
-	go agent.tryChangeOpAMPCert(ctx, cert)
+	if settings.Tls != nil {
+		// example only expects tls min version to be supplied
+		// TODO check and set other TLS values
+		var tlsMin uint16
+		switch settings.Tls.MinVersion {
+		case "1.0":
+			tlsMin = tls.VersionTLS10
+		case "1.1":
+			tlsMin = tls.VersionTLS11
+		case "1.2":
+			tlsMin = tls.VersionTLS12
+		case "1.3":
+			tlsMin = tls.VersionTLS13
+		default:
+			return fmt.Errorf("unsupported tls.min_version %q", settings.Tls.MinVersion)
+		}
+
+		go agent.tryChangeOpAMPTLSMin(ctx, tlsMin)
+	}
 
 	return nil
 }
