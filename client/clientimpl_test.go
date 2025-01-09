@@ -922,6 +922,50 @@ func TestClientRequestConnectionSettings(t *testing.T) {
 	)
 }
 
+func TestInitialConnectionSettingsRequest(t *testing.T) {
+	testClients(
+		t, func(t *testing.T, client OpAMPClient) {
+			opampSettings := &protobufs.OpAMPConnectionSettings{DestinationEndpoint: "http://opamp.com"}
+			srv := internal.StartMockServer(t)
+			defer srv.Close()
+			srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				if msg != nil && msg.ConnectionSettingsRequest != nil && msg.ConnectionSettingsRequest.SettingsRequest != nil {
+					return &protobufs.ServerToAgent{
+						ConnectionSettings: &protobufs.ConnectionSettingsOffers{
+							Opamp: opampSettings,
+						},
+					}
+				}
+				return nil
+			}
+			gotSettingsCh := make(chan struct{}, 1)
+
+			settings := types.StartSettings{
+				Callbacks: types.Callbacks{
+					OnOpampConnectionSettings: func(
+						ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
+					) error {
+						assert.True(t, proto.Equal(opampSettings, settings))
+						gotSettingsCh <- struct{}{}
+						return nil
+					},
+				},
+				RequestConnectionSettings: true,
+				Capabilities:              protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings,
+			}
+			settings.OpAMPServerURL = "ws://" + srv.Endpoint
+			prepareClient(t, &settings, client)
+			assert.NoError(t, client.Start(context.Background(), settings))
+
+			select {
+			case <-gotSettingsCh:
+			case <-time.After(time.Second * 5):
+				t.Errorf("timeout waiting for server to respond when initial connection settings are requested.")
+			}
+		},
+	)
+}
+
 func TestReportAgentDescription(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a Server.

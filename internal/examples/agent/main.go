@@ -16,9 +16,12 @@ func main() {
 	var agentVersion string
 	flag.StringVar(&agentVersion, "v", "1.0.0", "Agent Version String")
 
+	var requestConnectionSettings bool
+	flag.BoolVar(&requestConnectionSettings, "request-connection-settings", false, "Request offered connection settings with the initial message.")
+
 	flag.Parse()
 
-	agent := agent.NewAgent(&agent.Logger{log.Default()}, agentType, agentVersion)
+	agent := agent.NewAgent(&agent.Logger{log.Default()}, agentType, agentVersion, requestConnectionSettings)
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
