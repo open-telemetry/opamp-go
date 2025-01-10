@@ -90,8 +90,14 @@ func (c *ClientCommon) PrepareStart(
 		return ErrHealthMissing
 	}
 
-	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents != 0 && c.ClientSyncedState.AvailableComponents() == nil {
-		return ErrAvailableComponentsMissing
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents != 0 {
+		if settings.AvailableComponents == nil {
+			return ErrAvailableComponentsMissing
+		}
+
+		if err := c.ClientSyncedState.SetAvailableComponents(settings.AvailableComponents); err != nil {
+			return err
+		}
 	}
 
 	// Prepare remote config status.
@@ -220,8 +226,11 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 
 	// initially, do not send the full component state - just send the hash.
 	// full state is available on request from the server using the corresponding ServerToAgent flag
-	availableComponents := &protobufs.AvailableComponents{
-		Hash: c.ClientSyncedState.AvailableComponents().GetHash(),
+	var availableComponents *protobufs.AvailableComponents
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents != 0 {
+		availableComponents = &protobufs.AvailableComponents{
+			Hash: c.ClientSyncedState.AvailableComponents().GetHash(),
+		}
 	}
 
 	c.sender.NextMessage().Update(

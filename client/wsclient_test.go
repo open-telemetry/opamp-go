@@ -727,3 +727,96 @@ func TestHandlesConnectionError(t *testing.T) {
 	err = client.Stop(context.Background())
 	require.NoError(t, err)
 }
+
+func TestWSSenderReportsAvailableComponents(t *testing.T) {
+	testCases := []struct {
+		desc                string
+		availableComponents *protobufs.AvailableComponents
+	}{
+		{
+			desc:                "Does not report AvailableComponents",
+			availableComponents: nil,
+		},
+		{
+			desc:                "Reports AvailableComponents",
+			availableComponents: generateTestAvailableComponents(),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			srv := internal.StartMockServer(t)
+
+			var firstMsg atomic.Bool
+			var conn atomic.Value
+			srv.OnWSConnect = func(c *websocket.Conn) {
+				conn.Store(c)
+				firstMsg.Store(true)
+			}
+			var msgCount atomic.Int64
+			srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				if firstMsg.Load() {
+					msgCount.Add(1)
+					firstMsg.Store(false)
+					resp := &protobufs.ServerToAgent{
+						InstanceUid: msg.InstanceUid,
+					}
+
+					if tc.availableComponents != nil {
+						availableComponents := msg.GetAvailableComponents()
+						require.NotNil(t, availableComponents)
+						require.Nil(t, availableComponents.GetComponents())
+						require.Equal(t, tc.availableComponents.GetHash(), availableComponents.GetHash())
+
+						resp.Flags = uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportAvailableComponents)
+					} else {
+						require.Nil(t, msg.GetAvailableComponents())
+					}
+
+					return resp
+				}
+				msgCount.Add(1)
+				if tc.availableComponents != nil {
+					availableComponents := msg.GetAvailableComponents()
+					require.NotNil(t, availableComponents)
+					require.Equal(t, tc.availableComponents.GetHash(), availableComponents.GetHash())
+					require.Equal(t, tc.availableComponents.GetComponents(), availableComponents.GetComponents())
+				} else {
+					require.Error(t, errors.New("should not receive a second message when ReportsAvailableComponents is disabled"))
+				}
+
+				return nil
+			}
+
+			// Start an OpAMP/WebSocket client.
+			settings := types.StartSettings{
+				OpAMPServerURL: "ws://" + srv.Endpoint,
+			}
+			client := NewWebSocket(nil)
+
+			if tc.availableComponents != nil {
+				settings.Capabilities = protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents
+				settings.AvailableComponents = tc.availableComponents
+			}
+
+			startClient(t, settings, client)
+
+			// Wait for connection to be established.
+			eventually(t, func() bool { return conn.Load() != nil })
+
+			if tc.availableComponents != nil {
+				assert.Eventually(t, func() bool {
+					return msgCount.Load() >= 2
+				}, 5*time.Second, 10*time.Millisecond)
+			} else {
+				assert.Never(t, func() bool {
+					return msgCount.Load() >= 2
+				}, 3*time.Second, 10*time.Millisecond)
+			}
+
+			// Stop the client.
+			err := client.Stop(context.Background())
+			assert.NoError(t, err)
+		})
+	}
+}

@@ -64,4 +64,9 @@ type StartSettings struct {
 	//
 	// If the ReportsHeartbeat capability is disabled, this option has no effect.
 	HeartbeatInterval *time.Duration
+
+	// Defines the available components of the Agent.
+	// Required if the ReportsAvailableComponents capability is set.
+	// If the ReportsAvailableComponents capability is not set, this option has no effect.
+	AvailableComponents *protobufs.AvailableComponents
 }

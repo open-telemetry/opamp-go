@@ -2305,3 +2305,23 @@ func TestSetFlagsBeforeStart(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+func generateTestAvailableComponents() *protobufs.AvailableComponents {
+	return &protobufs.AvailableComponents{
+		Hash: []byte("fake-hash"),
+		Components: map[string]*protobufs.ComponentDetails{
+			"receivers": {
+				Metadata: []*protobufs.KeyValue{
+					{
+						Key: "component",
+						Value: &protobufs.AnyValue{
+							Value: &protobufs.AnyValue_StringValue{
+								StringValue: "filereceiver",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}

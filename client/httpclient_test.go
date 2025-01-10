@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/internal"
@@ -308,6 +309,115 @@ func TestRedirectHTTP(t *testing.T) {
 			} else if err := connectErr.Load(); !test.ExpError && err != nil {
 				t.Fatal(err)
 			}
+		})
+	}
+}
+
+func TestHTTPReportsAvailableComponents(t *testing.T) {
+	testCases := []struct {
+		desc                string
+		availableComponents *protobufs.AvailableComponents
+	}{
+		{
+			desc:                "Does not report AvailableComponents",
+			availableComponents: nil,
+		},
+		{
+			desc:                "Reports AvailableComponents",
+			availableComponents: generateTestAvailableComponents(),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// Start a Server.
+			srv := internal.StartMockServer(t)
+			var rcvCounter atomic.Uint64
+			srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				assert.EqualValues(t, rcvCounter.Load(), msg.SequenceNum)
+				rcvCounter.Add(1)
+				time.Sleep(50 * time.Millisecond)
+				if rcvCounter.Load() == 1 {
+					resp := &protobufs.ServerToAgent{
+						InstanceUid: msg.InstanceUid,
+					}
+
+					if tc.availableComponents != nil {
+						// the first message received should contain just the available component hash
+						availableComponents := msg.GetAvailableComponents()
+						require.NotNil(t, availableComponents)
+						require.Nil(t, availableComponents.GetComponents())
+						require.Equal(t, tc.availableComponents.GetHash(), availableComponents.GetHash())
+
+						// add the flag asking for the full available component state to the response
+						resp.Flags = uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportAvailableComponents)
+					} else {
+						require.Nil(t, msg.GetAvailableComponents())
+					}
+
+					return resp
+				}
+
+				if rcvCounter.Load() == 2 {
+					if tc.availableComponents != nil {
+						// the second message received should contain the full component state
+						availableComponents := msg.GetAvailableComponents()
+						require.NotNil(t, availableComponents)
+						require.Equal(t, tc.availableComponents.GetComponents(), availableComponents.GetComponents())
+						require.Equal(t, tc.availableComponents.GetHash(), availableComponents.GetHash())
+					} else {
+						require.Nil(t, msg.GetAvailableComponents())
+					}
+
+					return nil
+				}
+
+				// all subsequent messages should not have any available components
+				require.Nil(t, msg.GetAvailableComponents())
+				return nil
+			}
+
+			// Start a client.
+			settings := types.StartSettings{}
+			settings.OpAMPServerURL = "http://" + srv.Endpoint
+			if tc.availableComponents != nil {
+				settings.Capabilities = protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents
+				settings.AvailableComponents = tc.availableComponents
+			}
+
+			client := NewHTTP(nil)
+			prepareClient(t, &settings, client)
+
+			assert.NoError(t, client.Start(context.Background(), settings))
+
+			// Verify that status report is delivered.
+			eventually(t, func() bool {
+				return rcvCounter.Load() == 1
+			})
+
+			if tc.availableComponents != nil {
+				// Verify that status report is delivered again. Polling should ensure this.
+				eventually(t, func() bool {
+					return rcvCounter.Load() == 2
+				})
+			} else {
+				// Verify that no second status report is delivered (polling is too infrequent for this to happen in 3 seconds)
+				require.Never(t, func() bool {
+					return rcvCounter.Load() == 2
+				}, 3*time.Second, 10*time.Millisecond)
+			}
+
+			// Verify that no third status report is delivered (polling is too infrequent for this to happen in 3 seconds)
+			require.Never(t, func() bool {
+				return rcvCounter.Load() == 3
+			}, 3*time.Second, 10*time.Millisecond)
+
+			// Shutdown the Server.
+			srv.Close()
+
+			// Shutdown the client.
+			err := client.Stop(context.Background())
+			assert.NoError(t, err)
 		})
 	}
 }
