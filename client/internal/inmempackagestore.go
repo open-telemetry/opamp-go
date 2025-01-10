@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"io"
+	"maps"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -92,7 +93,7 @@ func (l *InMemPackagesStore) SetAllPackagesHash(hash []byte) error {
 }
 
 func (l *InMemPackagesStore) GetContent() map[string][]byte {
-	return l.fileContents
+	return maps.Clone(l.fileContents)
 }
 
 func (l *InMemPackagesStore) GetSignature() map[string][]byte {

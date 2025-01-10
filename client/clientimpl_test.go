@@ -1533,6 +1533,11 @@ func TestUpdatePackages(t *testing.T) {
 	errorOnCallback.errorOnCallback = true
 	tests = append(tests, errorOnCallback)
 
+	// Check that the downloading status is sent
+	downloading := createPackageTestCase("download status set", downloadSrv)
+	downloading.expectedStatus.Packages["package1"].Status = protobufs.PackageStatusEnum_PackageStatusEnum_Downloading
+	tests = append(tests, downloading)
+
 	// A case where we send optional headers
 	withHeaders := createPackageTestCase("with optional HTTP headers", downloadSrv)
 	withHeaders.available.Packages["package1"].File.Headers = &protobufs.Headers{Headers: []*protobufs.Header{&optionalAuthHeaders}}
