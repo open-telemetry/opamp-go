@@ -134,4 +134,9 @@ type OpAMPClient interface {
 	// If no error is returned, the channel returned will be closed after the specified
 	// message is sent.
 	SendCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error)
+
+	// SetAvailableComponents modifies the set of components that are available for configuration
+	// on the agent.
+	// TODO more documentation
+	SetAvailableComponents(components *protobufs.AvailableComponents) error
 }

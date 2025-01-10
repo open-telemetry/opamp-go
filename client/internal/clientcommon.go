@@ -20,10 +20,12 @@ var (
 	ErrReportsRemoteConfigNotSet    = errors.New("ReportsRemoteConfig capability is not set")
 	ErrPackagesStateProviderNotSet  = errors.New("PackagesStateProvider must be set")
 	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
+	ErrAvailableComponentsMissing   = errors.New("AvailableComponents is nil")
 
-	errAlreadyStarted               = errors.New("already started")
-	errCannotStopNotStarted         = errors.New("cannot stop because not started")
-	errReportsPackageStatusesNotSet = errors.New("ReportsPackageStatuses capability is not set")
+	errAlreadyStarted                   = errors.New("already started")
+	errCannotStopNotStarted             = errors.New("cannot stop because not started")
+	errReportsPackageStatusesNotSet     = errors.New("ReportsPackageStatuses capability is not set")
+	errReportsAvailableComponentsNotSet = errors.New("ReportsAvailableComponents capability is not set")
 )
 
 // ClientCommon contains the OpAMP logic that is common between WebSocket and
@@ -86,6 +88,10 @@ func (c *ClientCommon) PrepareStart(
 
 	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsHealth != 0 && c.ClientSyncedState.Health() == nil {
 		return ErrHealthMissing
+	}
+
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents != 0 && c.ClientSyncedState.AvailableComponents() == nil {
+		return ErrAvailableComponentsMissing
 	}
 
 	// Prepare remote config status.
@@ -212,6 +218,12 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 		return err
 	}
 
+	// initially, do not send the full component state - just send the hash.
+	// full state is available on request from the server using the corresponding ServerToAgent flag
+	availableComponents := &protobufs.AvailableComponents{
+		Hash: c.ClientSyncedState.AvailableComponents().GetHash(),
+	}
+
 	c.sender.NextMessage().Update(
 		func(msg *protobufs.AgentToServer) {
 			msg.AgentDescription = c.ClientSyncedState.AgentDescription()
@@ -221,6 +233,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.Capabilities = uint64(c.Capabilities)
 			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()
 			msg.Flags = c.ClientSyncedState.Flags()
+			msg.AvailableComponents = availableComponents
 		},
 	)
 	return nil
@@ -432,4 +445,34 @@ func (c *ClientCommon) SendCustomMessage(message *protobufs.CustomMessage) (mess
 	c.sender.ScheduleSend()
 
 	return sendingChan, nil
+}
+
+// SetAvailableComponents sends a message to the server with the available components for the agent
+func (c *ClientCommon) SetAvailableComponents(components *protobufs.AvailableComponents) error {
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents == 0 {
+		return errReportsAvailableComponentsNotSet
+	}
+
+	if len(components.Hash) == 0 {
+		return errNoAvailableComponentHash
+	}
+
+	// implement agent status compression, don't send the message if it hasn't changed from the previous message
+	availableComponentsChanged := !proto.Equal(c.ClientSyncedState.AvailableComponents(), components)
+
+	if availableComponentsChanged {
+		if err := c.ClientSyncedState.SetAvailableComponents(components); err != nil {
+			return err
+		}
+
+		c.sender.NextMessage().Update(
+			func(msg *protobufs.AgentToServer) {
+				msg.AvailableComponents = c.ClientSyncedState.AvailableComponents()
+			},
+		)
+
+		c.sender.ScheduleSend()
+	}
+
+	return nil
 }

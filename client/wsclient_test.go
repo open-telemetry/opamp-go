@@ -257,7 +257,7 @@ func TestVerifyWSCompress(t *testing.T) {
 			remoteCfg := &protobufs.AgentRemoteConfig{
 				Config: &protobufs.AgentConfigMap{
 					ConfigMap: map[string]*protobufs.AgentConfigFile{
-						"": &protobufs.AgentConfigFile{
+						"": {
 							Body: uncompressedCfg,
 						},
 					},
