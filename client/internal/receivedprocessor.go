@@ -197,11 +197,21 @@ func (r *receivedProcessor) rcvFlags(
 				msg.PackageStatuses = r.clientSyncedState.PackageStatuses()
 				msg.CustomCapabilities = r.clientSyncedState.CustomCapabilities()
 				msg.Flags = r.clientSyncedState.Flags()
+				msg.AvailableComponents = r.clientSyncedState.AvailableComponents()
 
 				// The logic for EffectiveConfig is similar to the previous 6 sub-messages however
 				// the EffectiveConfig is fetched using GetEffectiveConfig instead of
 				// from clientSyncedState. We do this to avoid keeping EffectiveConfig in-memory.
 				msg.EffectiveConfig = cfg
+			},
+		)
+		scheduleSend = true
+	}
+
+	if flags&protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportAvailableComponents != 0 {
+		r.sender.NextMessage().Update(
+			func(msg *protobufs.AgentToServer) {
+				msg.AvailableComponents = r.clientSyncedState.AvailableComponents()
 			},
 		)
 		scheduleSend = true
