@@ -50,6 +50,9 @@ type Agent struct {
 	agentType    string
 	agentVersion string
 
+	// use insecure connection until offered settings has a CA
+	awaitCA bool
+
 	effectiveConfig string
 
 	instanceId uuid.UUID
@@ -72,20 +75,14 @@ type Agent struct {
 	clientPrivateKeyPEM []byte
 }
 
-type tlsOpt func(c *tls.Config)
-
-func SetTLSMinVersion(minTLS uint16) tlsOpt {
-	return func(c *tls.Config) {
-		c.MinVersion = minTLS
-	}
-}
-
-func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent {
+func NewAgent(logger types.Logger, agentType string, agentVersion string, awaitCA bool) *Agent {
 	agent := &Agent{
 		effectiveConfig: localConfig,
 		logger:          logger,
 		agentType:       agentType,
 		agentVersion:    agentVersion,
+		awaitCA:         awaitCA,
+		tls:             &tls.Config{},
 	}
 
 	agent.createAgentIdentity()
@@ -93,7 +90,20 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 		agent.instanceId, agentType, agentVersion)
 
 	agent.loadLocalConfig()
-	if err := agent.connect(); err != nil {
+	if awaitCA {
+		agent.tls.InsecureSkipVerify = true
+	} else {
+		tlsConfig, err := internal.CreateClientTLSConfig(
+			agent.opampClientCert,
+			"../../certs/certs/ca.cert.pem",
+		)
+		if err != nil {
+			agent.logger.Errorf(context.Background(), "Cannot load client TLS config: %v", err)
+			return nil
+		}
+		agent.tls = tlsConfig
+	}
+	if err := agent.connect(agent.tls); err != nil {
 		agent.logger.Errorf(context.Background(), "Cannot connect OpAMP client: %v", err)
 		return nil
 	}
@@ -101,25 +111,13 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 	return agent
 }
 
-func (agent *Agent) connect(tlsOpts ...tlsOpt) error {
+func (agent *Agent) connect(tlsConfig *tls.Config) error {
 	agent.opampClient = client.NewWebSocket(agent.logger)
 
-	tlsConfig, err := internal.CreateClientTLSConfig(
-		agent.opampClientCert,
-		"../../certs/certs/ca.cert.pem",
-	)
-	if err != nil {
-		return err
-	}
-	for _, opt := range tlsOpts {
-		opt(tlsConfig)
-	}
-
 	agent.tls = tlsConfig
-
 	settings := types.StartSettings{
 		OpAMPServerURL: "wss://127.0.0.1:4320/v1/opamp",
-		TLSConfig:      tlsConfig,
+		TLSConfig:      agent.tls,
 		InstanceUid:    types.InstanceUid(agent.instanceId),
 		Callbacks: types.CallbacksStruct{
 			OnConnectFunc: func(ctx context.Context) {
@@ -148,7 +146,7 @@ func (agent *Agent) connect(tlsOpts ...tlsOpt) error {
 			protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings,
 	}
 
-	err = agent.opampClient.SetAgentDescription(agent.agentDescription)
+	err := agent.opampClient.SetAgentDescription(agent.agentDescription)
 	if err != nil {
 		return err
 	}
@@ -500,42 +498,30 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	agent.requestClientCertificate()
 }
 
-func (agent *Agent) tryChangeOpAMPCert(ctx context.Context, cert *tls.Certificate) {
-	agent.logger.Debugf(ctx, "Reconnecting to verify offered client certificate.\n")
-
-	agent.disconnect(ctx)
-
-	agent.opampClientCert = cert
-	if err := agent.connect(); err != nil {
-		agent.logger.Errorf(ctx, "Cannot connect using offered certificate: %s. Ignoring the offer\n", err)
-		agent.opampClientCert = nil
-
-		if err := agent.connect(); err != nil {
-			agent.logger.Errorf(ctx, "Unable to reconnect after restoring client certificate: %v\n", err)
-		}
-	}
-
-	agent.logger.Debugf(ctx, "Successfully connected to server. Accepting new client certificate.\n")
-
-	// TODO: we can also persist the successfully accepted certificate and use it when the
-	// agent connects to the server after the restart.
-}
-
-func (agent *Agent) tryChangeOpAMPTLSMin(ctx context.Context, minTLS uint16) {
-	agent.logger.Debugf(ctx, "Reconnecting to verify min TLS version setting.\n")
+func (agent *Agent) tryChangeOpAMP(ctx context.Context, cert *tls.Certificate, cfg *tls.Config) {
+	agent.logger.Debugf(ctx, "Reconnecting to verify new OpAMP settings.\n")
 	agent.disconnect(ctx)
 
 	oldCfg := agent.tls
+	if cfg == nil {
+		cfg = oldCfg.Clone()
+	}
+	if cert != nil {
+		agent.logger.Debugf(ctx, "Using new certificate\n")
+		cfg.Certificates = []tls.Certificate{*cert}
+	}
 
-	if err := agent.connect(SetTLSMinVersion(minTLS)); err != nil {
-		agent.logger.Errorf(ctx, "Cannot connect after using min tls val: %s. Ignoring the offer\n", err)
-		if err := agent.connect(SetTLSMinVersion(oldCfg.MinVersion)); err != nil {
-			agent.logger.Errorf(ctx, "Unable to reconnect after restoring min tls val: %s\n", err)
+	if err := agent.connect(cfg); err != nil {
+		agent.logger.Errorf(ctx, "Cannot connect after using new tls config: %s. Ignoring the offer\n", err)
+		if err := agent.connect(oldCfg); err != nil {
+			agent.logger.Errorf(ctx, "Unable to reconnect after restoring tls config: %s\n", err)
 		}
 		return
 	}
 
-	agent.logger.Debugf(ctx, "Successfully connected to server. Accepting new min tls val.\n")
+	agent.logger.Debugf(ctx, "Successfully connected to server. Accepting new tls config.\n")
+	// TODO: we can also persist the successfully accepted settigns and use it when the
+	// agent connects to the server after the restart.
 }
 
 func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *protobufs.OpAMPConnectionSettings) error {
@@ -544,37 +530,75 @@ func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *pro
 		return nil
 	}
 
+	var cert *tls.Certificate
+	var err error
 	if settings.Certificate != nil {
-		cert, err := agent.getCertFromSettings(settings.Certificate)
+		cert, err = agent.getCertFromSettings(settings.Certificate)
 		if err != nil {
 			return err
 		}
-
-		// TODO: also use settings.DestinationEndpoint and settings.Headers for future connections.
-		go agent.tryChangeOpAMPCert(ctx, cert)
 	}
 
+	var tlsConfig *tls.Config
 	if settings.Tls != nil {
-		// example only expects tls min version to be supplied
-		// TODO check and set other TLS values
-		var tlsMin uint16
-		switch settings.Tls.MinVersion {
-		case "1.0":
-			tlsMin = tls.VersionTLS10
-		case "1.1":
-			tlsMin = tls.VersionTLS11
-		case "1.2":
-			tlsMin = tls.VersionTLS12
-		case "1.3":
-			tlsMin = tls.VersionTLS13
-		default:
-			return fmt.Errorf("unsupported tls.min_version %q", settings.Tls.MinVersion)
+		tlsMin, err := getTLSVersionNumber(settings.Tls.MinVersion)
+		if err != nil {
+			return fmt.Errorf("unable to convert settings.tls.min_version: %w", err)
+		}
+		tlsMax, err := getTLSVersionNumber(settings.Tls.MaxVersion)
+		if err != nil {
+			return fmt.Errorf("unable to convert settings.tls.max_version: %w", err)
 		}
 
-		go agent.tryChangeOpAMPTLSMin(ctx, tlsMin)
+		tlsConfig = &tls.Config{
+			InsecureSkipVerify: settings.Tls.InsecureSkipVerify,
+			MinVersion:         tlsMin,
+			MaxVersion:         tlsMax,
+			RootCAs:            x509.NewCertPool(),
+			// TODO support cipher_suites values
+		}
+
+		if settings.Tls.IncludeSystemCaCertsPool {
+			tlsConfig.RootCAs, err = x509.SystemCertPool()
+			if err != nil {
+				return fmt.Errorf("unable to use system cert pool: %w", err)
+			}
+		}
+
+		if settings.Tls.CaPemContents != "" {
+			ok := tlsConfig.RootCAs.AppendCertsFromPEM([]byte(settings.Tls.CaPemContents))
+			if !ok {
+				return fmt.Errorf("unable to add PEM CA")
+			}
+			// no need to await once we have a CA
+			if agent.awaitCA {
+				agent.logger.Debugf(ctx, "CA in offered settings.\n")
+			}
+			agent.awaitCA = false
+		}
 	}
+	// TODO: also use settings.DestinationEndpoint and settings.Headers for future connections.
+	go agent.tryChangeOpAMP(ctx, cert, tlsConfig)
 
 	return nil
+}
+
+func getTLSVersionNumber(input string) (uint16, error) {
+	switch input {
+	case "1.0":
+		return tls.VersionTLS10, nil
+	case "1.1":
+		return tls.VersionTLS11, nil
+	case "1.2":
+		return tls.VersionTLS12, nil
+	case "1.3":
+		return tls.VersionTLS13, nil
+	case "":
+		// Do nothing if no value is set
+		return 0, nil
+	default:
+		return 0, fmt.Errorf("unsupported value: %s", input)
+	}
 }
 
 func (agent *Agent) getCertFromSettings(certificate *protobufs.TLSCertificate) (*tls.Certificate, error) {

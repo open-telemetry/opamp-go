@@ -16,9 +16,12 @@ func main() {
 	var agentVersion string
 	flag.StringVar(&agentVersion, "v", "1.0.0", "Agent Version String")
 
+	var awaitCA bool
+	flag.BoolVar(&awaitCA, "await-ca", false, "Await the CA that the OpAMP server uses.")
+
 	flag.Parse()
 
-	agent := agent.NewAgent(&agent.Logger{log.Default()}, agentType, agentVersion)
+	agent := agent.NewAgent(&agent.Logger{log.Default()}, agentType, agentVersion, awaitCA)
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
