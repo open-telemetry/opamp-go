@@ -22,10 +22,9 @@ var (
 	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 	ErrAvailableComponentsMissing   = errors.New("AvailableComponents is nil")
 
-	errAlreadyStarted                   = errors.New("already started")
-	errCannotStopNotStarted             = errors.New("cannot stop because not started")
-	errReportsPackageStatusesNotSet     = errors.New("ReportsPackageStatuses capability is not set")
-	errReportsAvailableComponentsNotSet = errors.New("ReportsAvailableComponents capability is not set")
+	errAlreadyStarted               = errors.New("already started")
+	errCannotStopNotStarted         = errors.New("cannot stop because not started")
+	errReportsPackageStatusesNotSet = errors.New("ReportsPackageStatuses capability is not set")
 )
 
 // ClientCommon contains the OpAMP logic that is common between WebSocket and
@@ -459,11 +458,15 @@ func (c *ClientCommon) SendCustomMessage(message *protobufs.CustomMessage) (mess
 // SetAvailableComponents sends a message to the server with the available components for the agent
 func (c *ClientCommon) SetAvailableComponents(components *protobufs.AvailableComponents) error {
 	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents == 0 {
-		return errReportsAvailableComponentsNotSet
+		return types.ErrReportsAvailableComponentsNotSet
+	}
+
+	if components == nil {
+		return types.ErrAvailableComponentsMissing
 	}
 
 	if len(components.Hash) == 0 {
-		return errNoAvailableComponentHash
+		return types.ErrNoAvailableComponentHash
 	}
 
 	// implement agent status compression, don't send the message if it hasn't changed from the previous message
@@ -474,9 +477,15 @@ func (c *ClientCommon) SetAvailableComponents(components *protobufs.AvailableCom
 			return err
 		}
 
+		// initially, do not send the full component state - just send the hash.
+		// full state is available on request from the server using the corresponding ServerToAgent flag
+		availableComponents := &protobufs.AvailableComponents{
+			Hash: c.ClientSyncedState.AvailableComponents().GetHash(),
+		}
+
 		c.sender.NextMessage().Update(
 			func(msg *protobufs.AgentToServer) {
-				msg.AvailableComponents = c.ClientSyncedState.AvailableComponents()
+				msg.AvailableComponents = availableComponents
 			},
 		)
 

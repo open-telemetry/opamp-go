@@ -15,7 +15,6 @@ var (
 	errServerProvidedAllPackagesHashNil = errors.New("ServerProvidedAllPackagesHash is nil")
 	errCustomCapabilitiesMissing        = errors.New("CustomCapabilities is not set")
 	errAvailableComponentsMissing       = errors.New("AvailableComponents is not set")
-	errNoAvailableComponentHash         = errors.New("AvailableComponents.Hash is empty")
 )
 
 // ClientSyncedState stores the state of the Agent messages that the OpAMP Client needs to
