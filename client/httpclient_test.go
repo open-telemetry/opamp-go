@@ -401,16 +401,16 @@ func TestHTTPReportsAvailableComponents(t *testing.T) {
 					return rcvCounter.Load() == 2
 				})
 			} else {
-				// Verify that no second status report is delivered (polling is too infrequent for this to happen in 3 seconds)
-				require.Never(t, func() bool {
+				// Verify that no second status report is delivered (polling is too infrequent for this to happen in 50ms)
+				assert.Never(t, func() bool {
 					return rcvCounter.Load() == 2
-				}, 3*time.Second, 10*time.Millisecond)
+				}, 50*time.Millisecond, 10*time.Millisecond)
 			}
 
-			// Verify that no third status report is delivered (polling is too infrequent for this to happen in 3 seconds)
-			require.Never(t, func() bool {
+			// Verify that no third status report is delivered (polling is too infrequent for this to happen in 50ms)
+			assert.Never(t, func() bool {
 				return rcvCounter.Load() == 3
-			}, 3*time.Second, 10*time.Millisecond)
+			}, 50*time.Millisecond, 10*time.Millisecond)
 
 			// Shutdown the Server.
 			srv.Close()

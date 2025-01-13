@@ -139,8 +139,12 @@ type OpAMPClient interface {
 	// on the agent.
 	// May be called any time after Start(), including from the OnMessage handler.
 	// The new components will be sent with the next message to the server.
-	// If components is nil, errReportsAvailableComponentsNotSet will be returned.
-	// If components.Hash is nil or an empty []byte, errNoAvailableComponentHash will be returned.
+	//
+	// If components is nil, types.ErrAvailableComponentsMissing will be returned.
+	// If components.Hash is nil or an empty []byte, types.ErrNoAvailableComponentHash will be returned.
+	// If the ReportsAvailableComponents capability is not set in StartSettings.Capabilities during Start(),
+	// types.ErrReportsAvailableComponentsNotSet will be returned.
+	//
 	// This method is subject to agent status compression - if components is not
 	// different from the cached agent state, this method is a no-op.
 	SetAvailableComponents(components *protobufs.AvailableComponents) error

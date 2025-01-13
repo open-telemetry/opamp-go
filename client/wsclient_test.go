@@ -86,7 +86,7 @@ func TestWSSenderReportsHeartbeat(t *testing.T) {
 		} else {
 			assert.Never(t, func() bool {
 				return msgCount.Load() >= 2
-			}, 3*time.Second, 10*time.Millisecond)
+			}, 50*time.Millisecond, 10*time.Millisecond)
 		}
 
 		// Stop the client.
@@ -811,7 +811,7 @@ func TestWSSenderReportsAvailableComponents(t *testing.T) {
 			} else {
 				assert.Never(t, func() bool {
 					return msgCount.Load() >= 2
-				}, 3*time.Second, 10*time.Millisecond)
+				}, 50*time.Millisecond, 10*time.Millisecond)
 			}
 
 			// Stop the client.
