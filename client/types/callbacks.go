@@ -47,7 +47,7 @@ type MessageData struct {
 	CustomMessage *protobufs.CustomMessage
 
 	// Flags contains any flags sent by the server.
-	Flags protobufs.AgentToServerFlags
+	Flags protobufs.ServerToAgentFlags
 }
 
 // Callbacks contains functions that are executed when the client encounters
