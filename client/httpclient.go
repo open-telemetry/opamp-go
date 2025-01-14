@@ -120,11 +120,6 @@ func (c *httpClient) SendCustomMessage(message *protobufs.CustomMessage) (messag
 	return c.common.SendCustomMessage(message)
 }
 
-// SetAvailableComponents implements OpAMPClient.SetAvailableComponents
-func (c *httpClient) SetAvailableComponents(components *protobufs.AvailableComponents) error {
-	return c.common.SetAvailableComponents(components)
-}
-
 func (c *httpClient) runUntilStopped(ctx context.Context) {
 	// Start the HTTP sender. This will make request/responses with retries for
 	// failures and will wait with configured polling interval if there is nothing
