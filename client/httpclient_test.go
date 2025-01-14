@@ -316,7 +316,9 @@ func TestRedirectHTTP(t *testing.T) {
 func TestHTTPReportsAvailableComponents(t *testing.T) {
 	testCases := []struct {
 		desc                string
+		capabilities        protobufs.AgentCapabilities
 		availableComponents *protobufs.AvailableComponents
+		startErr            error
 	}{
 		{
 			desc:                "Does not report AvailableComponents",
@@ -324,7 +326,13 @@ func TestHTTPReportsAvailableComponents(t *testing.T) {
 		},
 		{
 			desc:                "Reports AvailableComponents",
+			capabilities:        protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents,
 			availableComponents: generateTestAvailableComponents(),
+		},
+		{
+			desc:         "No AvailableComponents on Start() despite capability",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents,
+			startErr:     internal.ErrAvailableComponentsMissing,
 		},
 	}
 
@@ -380,15 +388,19 @@ func TestHTTPReportsAvailableComponents(t *testing.T) {
 			// Start a client.
 			settings := types.StartSettings{}
 			settings.OpAMPServerURL = "http://" + srv.Endpoint
-			if tc.availableComponents != nil {
-				settings.Capabilities = protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents
-				settings.AvailableComponents = tc.availableComponents
-			}
+			settings.Capabilities = tc.capabilities
+			settings.AvailableComponents = tc.availableComponents
 
 			client := NewHTTP(nil)
 			prepareClient(t, &settings, client)
 
-			assert.NoError(t, client.Start(context.Background(), settings))
+			startErr := client.Start(context.Background(), settings)
+			if tc.startErr == nil {
+				assert.NoError(t, startErr)
+			} else {
+				assert.ErrorIs(t, startErr, tc.startErr)
+				return
+			}
 
 			// Verify that status report is delivered.
 			eventually(t, func() bool {
