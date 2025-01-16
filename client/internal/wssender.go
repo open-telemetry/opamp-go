@@ -22,7 +22,7 @@ const (
 // WSSender implements the WebSocket client's sending portion of OpAMP protocol.
 type WSSender struct {
 	SenderCommon
-	conn   *websocket.Conn
+	conn   internal.WebsocketConn
 	logger types.Logger
 
 	// Indicates that the sender has fully stopped.
@@ -32,6 +32,8 @@ type WSSender struct {
 	heartbeatIntervalUpdated chan struct{}
 	heartbeatIntervalMs      atomic.Int64
 	heartbeatTimer           *time.Timer
+
+	metrics *types.ClientMetrics
 }
 
 // NewSender creates a new Sender that uses WebSocket to send
@@ -42,15 +44,24 @@ func NewSender(logger types.Logger) *WSSender {
 		heartbeatIntervalUpdated: make(chan struct{}, 1),
 		heartbeatTimer:           time.NewTimer(0),
 		SenderCommon:             NewSenderCommon(),
+		metrics:                  types.NewClientMetrics(1),
 	}
 	s.heartbeatIntervalMs.Store(defaultHeartbeatIntervalMs)
 
 	return s
 }
 
+// SetMetrics is used to set the sender's metrics. This is useful because the
+// metrics object is not available until the StartSettings are available.
+func (s *WSSender) SetMetrics(metrics *types.ClientMetrics) {
+	if metrics != nil {
+		s.metrics = metrics
+	}
+}
+
 // Start the sender and send the first message that was set via NextMessage().Update()
 // earlier. To stop the WSSender cancel the ctx.
-func (s *WSSender) Start(ctx context.Context, conn *websocket.Conn) error {
+func (s *WSSender) Start(ctx context.Context, conn internal.WebsocketConn) error {
 	s.conn = conn
 	err := s.sendNextMessage(ctx)
 
@@ -151,11 +162,33 @@ func (s *WSSender) sendNextMessage(ctx context.Context) error {
 	return nil
 }
 
+func txMessageAttrs(msg *protobufs.AgentToServer) types.MessageAttrs {
+	return types.MessageAttrs(types.TxMessageAttr | types.AgentToServerMessageAttr)
+}
+
+func wsMessageAttrs(attrs types.MessageAttrs) types.MessageAttrs {
+	attrs.Set(types.WSTransportAttr)
+	return attrs
+}
+
 func (s *WSSender) sendMessage(ctx context.Context, msg *protobufs.AgentToServer) error {
-	if err := internal.WriteWSMessage(s.conn, msg); err != nil {
+	startSend := time.Now()
+	n, err := internal.WriteWSMessage(s.conn, msg)
+	latency := time.Since(startSend)
+	s.metrics.TxBytes.Add(int64(n))
+	if err != nil {
+		s.metrics.TxErrors.Add(1)
 		s.logger.Errorf(ctx, "Cannot write WS message: %v", err)
 		// TODO: check if it is a connection error then propagate error back to Client and reconnect.
 		return err
 	}
+	s.metrics.TxMessages.Add(1)
+	s.metrics.TxMessageInfo.Insert(types.TxMessageInfo{
+		InstanceUID:  msg.InstanceUid,
+		Capabilities: msg.Capabilities,
+		SequenceNum:  msg.SequenceNum,
+		Attrs:        wsMessageAttrs(txMessageAttrs(msg)),
+		TxLatency:    latency,
+	})
 	return nil
 }

@@ -19,7 +19,8 @@ import (
 )
 
 const (
-	defaultShutdownTimeout = 5 * time.Second
+	defaultShutdownTimeout    = 5 * time.Second
+	defaultRingBufferCapacity = 1024
 )
 
 // wsClient is an OpAMP Client implementation for WebSocket transport.
@@ -54,6 +55,9 @@ type wsClient struct {
 	// connection. responseChain should only be referred to by the goroutine that
 	// runs tryConnectOnce and its synchronous callees.
 	responseChain []*http.Response
+
+	// metrics contain information about the client's interactions with the server
+	metrics *types.ClientMetrics
 }
 
 // NewWebSocket creates a new OpAMP Client that uses WebSocket transport.
@@ -67,11 +71,19 @@ func NewWebSocket(logger types.Logger) *wsClient {
 		common:              internal.NewClientCommon(logger, sender),
 		sender:              sender,
 		connShutdownTimeout: defaultShutdownTimeout,
+		metrics:             types.NewClientMetrics(1),
 	}
 	return w
 }
 
 func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) error {
+	// initialize client metrics object. if nil is supplied, a default object
+	// will be used.
+	c.sender.SetMetrics(settings.Metrics)
+	if settings.Metrics != nil {
+		c.metrics = settings.Metrics
+	}
+
 	if err := c.common.PrepareStart(ctx, settings); err != nil {
 		return err
 	}
@@ -359,6 +371,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		c.common.PackagesStateProvider,
 		c.common.Capabilities,
 		&c.common.PackageSyncMutex,
+		c.metrics,
 	)
 
 	// When the wsclient is closed, the context passed to runOneCycle will be canceled.

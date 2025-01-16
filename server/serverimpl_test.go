@@ -1016,7 +1016,7 @@ func BenchmarkSendToClient(b *testing.B) {
 	cancel()
 
 	for _, conn := range serverConnections {
-		err := conn.Send(context.Background(), &protobufs.ServerToAgent{})
+		_, err := conn.Send(context.Background(), &protobufs.ServerToAgent{})
 
 		if err != nil {
 			b.Error(err)

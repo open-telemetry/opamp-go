@@ -29,10 +29,10 @@ func (c httpConnection) Connection() net.Conn {
 
 var _ types.Connection = (*httpConnection)(nil)
 
-func (c httpConnection) Send(_ context.Context, _ *protobufs.ServerToAgent) error {
+func (c httpConnection) Send(_ context.Context, _ *protobufs.ServerToAgent) (int, error) {
 	// Send() should not be called for plain HTTP connection. Instead, the response will
 	// be sent after the onMessage callback returns.
-	return ErrInvalidHTTPConnection
+	return 0, ErrInvalidHTTPConnection
 }
 
 func (c httpConnection) Disconnect() error {

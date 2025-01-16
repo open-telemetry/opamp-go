@@ -141,6 +141,7 @@ func startClient(t *testing.T, settings types.StartSettings, client OpAMPClient)
 func createNoServerSettings() types.StartSettings {
 	return types.StartSettings{
 		OpAMPServerURL: "ws://" + testhelpers.GetAvailableLocalAddress(),
+		Metrics:        types.NewClientMetrics(64),
 	}
 }
 

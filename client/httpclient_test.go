@@ -180,6 +180,7 @@ func TestHTTPClientStartWithHeartbeatInterval(t *testing.T) {
 			settings := types.StartSettings{
 				OpAMPServerURL:    "http://" + srv.Endpoint,
 				HeartbeatInterval: &heartbeat,
+				Metrics:           types.NewClientMetrics(64),
 			}
 			if tt.enableHeartbeat {
 				settings.Capabilities = protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat

@@ -64,4 +64,8 @@ type StartSettings struct {
 	//
 	// If the ReportsHeartbeat capability is disabled, this option has no effect.
 	HeartbeatInterval *time.Duration
+
+	// Metrics are opamp-specific internal metrics such as latency and
+	// bandwidth measurements.
+	Metrics *ClientMetrics
 }
