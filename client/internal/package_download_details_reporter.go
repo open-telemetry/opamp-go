@@ -42,28 +42,31 @@ func (p *downloadReporter) Write(b []byte) (int, error) {
 // report periodically updates the package status details and calls the passed upateFn to send the new status.
 func (p *downloadReporter) report(ctx context.Context, status *protobufs.PackageStatus, updateFn func(context.Context, bool) error) {
 	go func() {
-		timer := time.NewTimer(p.interval)
-		defer timer.Stop()
+		// Make sure we wait at least 1s before reporting the download rate in bps to avoid a panic
+		time.Sleep(time.Second)
+		ticker := time.NewTicker(p.interval)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-p.done:
 				return
-			case <-timer.C:
+			case <-ticker.C:
 				downloadTime := time.Now().Sub(p.start)
-				downloaded := p.downloaded.Load()
-				bps := downloaded / uint64(downloadTime/time.Second)
+				downloaded := float64(p.downloaded.Load())
+				bps := downloaded / float64(downloadTime/time.Second)
 				var downloadPercent float64
 				if p.packageLength > 0 {
-					downloadPercent = float64(downloaded) / float64(p.packageLength) * 100
+					downloadPercent = downloaded / p.packageLength * 100
 				}
 				status.DownloadDetails = &protobufs.PackageDownloadDetails{
-					DownloadPercent:        downloadPercent,
+					// DownloadPercent may be zero if nothing has been downloaded OR there isn't a Content-Length header in the response.
+					DownloadPercent: downloadPercent,
+					// DownloadBytesPerSecond may be zero if no bytes from the response body have been read yet.
 					DownloadBytesPerSecond: bps,
 				}
 				_ = updateFn(ctx, true)
-				timer.Reset(p.interval)
 			}
 		}
 	}()
