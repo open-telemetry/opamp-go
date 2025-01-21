@@ -106,24 +106,24 @@ func (agent *Agent) connect() error {
 		OpAMPServerURL: "wss://127.0.0.1:4320/v1/opamp",
 		TLSConfig:      tlsConfig,
 		InstanceUid:    types.InstanceUid(agent.instanceId),
-		Callbacks: types.CallbacksStruct{
-			OnConnectFunc: func(ctx context.Context) {
+		Callbacks: types.Callbacks{
+			OnConnect: func(ctx context.Context) {
 				agent.logger.Debugf(ctx, "Connected to the server.")
 			},
-			OnConnectFailedFunc: func(ctx context.Context, err error) {
+			OnConnectFailed: func(ctx context.Context, err error) {
 				agent.logger.Errorf(ctx, "Failed to connect to the server: %v", err)
 			},
-			OnErrorFunc: func(ctx context.Context, err *protobufs.ServerErrorResponse) {
+			OnError: func(ctx context.Context, err *protobufs.ServerErrorResponse) {
 				agent.logger.Errorf(ctx, "Server returned an error response: %v", err.ErrorMessage)
 			},
-			SaveRemoteConfigStatusFunc: func(_ context.Context, status *protobufs.RemoteConfigStatus) {
+			SaveRemoteConfigStatus: func(_ context.Context, status *protobufs.RemoteConfigStatus) {
 				agent.remoteConfigStatus = status
 			},
-			GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+			GetEffectiveConfig: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 				return agent.composeEffectiveConfig(), nil
 			},
-			OnMessageFunc:                 agent.onMessage,
-			OnOpampConnectionSettingsFunc: agent.onOpampConnectionSettings,
+			OnMessage:                 agent.onMessage,
+			OnOpampConnectionSettings: agent.onOpampConnectionSettings,
 		},
 		RemoteConfigStatus: agent.remoteConfigStatus,
 		Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |

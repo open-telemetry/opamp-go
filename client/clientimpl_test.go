@@ -167,8 +167,8 @@ func TestOnConnectFail(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		var connectErr atomic.Value
 		settings := createNoServerSettings()
-		settings.Callbacks = types.CallbacksStruct{
-			OnConnectFailedFunc: func(ctx context.Context, err error) {
+		settings.Callbacks = types.Callbacks{
+			OnConnectFailed: func(ctx context.Context, err error) {
 				connectErr.Store(err)
 			},
 		}
@@ -244,8 +244,8 @@ func TestConnectWithServer(t *testing.T) {
 		// Start a client.
 		var connected int64
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{
-				OnConnectFunc: func(ctx context.Context) {
+			Callbacks: types.Callbacks{
+				OnConnect: func(ctx context.Context) {
 					atomic.StoreInt64(&connected, 1)
 				},
 			},
@@ -282,12 +282,12 @@ func TestConnectWithServer503(t *testing.T) {
 		var clientConnected int64
 		var connectErr atomic.Value
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{
-				OnConnectFunc: func(ctx context.Context) {
+			Callbacks: types.Callbacks{
+				OnConnect: func(ctx context.Context) {
 					atomic.StoreInt64(&clientConnected, 1)
 					assert.Fail(t, "Client should not be able to connect")
 				},
-				OnConnectFailedFunc: func(ctx context.Context, err error) {
+				OnConnectFailed: func(ctx context.Context, err error) {
 					connectErr.Store(err)
 				},
 			},
@@ -484,11 +484,11 @@ func TestFirstStatusReport(t *testing.T) {
 		// Start a client.
 		var connected, remoteConfigReceived int64
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{
-				OnConnectFunc: func(ctx context.Context) {
+			Callbacks: types.Callbacks{
+				OnConnect: func(ctx context.Context) {
 					atomic.AddInt64(&connected, 1)
 				},
-				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+				OnMessage: func(ctx context.Context, msg *types.MessageData) {
 					// Verify that the client received exactly the remote config that
 					// the Server sent.
 					assert.True(t, proto.Equal(remoteConfig, msg.RemoteConfig))
@@ -537,8 +537,8 @@ func TestIncludesDetailsOnReconnect(t *testing.T) {
 
 	var connected int64
 	settings := types.StartSettings{
-		Callbacks: types.CallbacksStruct{
-			OnConnectFunc: func(ctx context.Context) {
+		Callbacks: types.Callbacks{
+			OnConnect: func(ctx context.Context) {
 				atomic.AddInt64(&connected, 1)
 			},
 		},
@@ -589,8 +589,8 @@ func TestSetEffectiveConfig(t *testing.T) {
 		// Start a client.
 		sendConfig := createEffectiveConfig()
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{
-				GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+			Callbacks: types.Callbacks{
+				GetEffectiveConfig: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 					return sendConfig, nil
 				},
 			},
@@ -822,8 +822,8 @@ func TestServerOfferConnectionSettings(t *testing.T) {
 
 		// Start a client.
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{
-				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+			Callbacks: types.Callbacks{
+				OnMessage: func(ctx context.Context, msg *types.MessageData) {
 					assert.True(t, proto.Equal(metricsSettings, msg.OwnMetricsConnSettings))
 					assert.True(t, proto.Equal(tracesSettings, msg.OwnTracesConnSettings))
 					assert.True(t, proto.Equal(logsSettings, msg.OwnLogsConnSettings))
@@ -834,7 +834,7 @@ func TestServerOfferConnectionSettings(t *testing.T) {
 					atomic.AddInt64(&gotOtherSettings, 1)
 				},
 
-				OnOpampConnectionSettingsFunc: func(
+				OnOpampConnectionSettings: func(
 					ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
 				) error {
 					assert.True(t, proto.Equal(opampSettings, settings))
@@ -891,8 +891,8 @@ func TestClientRequestConnectionSettings(t *testing.T) {
 
 			// Start a client.
 			settings := types.StartSettings{
-				Callbacks: types.CallbacksStruct{
-					OnOpampConnectionSettingsFunc: func(
+				Callbacks: types.Callbacks{
+					OnOpampConnectionSettings: func(
 						ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
 					) error {
 						assert.True(t, proto.Equal(opampSettings, settings))
@@ -1073,8 +1073,8 @@ func TestReportEffectiveConfig(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
-			Callbacks: types.CallbacksStruct{
-				GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+			Callbacks: types.Callbacks{
+				GetEffectiveConfig: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 					return clientEffectiveConfig, nil
 				},
 			},
@@ -1139,8 +1139,8 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
-			Callbacks: types.CallbacksStruct{
-				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+			Callbacks: types.Callbacks{
+				OnMessage: func(ctx context.Context, msg *types.MessageData) {
 					if msg.RemoteConfig != nil {
 						if successCase {
 							client.SetRemoteConfigStatus(
@@ -1355,8 +1355,8 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
-			Callbacks: types.CallbacksStruct{
-				OnMessageFunc: onMessageFunc,
+			Callbacks: types.Callbacks{
+				OnMessage: onMessageFunc,
 			},
 			PackagesStateProvider: localPackageState,
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages |
@@ -1550,8 +1550,8 @@ func TestMissingCapabilities(t *testing.T) {
 
 		// Start a client.
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{
-				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+			Callbacks: types.Callbacks{
+				OnMessage: func(ctx context.Context, msg *types.MessageData) {
 					// These fields must not be set since we did not define the capabilities to accept them.
 					assert.Nil(t, msg.RemoteConfig)
 					assert.Nil(t, msg.OwnLogsConnSettings)
@@ -1560,7 +1560,7 @@ func TestMissingCapabilities(t *testing.T) {
 					assert.Nil(t, msg.OtherConnSettings)
 					assert.Nil(t, msg.PackagesAvailable)
 				},
-				OnOpampConnectionSettingsFunc: func(
+				OnOpampConnectionSettings: func(
 					ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
 				) error {
 					assert.Fail(t, "should not be called since capability is not set to accept it")
@@ -1621,7 +1621,7 @@ func TestMissingPackagesStateProvider(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a client.
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{},
+			Callbacks: types.Callbacks{},
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages |
 				protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
 		}
@@ -1632,7 +1632,7 @@ func TestMissingPackagesStateProvider(t *testing.T) {
 		// Start a client.
 		localPackageState := internal.NewInMemPackagesStore()
 		settings = types.StartSettings{
-			Callbacks:             types.CallbacksStruct{},
+			Callbacks:             types.Callbacks{},
 			PackagesStateProvider: localPackageState,
 			Capabilities:          protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages,
 		}
@@ -1642,7 +1642,7 @@ func TestMissingPackagesStateProvider(t *testing.T) {
 
 		// Start a client.
 		settings = types.StartSettings{
-			Callbacks:             types.CallbacksStruct{},
+			Callbacks:             types.Callbacks{},
 			PackagesStateProvider: localPackageState,
 			Capabilities:          protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
 		}
@@ -1676,8 +1676,8 @@ func TestOfferUpdatedVersion(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
-			Callbacks: types.CallbacksStruct{
-				OnMessageFunc: onMessageFunc,
+			Callbacks: types.Callbacks{
+				OnMessage: onMessageFunc,
 			},
 			PackagesStateProvider: localPackageState,
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages |
@@ -1755,8 +1755,8 @@ func TestReportCustomCapabilities(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
-			Callbacks: types.CallbacksStruct{
-				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+			Callbacks: types.Callbacks{
+				OnMessage: func(ctx context.Context, msg *types.MessageData) {
 					clientRcvCustomMessage.Store(msg.CustomMessage)
 				},
 			},
@@ -1851,7 +1851,7 @@ func TestReportCustomCapabilities(t *testing.T) {
 func TestSendCustomMessage(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{},
+			Callbacks: types.Callbacks{},
 		}
 		prepareClient(t, &settings, client)
 		clientCustomCapabilities := &protobufs.CustomCapabilities{

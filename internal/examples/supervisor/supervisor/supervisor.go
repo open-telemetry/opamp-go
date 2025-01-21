@@ -138,20 +138,20 @@ func (s *Supervisor) startOpAMP() error {
 			InsecureSkipVerify: true,
 		},
 		InstanceUid: types.InstanceUid(s.instanceId),
-		Callbacks: types.CallbacksStruct{
-			OnConnectFunc: func(ctx context.Context) {
+		Callbacks: types.Callbacks{
+			OnConnect: func(ctx context.Context) {
 				s.logger.Debugf(ctx, "Connected to the server.")
 			},
-			OnConnectFailedFunc: func(ctx context.Context, err error) {
+			OnConnectFailed: func(ctx context.Context, err error) {
 				s.logger.Errorf(ctx, "Failed to connect to the server: %v", err)
 			},
-			OnErrorFunc: func(ctx context.Context, err *protobufs.ServerErrorResponse) {
+			OnError: func(ctx context.Context, err *protobufs.ServerErrorResponse) {
 				s.logger.Errorf(ctx, "Server returned an error response: %v", err.ErrorMessage)
 			},
-			GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+			GetEffectiveConfig: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 				return s.createEffectiveConfigMsg(), nil
 			},
-			OnMessageFunc: s.onMessage,
+			OnMessage: s.onMessage,
 		},
 		Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig |

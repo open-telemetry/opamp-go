@@ -48,6 +48,12 @@ type wsClient struct {
 	// Network connection timeout used for the WebSocket closing handshake.
 	// This field is currently only modified during testing.
 	connShutdownTimeout time.Duration
+
+	// responseChain is used for the "via" argument in CheckRedirect.
+	// It is appended to with every redirect followed, and zeroed on a succesful
+	// connection. responseChain should only be referred to by the goroutine that
+	// runs tryConnectOnce and its synchronous callees.
+	responseChain []*http.Response
 }
 
 // NewWebSocket creates a new OpAMP Client that uses WebSocket transport.
@@ -151,35 +157,89 @@ func (c *wsClient) SendCustomMessage(message *protobufs.CustomMessage) (messageS
 	return c.common.SendCustomMessage(message)
 }
 
+func viaReq(resps []*http.Response) []*http.Request {
+	reqs := make([]*http.Request, 0, len(resps))
+	for _, resp := range resps {
+		reqs = append(reqs, resp.Request)
+	}
+	return reqs
+}
+
+// handleRedirect checks a failed websocket upgrade response for a 3xx response
+// and a Location header. If found, it sets the URL to the location found in the
+// header so that it is tried on the next retry, instead of the current URL.
+func (c *wsClient) handleRedirect(ctx context.Context, resp *http.Response) error {
+	// append to the responseChain so that subsequent redirects will have access
+	c.responseChain = append(c.responseChain, resp)
+
+	// very liberal handling of 3xx that largely ignores HTTP semantics
+	redirect, err := resp.Location()
+	if err != nil {
+		c.common.Logger.Errorf(ctx, "%d redirect, but no valid location: %s", resp.StatusCode, err)
+		return err
+	}
+
+	// It's slightly tricky to make CheckRedirect work. The WS HTTP request is
+	// formed within the websocket library. To work around that, copy the
+	// previous request, available in the response, and set the URL to the new
+	// location. It should then result in the same URL that the websocket
+	// library will form.
+	nextRequest := resp.Request.Clone(ctx)
+	nextRequest.URL = redirect
+
+	// if CheckRedirect results in an error, it gets returned, terminating
+	// redirection. As with stdlib, the error is wrapped in url.Error.
+	if c.common.Callbacks.CheckRedirect != nil {
+		if err := c.common.Callbacks.CheckRedirect(nextRequest, viaReq(c.responseChain), c.responseChain); err != nil {
+			return &url.Error{
+				Op:  "Get",
+				URL: nextRequest.URL.String(),
+				Err: err,
+			}
+		}
+	}
+
+	// rewrite the scheme for the sake of tolerance
+	if redirect.Scheme == "http" {
+		redirect.Scheme = "ws"
+	} else if redirect.Scheme == "https" {
+		redirect.Scheme = "wss"
+	}
+	c.common.Logger.Debugf(ctx, "%d redirect to %s", resp.StatusCode, redirect)
+
+	// Set the URL to the redirect, so that it connects to it on the
+	// next cycle.
+	c.url = redirect
+
+	return nil
+}
+
 // Try to connect once. Returns an error if connection fails and optional retryAfter
 // duration to indicate to the caller to retry after the specified time as instructed
 // by the Server.
 func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinternal.OptionalDuration, err error) {
 	var resp *http.Response
+	var redirecting bool
+	defer func() {
+		if err != nil && !redirecting {
+			c.responseChain = nil
+			if !c.common.IsStopping() {
+				c.common.Callbacks.OnConnectFailed(ctx, err)
+			}
+		}
+	}()
 	conn, resp, err := c.dialer.DialContext(ctx, c.url.String(), c.getHeader())
 	if err != nil {
-		if c.common.Callbacks != nil && !c.common.IsStopping() {
+		if !c.common.IsStopping() {
 			c.common.Callbacks.OnConnectFailed(ctx, err)
 		}
 		if resp != nil {
 			duration := sharedinternal.ExtractRetryAfterHeader(resp)
 			if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-				// very liberal handling of 3xx that largely ignores HTTP semantics
-				redirect, err := resp.Location()
-				if err != nil {
-					c.common.Logger.Errorf(ctx, "%d redirect, but no valid location: %s", resp.StatusCode, err)
+				redirecting = true
+				if err := c.handleRedirect(ctx, resp); err != nil {
 					return duration, err
 				}
-				// rewrite the scheme for the sake of tolerance
-				if redirect.Scheme == "http" {
-					redirect.Scheme = "ws"
-				} else if redirect.Scheme == "https" {
-					redirect.Scheme = "wss"
-				}
-				c.common.Logger.Debugf(ctx, "%d redirect to %s", resp.StatusCode, redirect)
-				// Set the URL to the redirect, so that it connects to it on the
-				// next cycle.
-				c.url = redirect
 			} else {
 				c.common.Logger.Errorf(ctx, "Server responded with status=%v", resp.Status)
 			}
@@ -192,9 +252,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinterna
 	c.connMutex.Lock()
 	c.conn = conn
 	c.connMutex.Unlock()
-	if c.common.Callbacks != nil {
-		c.common.Callbacks.OnConnect(ctx)
-	}
+	c.common.Callbacks.OnConnect(ctx)
 
 	return sharedinternal.OptionalDuration{Defined: false}, nil
 }

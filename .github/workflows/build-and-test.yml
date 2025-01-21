@@ -5,6 +5,7 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+*"
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 jobs:
   setup-environment:
@@ -13,9 +14,9 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
       - name: Setup Go
-        uses: actions/setup-go@v5.1.0
+        uses: actions/setup-go@v5.2.0
         with:
-          go-version: "1.20"
+          go-version: "1.22"
       - name: Setup Go Environment
         run: |
           echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
@@ -46,9 +47,9 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
       - name: Setup Go
-        uses: actions/setup-go@v5.1.0
+        uses: actions/setup-go@v5.2.0
         with:
-          go-version: "1.20"
+          go-version: "1.22"
       - name: Setup Go Environment
         run: |
           echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
@@ -76,7 +77,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.20"
+          go-version: "1.22"
       - name: Setup Go Environment
         run: |
           echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
@@ -101,7 +102,7 @@ jobs:
       - name: Run Unit Tests With Coverage
         run: make test-with-cover
       - name: Upload coverage report
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./coverage.out

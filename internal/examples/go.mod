@@ -1,6 +1,6 @@
 module github.com/open-telemetry/opamp-go/internal/examples
 
-go 1.20
+go 1.22
 
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0
@@ -9,14 +9,14 @@ require (
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/open-telemetry/opamp-go v0.1.0
 	github.com/shirou/gopsutil v3.21.11+incompatible
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0
 	go.opentelemetry.io/otel v1.24.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.24.0
 	go.opentelemetry.io/otel/metric v1.24.0
 	go.opentelemetry.io/otel/sdk v1.24.0
 	go.opentelemetry.io/otel/sdk/metric v1.24.0
-	google.golang.org/protobuf v1.34.2
+	google.golang.org/protobuf v1.36.2
 )
 
 require (
