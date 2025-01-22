@@ -75,9 +75,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 		r.logger.Errorf(ctx, "cannot processed received flags:%v", err)
 	}
 
-	msgData := &types.MessageData{
-		Flags: protobufs.ServerToAgentFlags(msg.Flags),
-	}
+	msgData := &types.MessageData{}
 
 	if msg.RemoteConfig != nil {
 		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig) {

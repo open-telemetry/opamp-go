@@ -89,14 +89,8 @@ func (c *ClientCommon) PrepareStart(
 		return ErrHealthMissing
 	}
 
-	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents != 0 {
-		if settings.AvailableComponents == nil {
-			return ErrAvailableComponentsMissing
-		}
-
-		if err := c.ClientSyncedState.SetAvailableComponents(settings.AvailableComponents); err != nil {
-			return err
-		}
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents != 0 && c.ClientSyncedState.AvailableComponents() == nil {
+		return ErrAvailableComponentsMissing
 	}
 
 	// Prepare remote config status.
@@ -457,6 +451,10 @@ func (c *ClientCommon) SendCustomMessage(message *protobufs.CustomMessage) (mess
 
 // SetAvailableComponents sends a message to the server with the available components for the agent
 func (c *ClientCommon) SetAvailableComponents(components *protobufs.AvailableComponents) error {
+	if !c.isStarted {
+		return c.ClientSyncedState.SetAvailableComponents(components)
+	}
+
 	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents == 0 {
 		return types.ErrReportsAvailableComponentsNotSet
 	}

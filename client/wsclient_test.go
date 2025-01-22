@@ -796,7 +796,7 @@ func TestWSSenderReportsAvailableComponents(t *testing.T) {
 
 			if tc.availableComponents != nil {
 				settings.Capabilities = protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents
-				settings.AvailableComponents = tc.availableComponents
+				client.SetAvailableComponents(tc.availableComponents)
 			}
 
 			startClient(t, settings, client)

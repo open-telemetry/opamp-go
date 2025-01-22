@@ -389,9 +389,9 @@ func TestHTTPReportsAvailableComponents(t *testing.T) {
 			settings := types.StartSettings{}
 			settings.OpAMPServerURL = "http://" + srv.Endpoint
 			settings.Capabilities = tc.capabilities
-			settings.AvailableComponents = tc.availableComponents
 
 			client := NewHTTP(nil)
+			client.SetAvailableComponents(tc.availableComponents)
 			prepareClient(t, &settings, client)
 
 			startErr := client.Start(context.Background(), settings)

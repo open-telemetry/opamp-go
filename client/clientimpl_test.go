@@ -2367,6 +2367,7 @@ func TestSetAvailableComponents(t *testing.T) {
 				srv.EnableExpectMode()
 
 				availableComponents := generateTestAvailableComponents()
+				client.SetAvailableComponents(availableComponents)
 
 				// Start a client.
 				settings := types.StartSettings{
@@ -2374,8 +2375,7 @@ func TestSetAvailableComponents(t *testing.T) {
 					Callbacks: types.Callbacks{
 						OnMessage: func(ctx context.Context, msg *types.MessageData) {},
 					},
-					Capabilities:        tc.capabilities,
-					AvailableComponents: availableComponents,
+					Capabilities: tc.capabilities,
 				}
 				prepareClient(t, &settings, client)
 
