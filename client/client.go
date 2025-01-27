@@ -138,7 +138,7 @@ type OpAMPClient interface {
 	// SetAvailableComponents modifies the set of components that are available for configuration
 	// on the agent.
 	// If called before Start(), initializes the client state that will be sent to the server upon
-	// Start() if the if the ReportsAvailableComponents capability is set.
+	// Start() if the ReportsAvailableComponents capability is set.
 	// Must be called before Start() if the ReportsAvailableComponents capability is set.
 	//
 	// May be called any time after Start(), including from the OnMessage handler.
