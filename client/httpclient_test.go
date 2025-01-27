@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/internal"
@@ -308,6 +309,127 @@ func TestRedirectHTTP(t *testing.T) {
 			} else if err := connectErr.Load(); !test.ExpError && err != nil {
 				t.Fatal(err)
 			}
+		})
+	}
+}
+
+func TestHTTPReportsAvailableComponents(t *testing.T) {
+	testCases := []struct {
+		desc                string
+		capabilities        protobufs.AgentCapabilities
+		availableComponents *protobufs.AvailableComponents
+		startErr            error
+	}{
+		{
+			desc:                "Does not report AvailableComponents",
+			availableComponents: nil,
+		},
+		{
+			desc:                "Reports AvailableComponents",
+			capabilities:        protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents,
+			availableComponents: generateTestAvailableComponents(),
+		},
+		{
+			desc:         "No AvailableComponents on Start() despite capability",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents,
+			startErr:     internal.ErrAvailableComponentsMissing,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// Start a Server.
+			srv := internal.StartMockServer(t)
+			var rcvCounter atomic.Uint64
+			srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				assert.EqualValues(t, rcvCounter.Load(), msg.SequenceNum)
+				rcvCounter.Add(1)
+				time.Sleep(50 * time.Millisecond)
+				if rcvCounter.Load() == 1 {
+					resp := &protobufs.ServerToAgent{
+						InstanceUid: msg.InstanceUid,
+					}
+
+					if tc.availableComponents != nil {
+						// the first message received should contain just the available component hash
+						availableComponents := msg.GetAvailableComponents()
+						require.NotNil(t, availableComponents)
+						require.Nil(t, availableComponents.GetComponents())
+						require.Equal(t, tc.availableComponents.GetHash(), availableComponents.GetHash())
+
+						// add the flag asking for the full available component state to the response
+						resp.Flags = uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportAvailableComponents)
+					} else {
+						require.Nil(t, msg.GetAvailableComponents())
+					}
+
+					return resp
+				}
+
+				if rcvCounter.Load() == 2 {
+					if tc.availableComponents != nil {
+						// the second message received should contain the full component state
+						availableComponents := msg.GetAvailableComponents()
+						require.NotNil(t, availableComponents)
+						require.Equal(t, tc.availableComponents.GetComponents(), availableComponents.GetComponents())
+						require.Equal(t, tc.availableComponents.GetHash(), availableComponents.GetHash())
+					} else {
+						require.Nil(t, msg.GetAvailableComponents())
+					}
+
+					return nil
+				}
+
+				// all subsequent messages should not have any available components
+				require.Nil(t, msg.GetAvailableComponents())
+				return nil
+			}
+
+			// Start a client.
+			settings := types.StartSettings{}
+			settings.OpAMPServerURL = "http://" + srv.Endpoint
+			settings.Capabilities = tc.capabilities
+
+			client := NewHTTP(nil)
+			client.SetAvailableComponents(tc.availableComponents)
+			prepareClient(t, &settings, client)
+
+			startErr := client.Start(context.Background(), settings)
+			if tc.startErr == nil {
+				assert.NoError(t, startErr)
+			} else {
+				assert.ErrorIs(t, startErr, tc.startErr)
+				return
+			}
+
+			// Verify that status report is delivered.
+			eventually(t, func() bool {
+				return rcvCounter.Load() == 1
+			})
+
+			if tc.availableComponents != nil {
+				// Verify that status report is delivered again. Polling should ensure this.
+				eventually(t, func() bool {
+					return rcvCounter.Load() == 2
+				})
+			} else {
+				// Verify that no second status report is delivered (polling is too infrequent for this to happen in 50ms)
+				assert.Never(t, func() bool {
+					return rcvCounter.Load() == 2
+				}, 50*time.Millisecond, 10*time.Millisecond)
+			}
+
+			// Verify that no third status report is delivered (polling is too infrequent for this to happen in 50ms)
+			assert.Never(t, func() bool {
+				return rcvCounter.Load() == 3
+			}, 50*time.Millisecond, 10*time.Millisecond)
+
+			// Shutdown the Server.
+			srv.Close()
+
+			// Shutdown the client.
+			err := client.Stop(context.Background())
+			assert.NoError(t, err)
 		})
 	}
 }

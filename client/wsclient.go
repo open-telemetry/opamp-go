@@ -157,6 +157,11 @@ func (c *wsClient) SendCustomMessage(message *protobufs.CustomMessage) (messageS
 	return c.common.SendCustomMessage(message)
 }
 
+// SetAvailableComponents implements OpAMPClient.SetAvailableComponents
+func (c *wsClient) SetAvailableComponents(components *protobufs.AvailableComponents) error {
+	return c.common.SetAvailableComponents(components)
+}
+
 func viaReq(resps []*http.Response) []*http.Request {
 	reqs := make([]*http.Request, 0, len(resps))
 	for _, resp := range resps {
