@@ -64,4 +64,9 @@ type StartSettings struct {
 	//
 	// If the ReportsHeartbeat capability is disabled, this option has no effect.
 	HeartbeatInterval *time.Duration
+
+	// Optional DownloadReporterInterval to configure how often a client reports the status of a package that is being downloaded.
+	// If nil, the default reporter interval (10s) will be used.
+	// If specified a minimum value of 1s will be enforced.
+	DownloadReporterInterval *time.Duration
 }
