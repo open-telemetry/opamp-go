@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -21,6 +22,7 @@ type packagesSyncer struct {
 	clientSyncedState *ClientSyncedState
 	localState        types.PackagesStateProvider
 	sender            Sender
+	reporterInterval  time.Duration
 
 	statuses *protobufs.PackageStatuses
 	mux      *sync.Mutex
@@ -35,6 +37,7 @@ func NewPackagesSyncer(
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	mux *sync.Mutex,
+	reporterInterval time.Duration,
 ) *packagesSyncer {
 	return &packagesSyncer{
 		logger:            logger,
@@ -44,6 +47,7 @@ func NewPackagesSyncer(
 		localState:        packagesStateProvider,
 		doneCh:            make(chan struct{}),
 		mux:               mux,
+		reporterInterval:  reporterInterval,
 	}
 }
 
@@ -310,8 +314,8 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 		}
 	}
 	// start the download reporter
-	detailsReporter := newDownloadReporter(downloadReporterDefaultInterval, packageLength) // TODO set interval
-	detailsReporter.report(ctx, status, s.reportStatuses)
+	detailsReporter := newDownloadReporter(s.reporterInterval, packageLength)
+	detailsReporter.report(ctx, s.getDownloadDetailsFn(pkgName))
 	defer detailsReporter.stop()
 
 	tr := io.TeeReader(resp.Body, detailsReporter)
@@ -320,6 +324,17 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 		return fmt.Errorf("failed to install/update the package %s downloaded from %s: %v", pkgName, file.DownloadUrl, err)
 	}
 	return nil
+}
+
+func (s *packagesSyncer) getDownloadDetailsFn(pkgName string) func(context.Context, float64, float64) error {
+	return func(ctx context.Context, percent, rate float64) error {
+		status := s.statuses.Packages[pkgName]
+		status.DownloadDetails = &protobufs.PackageDownloadDetails{
+			DownloadPercent:        percent,
+			DownloadBytesPerSecond: rate,
+		}
+		return s.reportStatuses(ctx, true)
+	}
 }
 
 // deleteUnneededLocalPackages deletes local packages that are not
