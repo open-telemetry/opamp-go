@@ -57,6 +57,23 @@ func TestServerStartStop(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestServerStartStopIdempotency(t *testing.T) {
+	endpoint := testhelpers.GetAvailableLocalAddress()
+	for i := 0; i < 10; i++ {
+		t.Run(fmt.Sprintf("Attempt #%d: ", i), func(t *testing.T) {
+			srv := startServer(t, &StartSettings{
+				ListenEndpoint: endpoint,
+			})
+
+			err := srv.Start(StartSettings{})
+			assert.ErrorIs(t, err, errAlreadyStarted)
+
+			err = srv.Stop(context.Background())
+			assert.NoError(t, err)
+		})
+	}
+}
+
 func TestServerStartStopWithMiddleware(t *testing.T) {
 	var addedMiddleware atomic.Bool
 	assert.False(t, addedMiddleware.Load())
@@ -620,7 +637,6 @@ func TestServerAttachSendMessagePlainHTTP(t *testing.T) {
 }
 
 func TestServerHonoursClientRequestContentEncoding(t *testing.T) {
-
 	hc := http.Client{}
 	var rcvMsg atomic.Value
 	var onConnectedCalled, onCloseCalled int32
@@ -698,7 +714,6 @@ func TestServerHonoursClientRequestContentEncoding(t *testing.T) {
 }
 
 func TestServerHonoursAcceptEncoding(t *testing.T) {
-
 	hc := http.Client{}
 	var rcvMsg atomic.Value
 	var onConnectedCalled, onCloseCalled int32
@@ -985,7 +1000,6 @@ func BenchmarkSendToClient(b *testing.B) {
 	}
 	srv := New(&sharedinternal.NopLogger{})
 	err := srv.Start(*settings)
-
 	if err != nil {
 		b.Error(err)
 	}
@@ -1017,7 +1031,6 @@ func BenchmarkSendToClient(b *testing.B) {
 
 	for _, conn := range serverConnections {
 		err := conn.Send(context.Background(), &protobufs.ServerToAgent{})
-
 		if err != nil {
 			b.Error(err)
 		}
@@ -1026,5 +1039,4 @@ func BenchmarkSendToClient(b *testing.B) {
 	for _, conn := range clientConnections {
 		conn.Close()
 	}
-
 }
