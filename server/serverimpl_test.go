@@ -57,6 +57,23 @@ func TestServerStartStop(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestServerStartStopIdempotency(t *testing.T) {
+	endpoint := testhelpers.GetAvailableLocalAddress()
+	for i := 0; i < 10; i++ {
+		t.Run(fmt.Sprintf("Attempt #%d: ", i), func(t *testing.T) {
+			srv := startServer(t, &StartSettings{
+				ListenEndpoint: endpoint,
+			})
+
+			err := srv.Start(StartSettings{})
+			assert.ErrorIs(t, err, errAlreadyStarted)
+
+			err = srv.Stop(context.Background())
+			assert.NoError(t, err)
+		})
+	}
+}
+
 func TestServerStartStopWithMiddleware(t *testing.T) {
 	var addedMiddleware atomic.Bool
 	assert.False(t, addedMiddleware.Load())
