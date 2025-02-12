@@ -134,4 +134,23 @@ type OpAMPClient interface {
 	// If no error is returned, the channel returned will be closed after the specified
 	// message is sent.
 	SendCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error)
+
+	// SetAvailableComponents modifies the set of components that are available for configuration
+	// on the agent.
+	// If called before Start(), initializes the client state that will be sent to the server upon
+	// Start() if the ReportsAvailableComponents capability is set.
+	// Must be called before Start() if the ReportsAvailableComponents capability is set.
+	//
+	// May be called any time after Start(), including from the OnMessage handler.
+	// The new components will be sent with the next message to the server.
+	//
+	// When called after Start():
+	// If components is nil, types.ErrAvailableComponentsMissing will be returned.
+	// If components.Hash is nil or an empty []byte, types.ErrNoAvailableComponentHash will be returned.
+	// If the ReportsAvailableComponents capability is not set in StartSettings.Capabilities during Start(),
+	// types.ErrReportsAvailableComponentsNotSet will be returned.
+	//
+	// This method is subject to agent status compression - if components is not
+	// different from the cached agent state, this method is a no-op.
+	SetAvailableComponents(components *protobufs.AvailableComponents) error
 }
