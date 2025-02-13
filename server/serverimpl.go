@@ -174,7 +174,12 @@ func (s *server) Stop(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		s.httpServerServeWg.Wait()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			s.httpServerServeWg.Wait()
+		}
 	}
 	return nil
 }
