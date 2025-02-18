@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strconv"
 	"sync"
+	"time"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -19,6 +22,7 @@ type packagesSyncer struct {
 	clientSyncedState *ClientSyncedState
 	localState        types.PackagesStateProvider
 	sender            Sender
+	reporterInterval  time.Duration
 
 	statuses *protobufs.PackageStatuses
 	mux      *sync.Mutex
@@ -33,6 +37,7 @@ func NewPackagesSyncer(
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	mux *sync.Mutex,
+	reporterInterval time.Duration,
 ) *packagesSyncer {
 	return &packagesSyncer{
 		logger:            logger,
@@ -42,6 +47,7 @@ func NewPackagesSyncer(
 		localState:        packagesStateProvider,
 		doneCh:            make(chan struct{}),
 		mux:               mux,
+		reporterInterval:  reporterInterval,
 	}
 }
 
@@ -273,6 +279,10 @@ func (s *packagesSyncer) shouldDownloadFile(ctx context.Context,
 
 // downloadFile downloads the file from the server.
 func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file *protobufs.DownloadableFile) error {
+	status := s.statuses.Packages[pkgName]
+	status.Status = protobufs.PackageStatusEnum_PackageStatusEnum_Downloading
+	_ = s.reportStatuses(ctx, true)
+
 	s.logger.Debugf(ctx, "Downloading package %s file from %s", pkgName, file.DownloadUrl)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", file.DownloadUrl, nil)
@@ -290,11 +300,35 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 		return fmt.Errorf("cannot download file from %s, HTTP response=%v", file.DownloadUrl, resp.StatusCode)
 	}
 
-	err = s.localState.UpdateContent(ctx, pkgName, resp.Body, file.ContentHash, file.Signature)
+	// Package length is required to be able to report download percent.
+	packageLength := -1
+	if contentLength := resp.Header.Get("Content-Length"); contentLength != "" {
+		if length, err := strconv.Atoi(contentLength); err == nil {
+			packageLength = length
+		}
+	}
+	// start the download reporter
+	detailsReporter := newDownloadReporter(s.reporterInterval, packageLength)
+	detailsReporter.report(ctx, s.getDownloadDetailsFn(pkgName))
+	defer detailsReporter.stop()
+
+	tr := io.TeeReader(resp.Body, detailsReporter)
+	err = s.localState.UpdateContent(ctx, pkgName, tr, file.ContentHash, file.Signature)
 	if err != nil {
 		return fmt.Errorf("failed to install/update the package %s downloaded from %s: %v", pkgName, file.DownloadUrl, err)
 	}
 	return nil
+}
+
+func (s *packagesSyncer) getDownloadDetailsFn(pkgName string) func(context.Context, float64, float64) error {
+	return func(ctx context.Context, percent, rate float64) error {
+		status := s.statuses.Packages[pkgName]
+		status.DownloadDetails = &protobufs.PackageDownloadDetails{
+			DownloadPercent:        percent,
+			DownloadBytesPerSecond: rate,
+		}
+		return s.reportStatuses(ctx, true)
+	}
 }
 
 // deleteUnneededLocalPackages deletes local packages that are not

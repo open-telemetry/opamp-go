@@ -1527,6 +1527,11 @@ func TestUpdatePackages(t *testing.T) {
 	errorOnCallback.errorOnCallback = true
 	tests = append(tests, errorOnCallback)
 
+	// Check that the downloading status is sent
+	downloading := createPackageTestCase("download status set", downloadSrv)
+	downloading.expectedStatus.Packages["package1"].Status = protobufs.PackageStatusEnum_PackageStatusEnum_Downloading
+	tests = append(tests, downloading)
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			verifyUpdatePackages(t, test)
