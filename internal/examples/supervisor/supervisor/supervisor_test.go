@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	
+
 	"github.com/stretchr/testify/assert"
 
 	"github.com/open-telemetry/opamp-go/internal"
@@ -51,9 +51,9 @@ func TestNewSupervisor(t *testing.T) {
 server:
   endpoint: ws://127.0.0.1:4320/v1/opamp
 agent:
-  executable: %s/dummy_agent.sh`, tmpDir)), 0644)
+  executable: %s/dummy_agent.sh`, tmpDir)), 0o644)
 
-	os.WriteFile("dummy_agent.sh", []byte("#!/bin/sh\nsleep 9999\n"), 0755)
+	os.WriteFile(tmpDir+"/dummy_agent.sh", []byte("#!/bin/sh\nsleep 9999\n"), 0o755)
 
 	startOpampServer(t)
 
