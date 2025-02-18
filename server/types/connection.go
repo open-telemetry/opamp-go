@@ -18,7 +18,8 @@ type Connection interface {
 	// connections.
 	// Blocks until the message is sent.
 	// Should return as soon as possible if the ctx is cancelled.
-	Send(ctx context.Context, message *protobufs.ServerToAgent) error
+	// Returns the number of bytes written and any error encountered.
+	Send(ctx context.Context, message *protobufs.ServerToAgent) (int, error)
 
 	// Disconnect closes the network connection.
 	// Any blocked Read or Write operations will be unblocked and return errors.

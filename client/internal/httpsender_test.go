@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
@@ -218,7 +220,7 @@ func TestRequestInstanceUidFlagReset(t *testing.T) {
 		})
 
 	// Then the RequestInstanceUid flag stays intact.
-	assert.Equal(t, sender.receiveProcessor.clientSyncedState.flags, protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid)
+	assert.Equal(t, sender.receiveProcessor.(*receivedProcessor).clientSyncedState.flags, protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid)
 
 	// If we process a message that contains a non-nil AgentIdentification that contains a NewInstanceUid.
 	sender.receiveProcessor.ProcessReceivedMessage(ctx,
@@ -227,7 +229,7 @@ func TestRequestInstanceUidFlagReset(t *testing.T) {
 		})
 
 	// Then the flag is reset so we don't request a new instance uid yet again.
-	assert.Equal(t, sender.receiveProcessor.clientSyncedState.flags, protobufs.AgentToServerFlags_AgentToServerFlags_Unspecified)
+	assert.Equal(t, sender.receiveProcessor.(*receivedProcessor).clientSyncedState.flags, protobufs.AgentToServerFlags_AgentToServerFlags_Unspecified)
 	cancel()
 }
 
@@ -353,4 +355,93 @@ func TestPackageUpdatesWithError(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond, "both messages must have been processed successfully")
 
 	cancel()
+}
+
+type fakeReciveProcessor struct {
+}
+
+func (fakeReciveProcessor) ProcessReceivedMessage(context.Context, *protobufs.ServerToAgent) {}
+
+func TestHTTPSendMessageMetrics(t *testing.T) {
+	sendMsg := &protobufs.AgentToServer{
+		InstanceUid:  []byte("abcd"),
+		Capabilities: 2,
+		SequenceNum:  1,
+	}
+
+	recvMsg := &protobufs.ServerToAgent{
+		InstanceUid:  []byte("dcba"),
+		Capabilities: 4,
+	}
+
+	sender := NewHTTPSender(TestLogger{T: t})
+	metrics := types.NewClientMetrics(64)
+	sender.SetMetrics(metrics)
+	sender.receiveProcessor = fakeReciveProcessor{}
+
+	srv := StartMockServer(t)
+	defer srv.Close()
+
+	sender.url = "http://" + srv.Endpoint
+
+	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+		b, _ := proto.Marshal(recvMsg)
+		_, _ = w.Write(b)
+	}
+
+	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		*msg = *sendMsg
+	})
+	sender.callbacks = types.Callbacks{
+		OnConnect: func(ctx context.Context) {
+		},
+		OnConnectFailed: func(ctx context.Context, _ error) {
+		},
+	}
+	resp, err := sender.sendRequestWithRetries(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status := resp.StatusCode; status < 200 || status >= 300 {
+		t.Fatalf("unexpected http status: %d", status)
+	}
+	if got, want := metrics.TxMessages.Read(), int64(1); got != want {
+		t.Errorf("wrong number of messages: got %d, want %d", got, want)
+	}
+	if metrics.TxBytes.Read() == 0 {
+		t.Error("TxBytes not recorded")
+	}
+	txm := metrics.TxMessageInfo.Drain()[0]
+	if got, want := txm.InstanceUID, []byte("abcd"); !cmp.Equal(want, got) {
+		t.Errorf("instance uid does not match: %s", cmp.Diff(want, got))
+	}
+	if got, want := txm.Capabilities, uint64(2); got != want {
+		t.Errorf("incorrect capabilities: got %d, want %d", got, want)
+	}
+	if got, want := txm.SequenceNum, uint64(1); got != want {
+		t.Errorf("incorrect sequence num: got %d, want %d", got, want)
+	}
+	if txm.TxLatency == 0 {
+		t.Error("latency was not measured")
+	}
+
+	sender.receiveResponse(context.Background(), resp)
+
+	if got, want := metrics.RxMessages.Read(), int64(1); got != want {
+		t.Errorf("wrong number of messages: got %d, want %d", got, want)
+	}
+	if metrics.RxBytes.Read() == 0 {
+		t.Error("rx bytes not recorded")
+	}
+
+	rxm := metrics.RxMessageInfo.Drain()[0]
+	if got, want := rxm.InstanceUID, []byte("dcba"); !cmp.Equal(want, got) {
+		t.Errorf("instance uid does not match: %s", cmp.Diff(want, got))
+	}
+	if got, want := rxm.Capabilities, uint64(4); got != want {
+		t.Errorf("incorrect capabilities: got %d, want %d", got, want)
+	}
+	if rxm.RxLatency == 0 {
+		t.Error("latency was not measured")
+	}
 }

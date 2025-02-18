@@ -3,11 +3,14 @@ package internal
 import (
 	"context"
 	"fmt"
+	"io"
+	"net"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -89,7 +92,8 @@ func TestServerToAgentCommand(t *testing.T) {
 			}
 			sender := WSSender{}
 			capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
-			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, &sender, &clientSyncedState, nil, capabilities, new(sync.Mutex))
+			metrics := types.NewClientMetrics(64)
+			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, &sender, &clientSyncedState, nil, capabilities, new(sync.Mutex), metrics)
 			receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 				Command: test.command,
 			})
@@ -143,7 +147,9 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 			},
 		}
 		clientSyncedState := ClientSyncedState{}
-		receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, test.capabilities, new(sync.Mutex))
+		mux := new(sync.Mutex)
+		metrics := types.NewClientMetrics(64)
+		receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, test.capabilities, mux, metrics)
 		receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 			Command: &protobufs.ServerToAgentCommand{
 				Type: protobufs.CommandType_CommandType_Restart,
@@ -152,6 +158,7 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 		})
 		assert.Equal(t, test.calledCommand, calledCommand, test.calledCommandMsg)
 		assert.Equal(t, test.calledOnMessageConfig, calledOnMessageConfig, test.calledOnMessageConfigMsg)
+
 	}
 }
 
@@ -206,7 +213,8 @@ func TestReceiverLoopStop(t *testing.T) {
 	}
 	sender := WSSender{}
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
-	receiver := NewWSReceiver(TestLogger{t}, callbacks, conn, &sender, &clientSyncedState, nil, capabilities, new(sync.Mutex))
+	metrics := types.NewClientMetrics(64)
+	receiver := NewWSReceiver(TestLogger{t}, callbacks, conn, &sender, &clientSyncedState, nil, capabilities, new(sync.Mutex), metrics)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -248,7 +256,8 @@ func TestWSPackageUpdatesInParallel(t *testing.T) {
 	clientSyncedState := &ClientSyncedState{}
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
 	sender := NewSender(&internal.NopLogger{})
-	receiver := NewWSReceiver(&internal.NopLogger{}, callbacks, nil, sender, clientSyncedState, localPackageState, capabilities, &mux)
+	metrics := types.NewClientMetrics(64)
+	receiver := NewWSReceiver(&internal.NopLogger{}, callbacks, nil, sender, clientSyncedState, localPackageState, capabilities, &mux, metrics)
 
 	receiver.processor.ProcessReceivedMessage(ctx,
 		&protobufs.ServerToAgent{
@@ -299,4 +308,103 @@ func TestWSPackageUpdatesInParallel(t *testing.T) {
 	<-doneCh[1]
 
 	cancel()
+}
+
+type wsMsg struct {
+	Message []byte
+	Error   error
+}
+
+type fakeWSConn struct {
+	messages chan wsMsg
+}
+
+func (f fakeWSConn) ReadMessage() (int, []byte, error) {
+	msg := <-f.messages
+	return websocket.BinaryMessage, msg.Message, msg.Error
+}
+
+type fakewsWriteCloser struct {
+	messages chan wsMsg
+}
+
+func (f fakewsWriteCloser) Write(msg []byte) (int, error) {
+	f.messages <- wsMsg{Message: msg}
+	return len(msg), nil
+}
+
+func (f fakewsWriteCloser) Close() error {
+	return nil
+}
+
+func (f fakeWSConn) NextWriter(msgtype int) (io.WriteCloser, error) {
+	return fakewsWriteCloser{messages: f.messages}, nil
+}
+
+func (f fakeWSConn) WriteControl(int, []byte, time.Time) error {
+	return nil
+}
+
+func (f fakeWSConn) Close() error {
+	return nil
+}
+
+func (f fakeWSConn) UnderlyingConn() net.Conn {
+	// shouldn't generally be used by us, may need to become a net.Pipe
+	return nil
+}
+
+func newFakeWSConn() fakeWSConn {
+	return fakeWSConn{
+		messages: make(chan wsMsg, 128),
+	}
+}
+
+func TestReceiveMessageMetrics(t *testing.T) {
+	msg := &protobufs.ServerToAgent{
+		InstanceUid:  []byte("abcd"),
+		Capabilities: 2,
+	}
+
+	serialMsg, err := proto.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	callbacks := types.Callbacks{}
+	callbacks.SetDefaults()
+	clientSyncedState := ClientSyncedState{
+		remoteConfigStatus: &protobufs.RemoteConfigStatus{},
+	}
+	sender := WSSender{}
+	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
+	metrics := types.NewClientMetrics(64)
+	conn := newFakeWSConn()
+	conn.messages <- wsMsg{Message: serialMsg}
+	receiver := NewWSReceiver(TestLogger{t}, callbacks, conn, &sender, &clientSyncedState, nil, capabilities, new(sync.Mutex), metrics)
+	if err := receiver.receiveMessage(new(protobufs.ServerToAgent)); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := metrics.RxMessages.Read(), int64(1); got != want {
+		t.Errorf("bad RxMessages count: got %d, want %d", got, want)
+	}
+	if metrics.RxBytes.Read() == 0 {
+		t.Error("RxBytes not counted")
+	}
+	if metrics.RxErrors.Read() != 0 {
+		t.Error("error counted when there is none")
+	}
+	metadata := metrics.RxMessageInfo.Drain()
+	if got, want := len(metadata), 1; got != want {
+		t.Errorf("unexpected metadata buffer length: got %d, want %d", got, want)
+	}
+	got := metadata[0]
+	want := types.RxMessageInfo{
+		InstanceUID:  []byte("abcd"),
+		Capabilities: 2,
+		Attrs:        types.MessageAttrs(types.RxMessageAttr | types.ServerToAgentMessageAttr | types.WSTransportAttr),
+	}
+	if !cmp.Equal(got, want) {
+		t.Errorf("metadata not equal: %s", cmp.Diff(want, got))
+	}
 }

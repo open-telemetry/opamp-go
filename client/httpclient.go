@@ -37,6 +37,8 @@ func NewHTTP(logger types.Logger) *httpClient {
 
 // Start implements OpAMPClient.Start.
 func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) error {
+	c.sender.SetMetrics(settings.Metrics)
+
 	if err := c.common.PrepareStart(ctx, settings); err != nil {
 		return err
 	}

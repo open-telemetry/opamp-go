@@ -3,6 +3,9 @@ package internal
 import (
 	"encoding/binary"
 	"errors"
+	"io"
+	"net"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -36,15 +39,27 @@ func DecodeWSMessage(bytes []byte, msg proto.Message) error {
 	return nil
 }
 
-func WriteWSMessage(conn *websocket.Conn, msg proto.Message) error {
+// WebsocketConn is an abstraction of a websocket.Conn. It is useful for testing
+// purposes.
+type WebsocketConn interface {
+	ReadMessage() (int, []byte, error)
+	NextWriter(int) (io.WriteCloser, error)
+	WriteControl(int, []byte, time.Time) error
+	Close() error
+	UnderlyingConn() net.Conn
+}
+
+// WriteWSMessage writes a proto.Message to a websocket.Conn. It returns the
+// number of bytes written, and any error that occurs.
+func WriteWSMessage(conn WebsocketConn, msg proto.Message) (int, error) {
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	writer, err := conn.NextWriter(websocket.BinaryMessage)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// Encode header as a varint.
@@ -53,18 +68,18 @@ func WriteWSMessage(conn *websocket.Conn, msg proto.Message) error {
 	hdrBuf = hdrBuf[:n]
 
 	// Write the header bytes.
-	_, err = writer.Write(hdrBuf)
+	hdrBytes, err := writer.Write(hdrBuf)
 	if err != nil {
 		writer.Close()
-		return err
+		return hdrBytes, err
 	}
 
 	// Write the encoded data.
-	_, err = writer.Write(data)
+	dataBytes, err := writer.Write(data)
 	if err != nil {
 		writer.Close()
-		return err
+		return dataBytes + hdrBytes, err
 	}
 
-	return writer.Close()
+	return hdrBytes + dataBytes, writer.Close()
 }

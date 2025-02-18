@@ -10,6 +10,10 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
+type rcvProcessor interface {
+	ProcessReceivedMessage(context.Context, *protobufs.ServerToAgent)
+}
+
 // receivedProcessor handles the processing of messages received from the Server.
 type receivedProcessor struct {
 	logger types.Logger
@@ -41,8 +45,8 @@ func newReceivedProcessor(
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
 	packageSyncMutex *sync.Mutex,
-) receivedProcessor {
-	return receivedProcessor{
+) *receivedProcessor {
+	return &receivedProcessor{
 		logger:                logger,
 		callbacks:             callbacks,
 		sender:                sender,

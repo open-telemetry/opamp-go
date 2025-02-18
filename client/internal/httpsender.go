@@ -30,6 +30,8 @@ const encodingTypeGZip = "gzip"
 type requestWrapper struct {
 	*http.Request
 
+	dataLen    int
+	msg        *protobufs.AgentToServer
 	bodyReader func() io.ReadCloser
 }
 
@@ -62,7 +64,17 @@ type HTTPSender struct {
 	getHeader func() http.Header
 
 	// Processor to handle received messages.
-	receiveProcessor receivedProcessor
+	receiveProcessor rcvProcessor
+
+	metrics *types.ClientMetrics
+}
+
+// SetMetrics is used to set the sender's metrics. This is useful because the
+// metrics object is not available until the StartSettings are available.
+func (s *HTTPSender) SetMetrics(metrics *types.ClientMetrics) {
+	if metrics != nil {
+		s.metrics = metrics
+	}
 }
 
 // NewHTTPSender creates a new Sender that uses HTTP to send messages
@@ -73,6 +85,7 @@ func NewHTTPSender(logger types.Logger) *HTTPSender {
 		logger:            logger,
 		client:            http.DefaultClient,
 		pollingIntervalMs: defaultPollingIntervalMs,
+		metrics:           types.NewClientMetrics(1),
 	}
 	// initialize the headers with no additional headers
 	h.SetRequestHeader(nil, nil)
@@ -167,6 +180,15 @@ func (h *HTTPSender) makeOneRequestRoundtrip(ctx context.Context) {
 	h.receiveResponse(ctx, resp)
 }
 
+func httpTxMessageInfo(req *requestWrapper) types.TxMessageInfo {
+	return types.TxMessageInfo{
+		InstanceUID:  req.msg.InstanceUid,
+		Capabilities: req.msg.Capabilities,
+		SequenceNum:  req.msg.SequenceNum,
+		Attrs:        httpMessageAttrs(txMessageAttrs(req.msg)),
+	}
+}
+
 func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response, error) {
 	req, err := h.prepareRequest(ctx)
 	if err != nil {
@@ -197,11 +219,18 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 		case <-timer.C:
 			{
 				req.rewind(ctx)
+				startSend := time.Now()
 				resp, err := h.client.Do(req.Request)
+				latency := time.Since(startSend)
+				h.metrics.TxBytes.Add(int64(req.dataLen))
+				h.metrics.TxMessages.Add(1)
 				if err == nil {
 					switch resp.StatusCode {
 					case http.StatusOK:
 						// We consider it connected if we receive 200 status from the Server.
+						messageInfo := httpTxMessageInfo(req)
+						messageInfo.TxLatency = latency
+						h.metrics.TxMessageInfo.Insert(messageInfo)
 						h.callbacks.OnConnect(ctx)
 						return resp, nil
 
@@ -210,6 +239,7 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 						err = fmt.Errorf("server response code=%d", resp.StatusCode)
 
 					default:
+						h.metrics.TxErrors.Add(1)
 						return nil, fmt.Errorf("invalid response from server: %d", resp.StatusCode)
 					}
 				} else if errors.Is(err, context.Canceled) {
@@ -256,7 +286,7 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 	if err != nil {
 		return nil, err
 	}
-	req := requestWrapper{Request: r}
+	req := requestWrapper{Request: r, dataLen: len(data), msg: msgToSend}
 
 	if h.compressionEnabled {
 		var buf bytes.Buffer
@@ -269,8 +299,11 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 			h.logger.Errorf(ctx, "Failed to close the writer: %v", err)
 			return nil, err
 		}
-		req.bodyReader = bodyReader(buf.Bytes())
+		bufBytes := buf.Bytes()
+		req.dataLen = len(bufBytes)
+		req.bodyReader = bodyReader(bufBytes)
 	} else {
+		req.dataLen = len(data)
 		req.bodyReader = bodyReader(data)
 	}
 	if err != nil {
@@ -281,20 +314,37 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 	return &req, nil
 }
 
+func httpMessageAttrs(attrs types.MessageAttrs) types.MessageAttrs {
+	attrs.Set(types.HTTPTransportAttr)
+	return attrs
+}
+
 func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
+	startReceive := time.Now()
 	msgBytes, err := io.ReadAll(resp.Body)
+	h.metrics.RxBytes.Add(int64(len(msgBytes)))
 	if err != nil {
+		h.metrics.RxErrors.Add(1)
 		_ = resp.Body.Close()
 		h.logger.Errorf(ctx, "cannot read response body: %v", err)
 		return
 	}
 	_ = resp.Body.Close()
+	latency := time.Since(startReceive)
+	h.metrics.RxMessages.Add(1)
 
 	var response protobufs.ServerToAgent
 	if err := proto.Unmarshal(msgBytes, &response); err != nil {
 		h.logger.Errorf(ctx, "cannot unmarshal response: %v", err)
 		return
 	}
+
+	h.metrics.RxMessageInfo.Insert(types.RxMessageInfo{
+		InstanceUID:  response.InstanceUid,
+		Capabilities: response.Capabilities,
+		Attrs:        httpMessageAttrs(rxMessageAttrs(&response)),
+		RxLatency:    latency,
+	})
 
 	h.receiveProcessor.ProcessReceivedMessage(ctx, &response)
 }

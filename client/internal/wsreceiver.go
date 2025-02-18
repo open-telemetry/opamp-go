@@ -13,14 +13,16 @@ import (
 
 // wsReceiver implements the WebSocket client's receiving portion of OpAMP protocol.
 type wsReceiver struct {
-	conn      *websocket.Conn
+	conn      internal.WebsocketConn
 	logger    types.Logger
 	sender    *WSSender
 	callbacks types.Callbacks
-	processor receivedProcessor
+	processor rcvProcessor
 
 	// Indicates that the receiver has fully stopped.
 	stopped chan struct{}
+
+	metrics *types.ClientMetrics
 }
 
 // NewWSReceiver creates a new Receiver that uses WebSocket to receive
@@ -28,12 +30,13 @@ type wsReceiver struct {
 func NewWSReceiver(
 	logger types.Logger,
 	callbacks types.Callbacks,
-	conn *websocket.Conn,
+	conn internal.WebsocketConn,
 	sender *WSSender,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
 	packageSyncMutex *sync.Mutex,
+	metrics *types.ClientMetrics,
 ) *wsReceiver {
 	w := &wsReceiver{
 		conn:      conn,
@@ -42,6 +45,7 @@ func NewWSReceiver(
 		callbacks: callbacks,
 		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider, capabilities, packageSyncMutex),
 		stopped:   make(chan struct{}),
+		metrics:   metrics,
 	}
 
 	return w
@@ -97,14 +101,31 @@ func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 	}
 }
 
+func rxMessageAttrs(msg *protobufs.ServerToAgent) types.MessageAttrs {
+	attrs := types.MessageAttrs(types.RxMessageAttr | types.ServerToAgentMessageAttr)
+	if msg.ErrorResponse != nil {
+		attrs.Set(types.ErrorMessageAttr)
+	}
+	return attrs
+}
+
 func (r *wsReceiver) receiveMessage(msg *protobufs.ServerToAgent) error {
 	_, bytes, err := r.conn.ReadMessage()
+	r.metrics.RxBytes.Add(int64(len(bytes)))
 	if err != nil {
+		r.metrics.RxErrors.Add(1)
 		return err
 	}
+	r.metrics.RxMessages.Add(1)
 	err = internal.DecodeWSMessage(bytes, msg)
 	if err != nil {
+		r.metrics.RxErrors.Add(1)
 		return fmt.Errorf("cannot decode received message: %w", err)
 	}
-	return err
+	r.metrics.RxMessageInfo.Insert(types.RxMessageInfo{
+		InstanceUID:  msg.InstanceUid,
+		Capabilities: msg.Capabilities,
+		Attrs:        wsMessageAttrs(rxMessageAttrs(msg)),
+	})
+	return nil
 }

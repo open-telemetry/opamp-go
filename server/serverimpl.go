@@ -260,7 +260,7 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			}
 			sentCustomCapabilities = true
 		}
-		err = agentConn.Send(msgContext, response)
+		_, err = agentConn.Send(msgContext, response)
 		if err != nil {
 			s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
 		}

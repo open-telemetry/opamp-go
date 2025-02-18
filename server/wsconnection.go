@@ -5,8 +5,6 @@ import (
 	"net"
 	"sync"
 
-	"github.com/gorilla/websocket"
-
 	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server/types"
@@ -18,7 +16,7 @@ type wsConnection struct {
 	// so ensure that we only have a single operation in progress at a time.
 	// For more: https://pkg.go.dev/github.com/gorilla/websocket#hdr-Concurrency
 	connMutex *sync.Mutex
-	wsConn    *websocket.Conn
+	wsConn    internal.WebsocketConn
 }
 
 var _ types.Connection = (*wsConnection)(nil)
@@ -27,7 +25,7 @@ func (c wsConnection) Connection() net.Conn {
 	return c.wsConn.UnderlyingConn()
 }
 
-func (c wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent) error {
+func (c wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent) (int, error) {
 	c.connMutex.Lock()
 	defer c.connMutex.Unlock()
 
