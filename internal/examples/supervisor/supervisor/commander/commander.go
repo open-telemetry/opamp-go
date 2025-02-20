@@ -27,7 +27,7 @@ type Commander struct {
 	running int64
 
 	// Process should not be started while being stopped.
-	isStoppingMutex sync.RWMutex
+	startStopMutex sync.RWMutex
 }
 
 func NewCommander(logger types.Logger, cfg *config.Agent, args ...string) (*Commander, error) {
