@@ -129,6 +129,7 @@ func (s *Supervisor) loadConfig() error {
 }
 
 func (s *Supervisor) startOpAMP() error {
+
 	s.opampClient = client.NewWebSocket(s.logger)
 
 	settings := types.StartSettings{
@@ -218,6 +219,7 @@ func (s *Supervisor) createAgentDescription() *protobufs.AgentDescription {
 }
 
 func (s *Supervisor) composeExtraLocalConfig() string {
+
 	return fmt.Sprintf(`
 service:
   telemetry:
@@ -300,7 +302,7 @@ receivers:
         - job_name: 'otel-collector'
           scrape_interval: 10s
           static_configs:
-            - targets: ['0.0.0.0:8888']
+            - targets: ['0.0.0.0:8888']  
 exporters:
   otlphttp/own_metrics:
     metrics_endpoint: %s
@@ -329,7 +331,7 @@ service:
 // 1) the remote config from OpAMP Server, 2) the own metrics config section,
 // 3) the local override config that is hard-coded in the Supervisor.
 func (s *Supervisor) composeEffectiveConfig(ctx context.Context, config *protobufs.AgentRemoteConfig) (configChanged bool, err error) {
-	k := koanf.New(".")
+	var k = koanf.New(".")
 
 	// Begin with empty config. We will merge received configs on top of it.
 	if err := k.Load(rawbytes.Provider([]byte{}), yaml.Parser()); err != nil {
@@ -354,7 +356,7 @@ func (s *Supervisor) composeEffectiveConfig(ctx context.Context, config *protobu
 	// Merge received configs.
 	for _, name := range names {
 		item := config.Config.ConfigMap[name]
-		k2 := koanf.New(".")
+		var k2 = koanf.New(".")
 		err := k2.Load(rawbytes.Provider(item.Body), yaml.Parser())
 		if err != nil {
 			return false, fmt.Errorf("cannot parse config named %s: %v", name, err)
@@ -399,6 +401,7 @@ func (s *Supervisor) composeEffectiveConfig(ctx context.Context, config *protobu
 // Recalculate the Agent's effective config and if the config changes signal to the
 // background goroutine that the config needs to be applied to the Agent.
 func (s *Supervisor) recalcEffectiveConfig(ctx context.Context) (configChanged bool, err error) {
+
 	configChanged, err = s.composeEffectiveConfig(ctx, s.remoteConfig)
 	if err != nil {
 		s.logger.Errorf(ctx, "Error composing effective config. Ignoring received config: %v", err)
