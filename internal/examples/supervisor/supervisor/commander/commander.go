@@ -26,8 +26,7 @@ type Commander struct {
 	waitCh  chan struct{}
 	running int64
 
-	// True when stopping is in progress.
-	isStoppingFlag  bool
+	// Process should not be started while being stopped.
 	isStoppingMutex sync.RWMutex
 }
 
@@ -48,10 +47,6 @@ func NewCommander(logger types.Logger, cfg *config.Agent, args ...string) (*Comm
 func (c *Commander) Start(ctx context.Context) error {
 	c.isStoppingMutex.Lock()
 	defer c.isStoppingMutex.Unlock()
-
-	if c.isStoppingFlag {
-		return nil
-	}
 
 	c.logger.Debugf(ctx, "Starting agent %s", c.cfg.Executable)
 
@@ -129,8 +124,7 @@ func (c *Commander) IsRunning() bool {
 // Returns after the process is terminated.
 func (c *Commander) Stop(ctx context.Context) error {
 	c.isStoppingMutex.Lock()
-	c.isStoppingFlag = true
-	c.isStoppingMutex.Unlock()
+	defer c.isStoppingMutex.Unlock()
 
 	if c.cmd == nil || c.cmd.Process == nil {
 		// Not started, nothing to do.
