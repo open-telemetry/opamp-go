@@ -62,6 +62,9 @@ type ConnectionCallbacks struct {
 
 	// OnConnectionClose is called when the OpAMP connection is closed.
 	OnConnectionClose func(conn Connection)
+
+	// OnReadMessageError is called when an error occurs while reading or deserializing a message.
+	OnReadMessageError func(conn Connection, mt int, msgByte []byte, err error)
 }
 
 func defaultOnConnected(ctx context.Context, conn Connection) {}
@@ -77,6 +80,8 @@ func defaultOnMessage(
 
 func defaultOnConnectionClose(conn Connection) {}
 
+func defaultOnReadMessageError(conn Connection, mt int, msgByte []byte, err error) {}
+
 func (c *ConnectionCallbacks) SetDefaults() {
 	if c.OnConnected == nil {
 		c.OnConnected = defaultOnConnected
@@ -88,5 +93,9 @@ func (c *ConnectionCallbacks) SetDefaults() {
 
 	if c.OnConnectionClose == nil {
 		c.OnConnectionClose = defaultOnConnectionClose
+	}
+
+	if c.OnReadMessageError == nil {
+		c.OnReadMessageError = defaultOnReadMessageError
 	}
 }

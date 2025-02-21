@@ -315,6 +315,52 @@ func TestServerReceiveSendMessage(t *testing.T) {
 	assert.EqualValues(t, settings.CustomCapabilities, response.CustomCapabilities.Capabilities)
 }
 
+func TestServerReceiveSendErrorMessage(t *testing.T) {
+	var rcvMsg atomic.Value
+	type ErrorInfo struct {
+		mt      int
+		msgByte []byte
+		err     error
+	}
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnReadMessageError: func(conn types.Connection, mt int, msgByte []byte, err error) {
+					rcvMsg.Store(ErrorInfo{
+						mt:      mt,
+						msgByte: msgByte,
+						err:     err,
+					})
+				},
+			}}
+		},
+	}
+
+	// Start a Server.
+	settings := &StartSettings{Settings: Settings{
+		Callbacks:          callbacks,
+		CustomCapabilities: []string{"local.test.capability"},
+	}}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	// Connect using a WebSocket client.
+	conn, _, _ := dialClient(settings)
+	require.NotNil(t, conn)
+	defer conn.Close()
+
+	// Send an invalid message to the Server. This should result in calling OnReadMessageError().
+	err := conn.WriteMessage(websocket.TextMessage, []byte("abc"))
+	require.NoError(t, err)
+
+	// Wait until Server receives the message.
+	eventually(t, func() bool { return rcvMsg.Load() != nil })
+	errInfo := rcvMsg.Load().(ErrorInfo)
+	assert.EqualValues(t, websocket.TextMessage, errInfo.mt)
+	assert.EqualValues(t, []byte("abc"), errInfo.msgByte)
+	assert.NotNil(t, errInfo.err)
+}
+
 func TestServerReceiveSendMessageWithCompression(t *testing.T) {
 	// Use highly compressible config body.
 	uncompressedCfg := []byte(strings.Repeat("test", 10000))
@@ -620,7 +666,6 @@ func TestServerAttachSendMessagePlainHTTP(t *testing.T) {
 }
 
 func TestServerHonoursClientRequestContentEncoding(t *testing.T) {
-
 	hc := http.Client{}
 	var rcvMsg atomic.Value
 	var onConnectedCalled, onCloseCalled int32
@@ -698,7 +743,6 @@ func TestServerHonoursClientRequestContentEncoding(t *testing.T) {
 }
 
 func TestServerHonoursAcceptEncoding(t *testing.T) {
-
 	hc := http.Client{}
 	var rcvMsg atomic.Value
 	var onConnectedCalled, onCloseCalled int32
@@ -985,7 +1029,6 @@ func BenchmarkSendToClient(b *testing.B) {
 	}
 	srv := New(&sharedinternal.NopLogger{})
 	err := srv.Start(*settings)
-
 	if err != nil {
 		b.Error(err)
 	}
@@ -1017,7 +1060,6 @@ func BenchmarkSendToClient(b *testing.B) {
 
 	for _, conn := range serverConnections {
 		err := conn.Send(context.Background(), &protobufs.ServerToAgent{})
-
 		if err != nil {
 			b.Error(err)
 		}
@@ -1026,5 +1068,4 @@ func BenchmarkSendToClient(b *testing.B) {
 	for _, conn := range clientConnections {
 		conn.Close()
 	}
-
 }

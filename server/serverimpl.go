@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -226,27 +227,39 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 	// Loop until fail to read from the WebSocket connection.
 	for {
 		msgContext := context.Background()
+		request := protobufs.AgentToServer{}
+
 		// Block until the next message can be read.
 		mt, msgBytes, err := wsConn.ReadMessage()
+		isBreak, err := func() (bool, error) {
+			if err != nil {
+				if !websocket.IsUnexpectedCloseError(err) {
+					s.logger.Errorf(msgContext, "Cannot read a message from WebSocket: %v", err)
+					return true, err
+				}
+				// This is a normal closing of the WebSocket connection.
+				s.logger.Debugf(msgContext, "Agent disconnected: %v", err)
+				return true, err
+			}
+			if mt != websocket.BinaryMessage {
+				err = fmt.Errorf("unexpected message type: %v, must be binary message", mt)
+				s.logger.Errorf(msgContext, "Cannot process a message from WebSocket: %v", err)
+				return false, err
+			}
+
+			// Decode WebSocket message as a Protobuf message.
+			err = internal.DecodeWSMessage(msgBytes, &request)
+			if err != nil {
+				s.logger.Errorf(msgContext, "Cannot decode message from WebSocket: %v", err)
+				return false, err
+			}
+			return false, nil
+		}()
 		if err != nil {
-			if !websocket.IsUnexpectedCloseError(err) {
-				s.logger.Errorf(msgContext, "Cannot read a message from WebSocket: %v", err)
+			connectionCallbacks.OnReadMessageError(agentConn, mt, msgBytes, err)
+			if isBreak {
 				break
 			}
-			// This is a normal closing of the WebSocket connection.
-			s.logger.Debugf(msgContext, "Agent disconnected: %v", err)
-			break
-		}
-		if mt != websocket.BinaryMessage {
-			s.logger.Errorf(msgContext, "Received unexpected message type from WebSocket: %v", mt)
-			continue
-		}
-
-		// Decode WebSocket message as a Protobuf message.
-		var request protobufs.AgentToServer
-		err = internal.DecodeWSMessage(msgBytes, &request)
-		if err != nil {
-			s.logger.Errorf(msgContext, "Cannot decode message from WebSocket: %v", err)
 			continue
 		}
 
@@ -366,7 +379,6 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 		w.Header().Set(headerContentEncoding, contentEncodingGzip)
 	}
 	_, err = w.Write(bodyBytes)
-
 	if err != nil {
 		s.logger.Debugf(req.Context(), "Cannot send HTTP response: %v", err)
 	}
