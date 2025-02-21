@@ -1439,10 +1439,16 @@ const packageFileURL = "/validfile.pkg"
 
 var packageFileContent = []byte("Package File Content")
 
+var optionalAuthHeaders = protobufs.Header{Key: "Authorization", Value: "Basic YWxhZGRpbjpvcGVuc2VzYW1l"}
+
 func createDownloadSrv(t *testing.T) *httptest.Server {
 	m := http.NewServeMux()
 	m.HandleFunc(packageFileURL,
 		func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get(optionalAuthHeaders.GetKey()) != "" {
+				assert.Equal(t, r.Header.Get(optionalAuthHeaders.GetKey()), optionalAuthHeaders.GetValue())
+			}
+
 			w.WriteHeader(http.StatusOK)
 			_, err := w.Write(packageFileContent)
 			assert.NoError(t, err)
@@ -1526,6 +1532,11 @@ func TestUpdatePackages(t *testing.T) {
 	errorOnCallback.expectedError = packageUpdateErrorMsg
 	errorOnCallback.errorOnCallback = true
 	tests = append(tests, errorOnCallback)
+
+	// A case where we send optional headers
+	withHeaders := createPackageTestCase("with optional HTTP headers", downloadSrv)
+	withHeaders.available.Packages["package1"].File.Headers = &protobufs.Headers{Headers: []*protobufs.Header{&optionalAuthHeaders}}
+	tests = append(tests, withHeaders)
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
