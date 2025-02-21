@@ -280,7 +280,7 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 		return fmt.Errorf("cannot download file from %s: %v", file.DownloadUrl, err)
 	}
 
-	if file.Headers != nil && len(file.Headers.Headers) > 0 {
+	if file.Headers != nil {
 		for _, h := range file.Headers.Headers {
 			req.Header.Add(h.GetKey(), h.GetValue())
 		}
