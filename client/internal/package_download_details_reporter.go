@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync/atomic"
 	"time"
+
+	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
 const downloadReporterDefaultInterval = time.Second * 10
@@ -38,7 +40,7 @@ func (p *downloadReporter) Write(b []byte) (int, error) {
 }
 
 // report periodically calls the passed function to with the download percent and rate to update the status of a package.
-func (p *downloadReporter) report(ctx context.Context, updateFn func(context.Context, float, float) error) {
+func (p *downloadReporter) report(ctx context.Context, updateFn func(context.Context, protobufs.PackageDownloadDetails) error) {
 	go func() {
 		ticker := time.NewTicker(p.interval)
 		defer ticker.Stop()
@@ -56,7 +58,10 @@ func (p *downloadReporter) report(ctx context.Context, updateFn func(context.Con
 				if p.packageLength > 0 {
 					downloadPercent = downloaded / p.packageLength * 100
 				}
-				_ = updateFn(ctx, downloadPercent, bps)
+				_ = updateFn(ctx, protobufs.PackageDownloadDetails{
+					DownloadPercent:        downloadPercent,
+					DownloadBytesPerSecond: bps,
+				})
 			}
 		}
 	}()
