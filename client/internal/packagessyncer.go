@@ -315,7 +315,7 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 	}
 	// start the download reporter
 	detailsReporter := newDownloadReporter(s.reporterInterval, packageLength)
-	detailsReporter.report(ctx, s.getDownloadDetailsFn(pkgName))
+	detailsReporter.report(ctx, s.updateDownloadDetails(pkgName))
 	defer detailsReporter.stop()
 
 	tr := io.TeeReader(resp.Body, detailsReporter)
@@ -326,13 +326,10 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 	return nil
 }
 
-func (s *packagesSyncer) getDownloadDetailsFn(pkgName string) func(context.Context, float64, float64) error {
-	return func(ctx context.Context, percent, rate float64) error {
+func (s *packagesSyncer) updateDownloadDetails(pkgName string) func(context.Context, protobufs.PackageDownloadDetails) error {
+	return func(ctx context.Context, details protobufs.PackageDownloadDetails) error {
 		status := s.statuses.Packages[pkgName]
-		status.DownloadDetails = &protobufs.PackageDownloadDetails{
-			DownloadPercent:        percent,
-			DownloadBytesPerSecond: rate,
-		}
+		status.DownloadDetails = &details
 		return s.reportStatuses(ctx, true)
 	}
 }
