@@ -111,7 +111,7 @@ func (l *InMemPackagesStore) LastReportedStatuses() (*protobufs.PackageStatuses,
 
 func (l *InMemPackagesStore) SetLastReportedStatuses(statuses *protobufs.PackageStatuses) error {
 	l.statusLock.Lock()
+	defer l.statusLock.Unlock()
 	l.lastReportedStatuses = statuses
-	l.statusLock.Unlock()
 	return nil
 }
