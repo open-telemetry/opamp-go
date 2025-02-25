@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1098,4 +1099,86 @@ func BenchmarkSendToClient(b *testing.B) {
 	for _, conn := range clientConnections {
 		conn.Close()
 	}
+}
+
+func TestServerNotResponse(t *testing.T) {
+	var (
+		rcvMsg  atomic.Value
+		srvConn atomic.Value
+	)
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					srvConn.Store(conn.Connection())
+					// Remember received message.
+					rcvMsg.Store(message)
+					return nil
+				},
+			}}
+		},
+	}
+
+	// Start a Server.
+	settings := &StartSettings{Settings: Settings{
+		Callbacks: callbacks,
+	}}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	// Test HTTP Request
+	// Send a message to the Server.
+	sendMsg := protobufs.AgentToServer{
+		InstanceUid: testInstanceUid,
+	}
+	b, err := proto.Marshal(&sendMsg)
+	require.NoError(t, err)
+	resp, err := http.Post("http://"+settings.ListenEndpoint+settings.ListenPath, contentTypeProtobuf, bytes.NewReader(b))
+	require.NoError(t, err)
+
+	// Wait until Server receives the message.
+	eventually(t, func() bool { return rcvMsg.Load() != nil })
+
+	// Verify the received message is what was sent.
+	assert.True(t, proto.Equal(rcvMsg.Load().(proto.Message), &sendMsg))
+
+	// Read Server's response.
+	b, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	assert.EqualValues(t, http.StatusOK, resp.StatusCode)
+	assert.EqualValues(t, contentTypeProtobuf, resp.Header.Get(headerContentType))
+
+	// Decode the response.
+	var response protobufs.ServerToAgent
+	err = proto.Unmarshal(b, &response)
+	require.NoError(t, err)
+
+	// Verify the response.
+	assert.EqualValues(t, sendMsg.InstanceUid, response.InstanceUid)
+
+	// Test WebSocket
+	// Connect using a WebSocket client.
+	conn, _, _ := dialClient(settings)
+	require.NotNil(t, conn)
+	defer conn.Close()
+
+	testInstanceUid2 := []byte{9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6}
+	// Send a message to the Server.
+	sendMsg = protobufs.AgentToServer{
+		InstanceUid: testInstanceUid2,
+	}
+	bytes, err := proto.Marshal(&sendMsg)
+	require.NoError(t, err)
+	err = conn.WriteMessage(websocket.BinaryMessage, bytes)
+	require.NoError(t, err)
+
+	// Wait until Server receives the message.
+	eventually(t, func() bool { return rcvMsg.Load() != nil })
+	assert.True(t, proto.Equal(rcvMsg.Load().(proto.Message), &sendMsg))
+	require.NoError(t, srvConn.Load().(net.Conn).Close())
+
+	// Read Server's response.
+	_, _, err = conn.ReadMessage()
+	require.True(t, websocket.IsCloseError(err, websocket.CloseAbnormalClosure))
 }
