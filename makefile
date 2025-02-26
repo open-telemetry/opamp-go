@@ -31,7 +31,7 @@ test:
 	cd internal/examples && $(GOCMD) test -race ./...
 
 .PHONY: test-with-cover
-test-with-cover:
+test-with-cover: $(GOACC)
 	$(GOACC) --output=coverage.out --ignore=protobufs ./...
 
 show-coverage: test-with-cover
@@ -74,6 +74,7 @@ gen-proto:
 
 	cp -R internal/proto/github.com/open-telemetry/opamp-go/protobufs/* protobufs/
 	rm -rf internal/proto/github.com/
+	$(MAKE) fmt
 
 .PHONY: gomoddownload
 gomoddownload:
