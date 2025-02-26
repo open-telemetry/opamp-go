@@ -65,6 +65,10 @@ jobs:
         with:
           path: /home/runner/.cache/go-build
           key: go-build-unittest-${{ runner.os }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
+      - name: Go fmt
+        run: |
+          make fmt
+          git diff --exit-code || (echo 'Code base is not Go formatted, please run "make fmt" and commit the changes in this PR.' && exit 1)
       - name: Build and Test
         run: make
 
