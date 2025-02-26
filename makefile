@@ -97,16 +97,7 @@ tidy:
 	cd $(TOOLS_MOD_DIR) && rm -fr go.sum && $(GOCMD) mod tidy
 
 .PHONY: fmt
-fmt: common/gofmt common/goimports common/gofumpt
-
-.PHONY: common/gofmt
-common/gofmt:
+fmt: $(GOIMPORTS) $(GOFUMPT)
 	gofmt -w -s ./
-
-.PHONY: common/goimports
-common/goimports: $(GOIMPORTS)
-	$(GOIMPORTS) -w  -local go.opentelemetry.io/collector ./
-
-.PHONY: common/gofumpt
-common/gofumpt: $(GOFUMPT)
+	$(GOIMPORTS) -w  ./
 	$(GOFUMPT) -l -w .
