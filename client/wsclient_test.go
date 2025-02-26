@@ -194,11 +194,9 @@ func TestDisconnectWSByServer(t *testing.T) {
 }
 
 func TestVerifyWSCompress(t *testing.T) {
-
 	tests := []bool{false, true}
 	for _, withCompression := range tests {
 		t.Run(fmt.Sprintf("%v", withCompression), func(t *testing.T) {
-
 			// Start a Server.
 			srv := internal.StartMockServer(t)
 			srv.EnableExpectMode()

@@ -20,16 +20,16 @@ import (
 	serverTypes "github.com/open-telemetry/opamp-go/server/types"
 )
 
-var (
-	errAlreadyStarted = errors.New("already started")
-)
+var errAlreadyStarted = errors.New("already started")
 
-const defaultOpAMPPath = "/v1/opamp"
-const headerContentType = "Content-Type"
-const headerContentEncoding = "Content-Encoding"
-const headerAcceptEncoding = "Accept-Encoding"
-const contentEncodingGzip = "gzip"
-const contentTypeProtobuf = "application/x-protobuf"
+const (
+	defaultOpAMPPath      = "/v1/opamp"
+	headerContentType     = "Content-Type"
+	headerContentEncoding = "Content-Encoding"
+	headerAcceptEncoding  = "Accept-Encoding"
+	contentEncodingGzip   = "gzip"
+	contentTypeProtobuf   = "application/x-protobuf"
+)
 
 type server struct {
 	logger   types.Logger

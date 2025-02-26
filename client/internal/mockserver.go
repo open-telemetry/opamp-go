@@ -34,8 +34,10 @@ type MockServer struct {
 	enableCompression bool
 }
 
-const headerContentType = "Content-Type"
-const contentTypeProtobuf = "application/x-protobuf"
+const (
+	headerContentType   = "Content-Type"
+	contentTypeProtobuf = "application/x-protobuf"
+)
 
 func newMockServer(t *testing.T) (*MockServer, *http.ServeMux) {
 	srv := &MockServer{
@@ -136,7 +138,7 @@ func (m *MockServer) EnableCompression() {
 }
 
 func (m *MockServer) handleWebSocket(t *testing.T, w http.ResponseWriter, r *http.Request) {
-	var upgrader = websocket.Upgrader{
+	upgrader := websocket.Upgrader{
 		EnableCompression: m.enableCompression,
 	}
 
