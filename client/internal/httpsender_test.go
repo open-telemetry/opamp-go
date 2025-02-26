@@ -21,7 +21,6 @@ import (
 )
 
 func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
-
 	var connectionAttempts int64
 	srv := StartMockServer(t)
 	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +97,6 @@ func TestAddTLSConfig(t *testing.T) {
 }
 
 func GenerateCertificate() (tls.Certificate, error) {
-
 	certPem := []byte(`-----BEGIN CERTIFICATE-----
 MIIBhTCCASugAwIBAgIQIRi6zePL6mKjOipn+dNuaTAKBggqhkjOPQQDAjASMRAw
 DgYDVQQKEwdBY21lIENvMB4XDTE3MTAyMDE5NDMwNloXDTE4MTAyMDE5NDMwNlow
@@ -126,7 +124,6 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 }
 
 func TestHTTPSenderRetryForFailedRequests(t *testing.T) {
-
 	srv, m := newMockServer(t)
 	address := testhelpers.GetAvailableLocalAddress()
 	var connectionAttempts int64

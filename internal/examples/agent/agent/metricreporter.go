@@ -48,7 +48,6 @@ func NewMetricReporter(
 	agentVersion string,
 	instanceId uuid.UUID,
 ) (*MetricReporter, error) {
-
 	// Check the destination credentials to make sure they look like a valid OTLP/HTTP
 	// destination.
 
@@ -168,7 +167,6 @@ func (reporter *MetricReporter) processMemoryPhysicalFunc(ctx context.Context, r
 }
 
 func (reporter *MetricReporter) sendMetrics() {
-
 	// Collect metrics every 5 seconds.
 	t := time.NewTicker(time.Second * 5)
 	ticks := int64(0)

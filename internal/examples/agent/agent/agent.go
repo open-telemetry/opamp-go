@@ -223,7 +223,7 @@ func (agent *Agent) updateAgentIdentity(ctx context.Context, instanceId uuid.UUI
 }
 
 func (agent *Agent) loadLocalConfig() {
-	var k = koanf.New(".")
+	k := koanf.New(".")
 	_ = k.Load(rawbytes.Provider([]byte(localConfig)), yaml.Parser())
 
 	effectiveConfigBytes, err := k.Marshal(yaml.Parser())
@@ -291,7 +291,7 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 	agent.logger.Debugf(context.Background(), "Received remote config from server, hash=%x.", config.ConfigHash)
 
 	// Begin with local config. We will later merge received configs on top of it.
-	var k = koanf.New(".")
+	k := koanf.New(".")
 	if err := k.Load(rawbytes.Provider([]byte(localConfig)), yaml.Parser()); err != nil {
 		return false, err
 	}
@@ -322,7 +322,7 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 
 	// Merge received configs.
 	for _, item := range orderedConfigs {
-		var k2 = koanf.New(".")
+		k2 := koanf.New(".")
 		err := k2.Load(rawbytes.Provider(item.file.Body), yaml.Parser())
 		if err != nil {
 			return false, fmt.Errorf("cannot parse config named %s: %v", item.name, err)

@@ -41,7 +41,6 @@ const (
 )
 
 func TestServerToAgentCommand(t *testing.T) {
-
 	tests := []struct {
 		command *protobufs.ServerToAgentCommand
 		action  commandAction
@@ -188,7 +187,6 @@ func TestDecodeMessage(t *testing.T) {
 }
 
 func TestReceiverLoopStop(t *testing.T) {
-
 	srv := StartMockServer(t)
 
 	conn, _, err := websocket.DefaultDialer.DialContext(
