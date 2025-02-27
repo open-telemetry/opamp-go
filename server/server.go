@@ -73,8 +73,9 @@ type OpAMPServer interface {
 	// accept connections.
 	Start(settings StartSettings) error
 
-	// Stop accepting new connections and close all current connections. This should
-	// block until all connections are closed.
+	// Stop accepting new connections and close all current connections.
+	// This operation should block until both the server socket and all
+	// connections have been closed.
 	Stop(ctx context.Context) error
 
 	// Addr returns the network address Server is listening on. Nil if not started.

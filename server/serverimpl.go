@@ -40,7 +40,8 @@ type server struct {
 
 	// The listening HTTP Server after successful Start() call. Nil if Start()
 	// is not called or was not successful.
-	httpServer *http.Server
+	httpServer        *http.Server
+	httpServerServeWg *sync.WaitGroup
 
 	// The network address Server is listening on. Nil if not started.
 	addr net.Addr
@@ -109,6 +110,9 @@ func (s *server) Start(settings StartSettings) error {
 		ConnContext: contextWithConn,
 	}
 	s.httpServer = hs
+	httpServerServeWg := sync.WaitGroup{}
+	httpServerServeWg.Add(1)
+	s.httpServerServeWg = &httpServerServeWg
 
 	listenAddr := s.httpServer.Addr
 
@@ -119,7 +123,10 @@ func (s *server) Start(settings StartSettings) error {
 		}
 		err = s.startHttpServer(
 			listenAddr,
-			func(l net.Listener) error { return hs.ServeTLS(l, "", "") },
+			func(l net.Listener) error {
+				defer httpServerServeWg.Done()
+				return hs.ServeTLS(l, "", "")
+			},
 		)
 	} else {
 		if listenAddr == "" {
@@ -127,7 +134,10 @@ func (s *server) Start(settings StartSettings) error {
 		}
 		err = s.startHttpServer(
 			listenAddr,
-			func(l net.Listener) error { return hs.Serve(l) },
+			func(l net.Listener) error {
+				defer httpServerServeWg.Done()
+				return hs.Serve(l)
+			},
 		)
 	}
 	return err
@@ -160,7 +170,16 @@ func (s *server) Stop(ctx context.Context) error {
 		defer func() { s.httpServer = nil }()
 		// This stops accepting new connections. TODO: close existing
 		// connections and wait them to be terminated.
-		return s.httpServer.Shutdown(ctx)
+		err := s.httpServer.Shutdown(ctx)
+		if err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			s.httpServerServeWg.Wait()
+		}
 	}
 	return nil
 }
