@@ -3,6 +3,8 @@ package internal
 import (
 	"context"
 	"io"
+	"maps"
+	"sync"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -10,12 +12,14 @@ import (
 
 // InMemPackagesStore is a package store used for testing. Keeps the packages in memory.
 type InMemPackagesStore struct {
-	allPackagesHash      []byte
-	pkgState             map[string]types.PackageState
-	fileContents         map[string][]byte
-	fileSignatures       map[string][]byte
-	fileHashes           map[string][]byte
+	allPackagesHash []byte
+	pkgState        map[string]types.PackageState
+	fileContents    map[string][]byte
+	fileSignatures  map[string][]byte
+	fileHashes      map[string][]byte
+
 	lastReportedStatuses *protobufs.PackageStatuses
+	statusLock           sync.RWMutex
 
 	onAllPackagesHash func()
 }
@@ -92,7 +96,7 @@ func (l *InMemPackagesStore) SetAllPackagesHash(hash []byte) error {
 }
 
 func (l *InMemPackagesStore) GetContent() map[string][]byte {
-	return l.fileContents
+	return maps.Clone(l.fileContents)
 }
 
 func (l *InMemPackagesStore) GetSignature() map[string][]byte {
@@ -100,10 +104,14 @@ func (l *InMemPackagesStore) GetSignature() map[string][]byte {
 }
 
 func (l *InMemPackagesStore) LastReportedStatuses() (*protobufs.PackageStatuses, error) {
+	l.statusLock.RLock()
+	defer l.statusLock.RUnlock()
 	return l.lastReportedStatuses, nil
 }
 
 func (l *InMemPackagesStore) SetLastReportedStatuses(statuses *protobufs.PackageStatuses) error {
+	l.statusLock.Lock()
+	defer l.statusLock.Unlock()
 	l.lastReportedStatuses = statuses
 	return nil
 }
