@@ -283,6 +283,10 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 		}
 
 		response := connectionCallbacks.OnMessage(msgContext, agentConn, &request)
+		if response == nil { // No send message when 'response' is empty
+			continue
+		}
+
 		if len(response.InstanceUid) == 0 {
 			response.InstanceUid = request.InstanceUid
 		}
@@ -368,6 +372,10 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	}()
 
 	response := connectionCallbacks.OnMessage(req.Context(), agentConn, &request)
+
+	if response == nil {
+		response = &protobufs.ServerToAgent{}
+	}
 
 	// Set the InstanceUid if it is not set by the callback.
 	if len(response.InstanceUid) == 0 {
