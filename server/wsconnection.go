@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gorilla/websocket"
 
@@ -19,6 +20,7 @@ type wsConnection struct {
 	// For more: https://pkg.go.dev/github.com/gorilla/websocket#hdr-Concurrency
 	connMutex *sync.Mutex
 	wsConn    *websocket.Conn
+	closed    *atomic.Bool
 }
 
 var _ types.Connection = (*wsConnection)(nil)
@@ -35,5 +37,9 @@ func (c wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent) 
 }
 
 func (c wsConnection) Disconnect() error {
+	if c.closed.Load() {
+		return nil
+	}
+	c.closed.Store(true)
 	return c.wsConn.Close()
 }
