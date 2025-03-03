@@ -12,7 +12,7 @@ Before getting started, please ensure you’re familiar with the contribution pr
 
 * Install Docker, which is required for generating protobuf files.
 
-## Local Run/Build
+## Generate Protobuf Go Files
 
 To set up and run opamp-go locally, follow these steps:
 
