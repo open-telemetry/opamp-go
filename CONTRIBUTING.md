@@ -57,7 +57,7 @@ Note that this is tested on linux/amd64 and darwin/amd64 and is known to not wor
 
 If you have any questions or run into issues while contributing, feel free to reach out to the OpenTelemetry community:
 
-* Slack: Join the CNCF [Otel-opamp slack](https://cloud-native.slack.com/archives/C02J58HR58R) to connect with other contributors and get access to SIG meeting notes
+* Slack: Join the CNCF [#otel-opamp](https://cloud-native.slack.com/archives/C02J58HR58R) Slack channel to connect with other contributors and get access to SIG meeting notes
   
 * GitHub Issues & Discussions: Report bugs or propose features via [GitHub Issues](https://github.com/open-telemetry/opamp-go/issues).
 
