@@ -8,7 +8,7 @@ Before getting started, please ensure you’re familiar with the contribution pr
 
 ## Pre-requisites
 
-* Ensure you have Go installed (check the required version in [go.mod](https://github.com/RichardChukwu/opamp-go/blob/main/go.mod)).
+* Ensure you have Go installed (check the required version in [go.mod](https://github.com/open-telemetry/opamp-go/blob/main/go.mod)).
 
 * Install Docker, which is required for generating protobuf files.
 
