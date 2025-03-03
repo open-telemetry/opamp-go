@@ -37,7 +37,7 @@ Generate the protobuf Go files:
 ```
 make gen-proto
 ```
-This should compile internal/proto/*.proto files to internal/protobufs/*.pb.go files.
+This should compile `internal/proto/*.proto` files to `internal/protobufs/*.pb.go` files.
 
 Note that this is tested on linux/amd64 and darwin/amd64 and is known to not work on darwin/arm64 (M1/M2 Macs). Fixes are welcome.
 
