@@ -2,7 +2,7 @@
 
 Welcome, and thank you for your interest in contributing to the opamp-go library!
 
-Whether you're submitting a bug fix, implementing a new feature, or updating documentation, we appreciate your effort in making opamp-go better! If you're new to the project, don’t hesitate to ask for help—we value collaboration and learning.
+Whether you're submitting a bug fix, implementing a new feature, or updating documentation, we appreciate your effort in making opamp-go better! If you're new to the project, don’t hesitate to ask for help — we value collaboration and learning.
 
 Before getting started, please ensure you’re familiar with the contribution process by reviewing this guide. Also, check out the [OpenTelemetry contributing guide](https://github.com/open-telemetry/community/blob/main/guides/contributor/README.md) for general contribution guidelines.
 
