@@ -29,7 +29,7 @@ If you've already cloned the repository without submodules, initialize them with
 git submodule update --init
 ```
 
-This will fetch all files for opamp-spec submodule. 
+This will fetch all files for `opamp-spec` submodule. 
 Note that opamp-spec submodule requires ssh git cloning access to github and won't work if you only have https access.
 
 Generate the protobuf Go files:
