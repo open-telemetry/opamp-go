@@ -54,8 +54,10 @@ type ConnectionCallbacks struct {
 	OnConnected func(ctx context.Context, conn Connection)
 
 	// OnMessage is called when a message is received from the connection. Can happen
-	// only after OnConnected(). Must return a ServerToAgent message that will be sent
-	// as a response to the Agent.
+	// only after OnConnected().
+	// When the returned ServerToAgent message is nil, WebSocket will not send a
+	// message to the Agent, and the HTTP request will respond to an empty message.
+	// If the return is not nil it will be sent as a response to the Agent.
 	// For plain HTTP requests once OnMessage returns and the response is sent
 	// to the Agent the OnConnectionClose message will be called immediately.
 	OnMessage func(ctx context.Context, conn Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent
