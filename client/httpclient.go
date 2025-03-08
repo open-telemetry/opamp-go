@@ -44,7 +44,7 @@ func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) er
 	c.opAMPServerURL = settings.OpAMPServerURL
 
 	// Prepare Server connection settings.
-	c.sender.SetRequestHeader(settings.Header)
+	c.sender.SetRequestHeader(settings.Header, settings.HeaderFunc)
 
 	// Add TLS configuration into httpClient
 	c.sender.AddTLSConfig(settings.TLSConfig)
@@ -81,8 +81,12 @@ func (c *httpClient) SetAgentDescription(descr *protobufs.AgentDescription) erro
 	return c.common.SetAgentDescription(descr)
 }
 
+func (c *httpClient) RequestConnectionSettings(request *protobufs.ConnectionSettingsRequest) error {
+	return c.common.RequestConnectionSettings(request)
+}
+
 // SetHealth implements OpAMPClient.SetHealth.
-func (c *httpClient) SetHealth(health *protobufs.AgentHealth) error {
+func (c *httpClient) SetHealth(health *protobufs.ComponentHealth) error {
 	return c.common.SetHealth(health)
 }
 
@@ -101,6 +105,26 @@ func (c *httpClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) err
 	return c.common.SetPackageStatuses(statuses)
 }
 
+// SendCustomCapabilities implements OpAMPClient.SetCustomCapabilities.
+func (c *httpClient) SetCustomCapabilities(customCapabilities *protobufs.CustomCapabilities) error {
+	return c.common.SetCustomCapabilities(customCapabilities)
+}
+
+// SetFlags implements OpAMPClient.SetFlags.
+func (c *httpClient) SetFlags(flags protobufs.AgentToServerFlags) {
+	c.common.SetFlags(flags)
+}
+
+// SendCustomMessage implements OpAMPClient.SendCustomMessage.
+func (c *httpClient) SendCustomMessage(message *protobufs.CustomMessage) (messageSendingChannel chan struct{}, err error) {
+	return c.common.SendCustomMessage(message)
+}
+
+// SetAvailableComponents implements OpAMPClient.SetAvailableComponents
+func (c *httpClient) SetAvailableComponents(components *protobufs.AvailableComponents) error {
+	return c.common.SetAvailableComponents(components)
+}
+
 func (c *httpClient) runUntilStopped(ctx context.Context) {
 	// Start the HTTP sender. This will make request/responses with retries for
 	// failures and will wait with configured polling interval if there is nothing
@@ -112,6 +136,7 @@ func (c *httpClient) runUntilStopped(ctx context.Context) {
 		&c.common.ClientSyncedState,
 		c.common.PackagesStateProvider,
 		c.common.Capabilities,
+		&c.common.PackageSyncMutex,
 	)
 }
 

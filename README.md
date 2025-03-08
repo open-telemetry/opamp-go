@@ -40,13 +40,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Approvers ([@open-telemetry/opamp-go-approvers](https://github.com/orgs/open-telemetry/teams/opamp-go-approvers)):
 
-- [Alex Boten](https://github.com/codeboten), Lightstep
 - [Anthony Mirabella](https://github.com/Aneurysm9), AWS
-- [Srikanth Chekuri](https://github.com/srikanthccv), signoz.io
+- [Evan Bradley](https://github.com/evan-bradley), Dynatrace
 
 Emeritus Approvers
 
+- [Alex Boten](https://github.com/codeboten), Lightstep
 - [Przemek Maciolek](https://github.com/pmm-sumo), Sumo Logic
+- [Srikanth Chekuri](https://github.com/srikanthccv), signoz.io
 
 Maintainers ([@open-telemetry/opamp-go-maintainers](https://github.com/orgs/open-telemetry/teams/opamp-go-maintainers)):
 

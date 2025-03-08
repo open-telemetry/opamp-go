@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"math/rand"
 	"os"
 	"runtime"
 	"sort"
@@ -13,11 +12,11 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/google/uuid"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/rawbytes"
-	"github.com/oklog/ulid/v2"
 
 	"github.com/open-telemetry/opamp-go/client"
 	"github.com/open-telemetry/opamp-go/client/types"
@@ -54,7 +53,7 @@ type Supervisor struct {
 	agentVersion string
 
 	// Agent's instance id.
-	instanceId ulid.ULID
+	instanceId uuid.UUID
 
 	// A config section to be added to the Collector's config to fetch its own metrics.
 	// TODO: store this persistently so that when starting we can compose the effective
@@ -90,8 +89,8 @@ func NewSupervisor(logger types.Logger) (*Supervisor, error) {
 	}
 
 	s.createInstanceId()
-	logger.Debugf("Supervisor starting, id=%v, type=%s, version=%s.",
-		s.instanceId.String(), agentType, agentVersion)
+	logger.Debugf(context.Background(), "Supervisor starting, id=%v, type=%s, version=%s.",
+		s.instanceId, agentType, agentVersion)
 
 	s.loadAgentEffectiveConfig()
 
@@ -130,7 +129,6 @@ func (s *Supervisor) loadConfig() error {
 }
 
 func (s *Supervisor) startOpAMP() error {
-
 	s.opampClient = client.NewWebSocket(s.logger)
 
 	settings := types.StartSettings{
@@ -138,21 +136,21 @@ func (s *Supervisor) startOpAMP() error {
 		TLSConfig: &tls.Config{
 			InsecureSkipVerify: true,
 		},
-		InstanceUid: s.instanceId.String(),
-		Callbacks: types.CallbacksStruct{
-			OnConnectFunc: func() {
-				s.logger.Debugf("Connected to the server.")
+		InstanceUid: types.InstanceUid(s.instanceId),
+		Callbacks: types.Callbacks{
+			OnConnect: func(ctx context.Context) {
+				s.logger.Debugf(ctx, "Connected to the server.")
 			},
-			OnConnectFailedFunc: func(err error) {
-				s.logger.Errorf("Failed to connect to the server: %v", err)
+			OnConnectFailed: func(ctx context.Context, err error) {
+				s.logger.Errorf(ctx, "Failed to connect to the server: %v", err)
 			},
-			OnErrorFunc: func(err *protobufs.ServerErrorResponse) {
-				s.logger.Errorf("Server returned an error response: %v", err.ErrorMessage)
+			OnError: func(ctx context.Context, err *protobufs.ServerErrorResponse) {
+				s.logger.Errorf(ctx, "Server returned an error response: %v", err.ErrorMessage)
 			},
-			GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+			GetEffectiveConfig: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 				return s.createEffectiveConfigMsg(), nil
 			},
-			OnMessageFunc: s.onMessage,
+			OnMessage: s.onMessage,
 		},
 		Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig |
@@ -165,27 +163,31 @@ func (s *Supervisor) startOpAMP() error {
 		return err
 	}
 
-	err = s.opampClient.SetHealth(&protobufs.AgentHealth{Healthy: false})
+	err = s.opampClient.SetHealth(&protobufs.ComponentHealth{Healthy: false})
 	if err != nil {
 		return err
 	}
 
-	s.logger.Debugf("Starting OpAMP client...")
+	s.logger.Debugf(context.Background(), "Starting OpAMP client...")
 
 	err = s.opampClient.Start(context.Background(), settings)
 	if err != nil {
 		return err
 	}
 
-	s.logger.Debugf("OpAMP Client started.")
+	s.logger.Debugf(context.Background(), "OpAMP Client started.")
 
 	return nil
 }
 
 func (s *Supervisor) createInstanceId() {
 	// Generate instance id.
-	entropy := ulid.Monotonic(rand.New(rand.NewSource(0)), 0)
-	s.instanceId = ulid.MustNew(ulid.Timestamp(time.Now()), entropy)
+
+	uid, err := uuid.NewV7()
+	if err != nil {
+		panic(err)
+	}
+	s.instanceId = uid
 
 	// TODO: set instanceId in the Collector config.
 }
@@ -216,7 +218,6 @@ func (s *Supervisor) createAgentDescription() *protobufs.AgentDescription {
 }
 
 func (s *Supervisor) composeExtraLocalConfig() string {
-
 	return fmt.Sprintf(`
 service:
   telemetry:
@@ -283,10 +284,10 @@ func (s *Supervisor) setupOwnMetrics(ctx context.Context, settings *protobufs.Te
 	var cfg string
 	if settings.DestinationEndpoint == "" {
 		// No destination. Disable metric collection.
-		s.logger.Debugf("Disabling own metrics pipeline in the config")
+		s.logger.Debugf(ctx, "Disabling own metrics pipeline in the config")
 		cfg = ""
 	} else {
-		s.logger.Debugf("Enabling own metrics pipeline in the config")
+		s.logger.Debugf(ctx, "Enabling own metrics pipeline in the config")
 
 		// TODO: choose the scraping port dynamically instead of hard-coding to 8888.
 		cfg = fmt.Sprintf(
@@ -316,7 +317,7 @@ service:
 	s.agentConfigOwnMetricsSection.Store(cfg)
 
 	// Need to recalculate the Agent config so that the metric config is included in it.
-	configChanged, err := s.recalcEffectiveConfig()
+	configChanged, err := s.recalcEffectiveConfig(ctx)
 	if err != nil {
 		return
 	}
@@ -327,8 +328,8 @@ service:
 // composeEffectiveConfig composes the effective config from multiple sources:
 // 1) the remote config from OpAMP Server, 2) the own metrics config section,
 // 3) the local override config that is hard-coded in the Supervisor.
-func (s *Supervisor) composeEffectiveConfig(config *protobufs.AgentRemoteConfig) (configChanged bool, err error) {
-	var k = koanf.New(".")
+func (s *Supervisor) composeEffectiveConfig(ctx context.Context, config *protobufs.AgentRemoteConfig) (configChanged bool, err error) {
+	k := koanf.New(".")
 
 	// Begin with empty config. We will merge received configs on top of it.
 	if err := k.Load(rawbytes.Provider([]byte{}), yaml.Parser()); err != nil {
@@ -353,7 +354,7 @@ func (s *Supervisor) composeEffectiveConfig(config *protobufs.AgentRemoteConfig)
 	// Merge received configs.
 	for _, name := range names {
 		item := config.Config.ConfigMap[name]
-		var k2 = koanf.New(".")
+		k2 := koanf.New(".")
 		err := k2.Load(rawbytes.Provider(item.Body), yaml.Parser())
 		if err != nil {
 			return false, fmt.Errorf("cannot parse config named %s: %v", name, err)
@@ -387,7 +388,7 @@ func (s *Supervisor) composeEffectiveConfig(config *protobufs.AgentRemoteConfig)
 	newEffectiveConfig := string(effectiveConfigBytes)
 	configChanged = false
 	if s.effectiveConfig.Load().(string) != newEffectiveConfig {
-		s.logger.Debugf("Effective config changed.")
+		s.logger.Debugf(ctx, "Effective config changed.")
 		s.effectiveConfig.Store(newEffectiveConfig)
 		configChanged = true
 	}
@@ -397,11 +398,10 @@ func (s *Supervisor) composeEffectiveConfig(config *protobufs.AgentRemoteConfig)
 
 // Recalculate the Agent's effective config and if the config changes signal to the
 // background goroutine that the config needs to be applied to the Agent.
-func (s *Supervisor) recalcEffectiveConfig() (configChanged bool, err error) {
-
-	configChanged, err = s.composeEffectiveConfig(s.remoteConfig)
+func (s *Supervisor) recalcEffectiveConfig(ctx context.Context) (configChanged bool, err error) {
+	configChanged, err = s.composeEffectiveConfig(ctx, s.remoteConfig)
 	if err != nil {
-		s.logger.Errorf("Error composing effective config. Ignoring received config: %v", err)
+		s.logger.Errorf(ctx, "Error composing effective config. Ignoring received config: %v", err)
 		return configChanged, err
 	}
 
@@ -412,8 +412,8 @@ func (s *Supervisor) startAgent() {
 	err := s.commander.Start(context.Background())
 	if err != nil {
 		errMsg := fmt.Sprintf("Cannot start the agent: %v", err)
-		s.logger.Errorf(errMsg)
-		s.opampClient.SetHealth(&protobufs.AgentHealth{Healthy: false, LastError: errMsg})
+		s.logger.Errorf(context.Background(), errMsg)
+		s.opampClient.SetHealth(&protobufs.ComponentHealth{Healthy: false, LastError: errMsg})
 		return
 	}
 	s.startedAt = time.Now()
@@ -448,22 +448,22 @@ func (s *Supervisor) healthCheck() {
 	}
 
 	// Prepare OpAMP health report.
-	health := &protobufs.AgentHealth{
+	health := &protobufs.ComponentHealth{
 		StartTimeUnixNano: uint64(s.startedAt.UnixNano()),
 	}
 
 	if err != nil {
 		health.Healthy = false
 		health.LastError = err.Error()
-		s.logger.Errorf("Agent is not healthy: %s", health.LastError)
+		s.logger.Errorf(ctx, "Agent is not healthy: %s", health.LastError)
 	} else {
 		health.Healthy = true
-		s.logger.Debugf("Agent is healthy.")
+		s.logger.Debugf(ctx, "Agent is healthy.")
 	}
 
 	// Report via OpAMP.
 	if err2 := s.opampClient.SetHealth(health); err2 != nil {
-		s.logger.Errorf("Could not report health. SetHealth returned: %v", err2)
+		s.logger.Errorf(ctx, "Could not report health. SetHealth returned: %v", err2)
 		return
 	}
 
@@ -496,8 +496,8 @@ func (s *Supervisor) runAgentProcess() {
 				"Agent process PID=%d exited unexpectedly, exit code=%d. Will restart in a bit...",
 				s.commander.Pid(), s.commander.ExitCode(),
 			)
-			s.logger.Debugf(errMsg)
-			s.opampClient.SetHealth(&protobufs.AgentHealth{Healthy: false, LastError: errMsg})
+			s.logger.Debugf(context.Background(), errMsg)
+			s.opampClient.SetHealth(&protobufs.ComponentHealth{Healthy: false, LastError: errMsg})
 
 			// TODO: decide why the agent stopped. If it was due to bad config, report it to server.
 
@@ -515,7 +515,7 @@ func (s *Supervisor) runAgentProcess() {
 }
 
 func (s *Supervisor) stopAgentApplyConfig() {
-	s.logger.Debugf("Stopping the agent to apply new config.")
+	s.logger.Debugf(context.Background(), "Stopping the agent to apply new config.")
 	cfg := s.effectiveConfig.Load().(string)
 	s.commander.Stop(context.Background())
 	s.writeEffectiveConfigToFile(cfg, s.effectiveConfigFilePath)
@@ -524,7 +524,7 @@ func (s *Supervisor) stopAgentApplyConfig() {
 func (s *Supervisor) writeEffectiveConfigToFile(cfg string, filePath string) {
 	f, err := os.Create(filePath)
 	if err != nil {
-		s.logger.Errorf("Cannot write effective config file: %v", err)
+		s.logger.Errorf(context.Background(), "Cannot write effective config file: %v", err)
 	}
 	defer f.Close()
 
@@ -532,13 +532,13 @@ func (s *Supervisor) writeEffectiveConfigToFile(cfg string, filePath string) {
 }
 
 func (s *Supervisor) Shutdown() {
-	s.logger.Debugf("Supervisor shutting down...")
+	s.logger.Debugf(context.Background(), "Supervisor shutting down...")
 	if s.commander != nil {
 		s.commander.Stop(context.Background())
 	}
 	if s.opampClient != nil {
 		s.opampClient.SetHealth(
-			&protobufs.AgentHealth{
+			&protobufs.ComponentHealth{
 				Healthy: false, LastError: "Supervisor is shutdown",
 			},
 		)
@@ -550,10 +550,10 @@ func (s *Supervisor) onMessage(ctx context.Context, msg *types.MessageData) {
 	configChanged := false
 	if msg.RemoteConfig != nil {
 		s.remoteConfig = msg.RemoteConfig
-		s.logger.Debugf("Received remote config from server, hash=%x.", s.remoteConfig.ConfigHash)
+		s.logger.Debugf(ctx, "Received remote config from server, hash=%x.", s.remoteConfig.ConfigHash)
 
 		var err error
-		configChanged, err = s.recalcEffectiveConfig()
+		configChanged, err = s.recalcEffectiveConfig(ctx)
 		if err != nil {
 			s.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
 				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
@@ -573,12 +573,13 @@ func (s *Supervisor) onMessage(ctx context.Context, msg *types.MessageData) {
 	}
 
 	if msg.AgentIdentification != nil {
-		newInstanceId, err := ulid.Parse(msg.AgentIdentification.NewInstanceUid)
+		newInstanceId, err := uuid.FromBytes(msg.AgentIdentification.NewInstanceUid)
 		if err != nil {
-			s.logger.Errorf(err.Error())
+			s.logger.Errorf(ctx, "invalid NewInstanceUid: %v", err)
+			return
 		}
 
-		s.logger.Debugf("Agent identify is being changed from id=%v to id=%v",
+		s.logger.Debugf(ctx, "Agent identify is being changed from id=%v to id=%v",
 			s.instanceId.String(),
 			newInstanceId.String())
 		s.instanceId = newInstanceId
@@ -590,10 +591,10 @@ func (s *Supervisor) onMessage(ctx context.Context, msg *types.MessageData) {
 	if configChanged {
 		err := s.opampClient.UpdateEffectiveConfig(ctx)
 		if err != nil {
-			s.logger.Errorf(err.Error())
+			s.logger.Errorf(ctx, err.Error())
 		}
 
-		s.logger.Debugf("Config is changed. Signal to restart the agent.")
+		s.logger.Debugf(ctx, "Config is changed. Signal to restart the agent.")
 		// Signal that there is a new config.
 		select {
 		case s.hasNewConfig <- struct{}{}:

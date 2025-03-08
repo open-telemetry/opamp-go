@@ -2,8 +2,9 @@ package internal
 
 import (
 	"errors"
+	"time"
 
-	"github.com/oklog/ulid/v2"
+	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -21,7 +22,10 @@ type Sender interface {
 	ScheduleSend()
 
 	// SetInstanceUid sets a new instanceUid to be used for all subsequent messages to be sent.
-	SetInstanceUid(instanceUid string) error
+	SetInstanceUid(instanceUid types.InstanceUid) error
+
+	// SetHeartbeatInterval sets the interval for the agent heartbeats.
+	SetHeartbeatInterval(duration time.Duration) error
 }
 
 // SenderCommon is partial Sender implementation that is common between WebSocket and plain
@@ -65,18 +69,15 @@ func (h *SenderCommon) NextMessage() *NextMessage {
 // SetInstanceUid sets a new instanceUid to be used for all subsequent messages to be sent.
 // Can be called concurrently, normally is called when a message is received from the
 // Server that instructs us to change our instance UID.
-func (h *SenderCommon) SetInstanceUid(instanceUid string) error {
-	if instanceUid == "" {
+func (h *SenderCommon) SetInstanceUid(instanceUid types.InstanceUid) error {
+	var emptyUid types.InstanceUid
+	if instanceUid == emptyUid {
 		return errors.New("cannot set instance uid to empty value")
-	}
-
-	if _, err := ulid.ParseStrict(instanceUid); err != nil {
-		return err
 	}
 
 	h.nextMessage.Update(
 		func(msg *protobufs.AgentToServer) {
-			msg.InstanceUid = instanceUid
+			msg.InstanceUid = instanceUid[:]
 		})
 
 	return nil

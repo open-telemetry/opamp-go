@@ -1,12 +1,13 @@
 package internal
 
 import (
-	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"net/http"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func response503() *http.Response {
@@ -32,7 +33,6 @@ func assertDuration(t *testing.T, duration OptionalDuration, expected time.Durat
 
 func TestExtractRetryAfterHeaderDelaySeconds(t *testing.T) {
 	// Generate random n > 0 int
-	rand.Seed(time.Now().UnixNano())
 	retryIntervalSec := rand.Intn(9999)
 
 	// Generate a 503 status code response with Retry-After = n header
@@ -50,15 +50,15 @@ func TestExtractRetryAfterHeaderDelaySeconds(t *testing.T) {
 	resp.StatusCode = http.StatusBadGateway
 	assertUndefinedDuration(t, ExtractRetryAfterHeader(resp))
 
-	// Verify no duration is created for n < 0
+	// Verify a zero duration is created for n < 0
+	resp.StatusCode = http.StatusTooManyRequests
 	resp.Header.Set(retryAfterHTTPHeader, strconv.Itoa(-1))
-	assertUndefinedDuration(t, ExtractRetryAfterHeader(resp))
+	assertDuration(t, ExtractRetryAfterHeader(resp), 0)
 }
 
 func TestExtractRetryAfterHeaderHttpDate(t *testing.T) {
 	// Generate a random n > 0 second duration
 	now := time.Now()
-	rand.Seed(now.UnixNano())
 	retryIntervalSec := rand.Intn(9999)
 	expectedDuration := time.Second * time.Duration(retryIntervalSec)
 
@@ -82,7 +82,11 @@ func TestExtractRetryAfterHeaderHttpDate(t *testing.T) {
 	resp.Header.Set(retryAfterHTTPHeader, retryAfter.Format(time.RFC1123))
 	assertUndefinedDuration(t, ExtractRetryAfterHeader(resp))
 
-	// Verify no duration is created for n < 0
+	// Verify a zero duration is created for n = 0
+	resp.Header.Set(retryAfterHTTPHeader, now.UTC().Format(http.TimeFormat))
+	assertDuration(t, ExtractRetryAfterHeader(resp), 0)
+
+	// Verify a zero duration is created for n < 0
 	resp.Header.Set(retryAfterHTTPHeader, now.Add(-1*time.Second).UTC().Format(http.TimeFormat))
-	assertUndefinedDuration(t, ExtractRetryAfterHeader(resp))
+	assertDuration(t, ExtractRetryAfterHeader(resp), 0)
 }

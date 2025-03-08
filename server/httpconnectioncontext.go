@@ -17,6 +17,7 @@ func contextWithConn(ctx context.Context, c net.Conn) context.Context {
 	// of http.Server to remember the connection in the context.
 	return context.WithValue(ctx, connContextKey, c)
 }
+
 func connFromRequest(r *http.Request) net.Conn {
 	// Extract the net.Conn from the context of the specified http.Request.
 	return r.Context().Value(connContextKey).(net.Conn)

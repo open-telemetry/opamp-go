@@ -1,5 +1,10 @@
 package internal
 
+// This file contains helper functions to read and
+// create TLS configs/certificates. Currently used in
+// the example client and server and
+// in the tests. Not intended for any other use.
+
 import (
 	"bytes"
 	"crypto/rand"
@@ -10,19 +15,17 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"net"
 	"os"
-	"path"
 	"time"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
-func CreateClientTLSConfig(clientCert *tls.Certificate, certsDir string) (*tls.Config, error) {
+func CreateClientTLSConfig(clientCert *tls.Certificate, caCertPath string) (*tls.Config, error) {
 	// Read the CA's public key. This is the CA that signs the server's certificate.
-	caCertBytes, err := os.ReadFile(path.Join(certsDir, "certs/ca.cert.pem"))
+	caCertBytes, err := os.ReadFile(caCertPath)
 	if err != nil {
 		return nil, err
 	}
@@ -43,9 +46,9 @@ func CreateClientTLSConfig(clientCert *tls.Certificate, certsDir string) (*tls.C
 	return cfg, nil
 }
 
-func CreateServerTLSConfig(certsDir string) (*tls.Config, error) {
+func CreateServerTLSConfig(caCertPath, serverCertPath, serverKeyPath string) (*tls.Config, error) {
 	// Read the CA's public key. This is the CA that signs the server's certificate.
-	caCertBytes, err := os.ReadFile(path.Join(certsDir, "certs/ca.cert.pem"))
+	caCertBytes, err := os.ReadFile(caCertPath)
 	if err != nil {
 		return nil, err
 	}
@@ -58,8 +61,8 @@ func CreateServerTLSConfig(certsDir string) (*tls.Config, error) {
 
 	// Load server's certificate.
 	cert, err := tls.LoadX509KeyPair(
-		path.Join(certsDir, "server_certs/server.cert.pem"),
-		path.Join(certsDir, "server_certs/server.key.pem"),
+		serverCertPath,
+		serverKeyPath,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("tls.LoadX509KeyPair failed: %v", err)
@@ -75,19 +78,17 @@ func CreateServerTLSConfig(certsDir string) (*tls.Config, error) {
 		InsecureSkipVerify: true,
 		ClientCAs:          caCertPool,
 	}
-	tlsConfig.BuildNameToCertificate()
 	return tlsConfig, nil
 }
 
-func CreateTLSCert(certsDir string) (*protobufs.TLSCertificate, error) {
-
+func CreateTLSCert(caCertPath, caKeyPath string) (*protobufs.TLSCertificate, error) {
 	// Load CA Cert.
-	caCertBytes, err := ioutil.ReadFile(path.Join(certsDir, "certs/ca.cert.pem"))
+	caCertBytes, err := os.ReadFile(caCertPath)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read CA cert: %v", err)
 	}
 
-	caKeyBytes, err := ioutil.ReadFile(path.Join(certsDir, "private/ca.key.pem"))
+	caKeyBytes, err := os.ReadFile(caKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read CA key: %v", err)
 	}
@@ -151,9 +152,9 @@ func CreateTLSCert(certsDir string) (*protobufs.TLSCertificate, error) {
 
 	// We have a client certificate with a public and private key.
 	certificate := &protobufs.TLSCertificate{
-		PublicKey:   publicKeyPEM.Bytes(),
-		PrivateKey:  privateKeyPEM.Bytes(),
-		CaPublicKey: caCertBytes,
+		Cert:       publicKeyPEM.Bytes(),
+		PrivateKey: privateKeyPEM.Bytes(),
+		CaCert:     caCertBytes,
 	}
 
 	return certificate, nil

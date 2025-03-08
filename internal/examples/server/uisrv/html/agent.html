@@ -21,7 +21,7 @@
             <h3>Agent</h3>
             <table border="1" style="border-collapse: collapse">
                 <tr>
-                    <td>Instance ID:</td><td>{{ .InstanceId }}</td>
+                    <td>Instance ID:</td><td>{{ .InstanceIdStr }}</td>
                 </tr>
                 {{if .Status.Health }}
                 <tr>
@@ -70,7 +70,7 @@
         <td valign="top">
             Additional Configuration:<br/>
             <form action="/save_config" method="post">
-            <input type="hidden" name="instanceid" value="{{ .InstanceId }}"/>
+            <input type="hidden" name="instanceid" value="{{ .InstanceIdStr }}"/>
             <textarea cols="40" rows="20" name="config">{{ .CustomInstanceConfig }}</textarea><br/>
              {{if .Status.RemoteConfigStatus }}
                 {{if .Status.RemoteConfigStatus.ErrorMessage }}
@@ -116,7 +116,7 @@
 
 <br/>
 <form action="/rotate_client_cert" method="post">
-    <input type="hidden" name="instanceid" value="{{ .InstanceId }}"/>
+    <input type="hidden" name="instanceid" value="{{ .InstanceIdStr }}"/>
     {{if .ClientCert}}
     <input type="submit" value="Rotate Client Certificate"/>
     {{else}}

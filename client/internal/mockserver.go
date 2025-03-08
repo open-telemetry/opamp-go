@@ -34,14 +34,16 @@ type MockServer struct {
 	enableCompression bool
 }
 
-const headerContentType = "Content-Type"
-const contentTypeProtobuf = "application/x-protobuf"
+const (
+	headerContentType   = "Content-Type"
+	contentTypeProtobuf = "application/x-protobuf"
+)
 
 func newMockServer(t *testing.T) (*MockServer, *http.ServeMux) {
 	srv := &MockServer{
 		t:                t,
-		expectedHandlers: make(chan receivedMessageHandler, 0),
-		expectedComplete: make(chan struct{}, 0),
+		expectedHandlers: make(chan receivedMessageHandler),
+		expectedComplete: make(chan struct{}),
 	}
 
 	m := http.NewServeMux()
@@ -112,6 +114,11 @@ func (m *MockServer) EnableExpectMode() {
 
 func (m *MockServer) handlePlainHttp(w http.ResponseWriter, r *http.Request) {
 	msgBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		// request could not be read for some reason
+		http.Error(w, err.Error(), 500)
+		return
+	}
 
 	// We use alwaysRespond=true here because plain HTTP requests must always have
 	// a response.
@@ -131,7 +138,7 @@ func (m *MockServer) EnableCompression() {
 }
 
 func (m *MockServer) handleWebSocket(t *testing.T, w http.ResponseWriter, r *http.Request) {
-	var upgrader = websocket.Upgrader{
+	upgrader := websocket.Upgrader{
 		EnableCompression: m.enableCompression,
 	}
 

@@ -13,14 +13,16 @@ var (
 	errLastRemoteConfigHashNil          = errors.New("LastRemoteConfigHash is nil")
 	errPackageStatusesMissing           = errors.New("PackageStatuses is not set")
 	errServerProvidedAllPackagesHashNil = errors.New("ServerProvidedAllPackagesHash is nil")
+	errCustomCapabilitiesMissing        = errors.New("CustomCapabilities is not set")
+	errAvailableComponentsMissing       = errors.New("AvailableComponents is not set")
 )
 
 // ClientSyncedState stores the state of the Agent messages that the OpAMP Client needs to
-// have access to synchronize to the Server. 4 messages can be stored in this store:
-// AgentDescription, AgentHealth, RemoteConfigStatus and PackageStatuses.
+// have access to synchronize to the Server. Seven messages can be stored in this store:
+// AgentDescription, ComponentHealth, RemoteConfigStatus, PackageStatuses, CustomCapabilities, AvailableComponents and Flags.
 //
-// See OpAMP spec for more details on how state synchronization works:
-// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#Agent-to-Server-state-synchronization
+// See OpAMP spec for more details on how status reporting works:
+// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#status-reporting
 //
 // Note that the EffectiveConfig is subject to the same synchronization logic, however
 // it is not stored in this struct since it can be large, and we do not want to always
@@ -33,10 +35,13 @@ var (
 type ClientSyncedState struct {
 	mutex sync.Mutex
 
-	agentDescription   *protobufs.AgentDescription
-	health             *protobufs.AgentHealth
-	remoteConfigStatus *protobufs.RemoteConfigStatus
-	packageStatuses    *protobufs.PackageStatuses
+	agentDescription    *protobufs.AgentDescription
+	health              *protobufs.ComponentHealth
+	remoteConfigStatus  *protobufs.RemoteConfigStatus
+	packageStatuses     *protobufs.PackageStatuses
+	customCapabilities  *protobufs.CustomCapabilities
+	availableComponents *protobufs.AvailableComponents
+	flags               protobufs.AgentToServerFlags
 }
 
 func (s *ClientSyncedState) AgentDescription() *protobufs.AgentDescription {
@@ -45,7 +50,7 @@ func (s *ClientSyncedState) AgentDescription() *protobufs.AgentDescription {
 	return s.agentDescription
 }
 
-func (s *ClientSyncedState) Health() *protobufs.AgentHealth {
+func (s *ClientSyncedState) Health() *protobufs.ComponentHealth {
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	return s.health
@@ -61,6 +66,24 @@ func (s *ClientSyncedState) PackageStatuses() *protobufs.PackageStatuses {
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	return s.packageStatuses
+}
+
+func (s *ClientSyncedState) CustomCapabilities() *protobufs.CustomCapabilities {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	return s.customCapabilities
+}
+
+func (s *ClientSyncedState) AvailableComponents() *protobufs.AvailableComponents {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	return s.availableComponents
+}
+
+func (s *ClientSyncedState) Flags() uint64 {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	return uint64(s.flags)
 }
 
 // SetAgentDescription sets the AgentDescription in the state.
@@ -82,13 +105,13 @@ func (s *ClientSyncedState) SetAgentDescription(descr *protobufs.AgentDescriptio
 	return nil
 }
 
-// SetHealth sets the AgentHealth in the state.
-func (s *ClientSyncedState) SetHealth(health *protobufs.AgentHealth) error {
+// SetHealth sets the agent health in the state.
+func (s *ClientSyncedState) SetHealth(health *protobufs.ComponentHealth) error {
 	if health == nil {
-		return ErrAgentHealthMissing
+		return ErrHealthMissing
 	}
 
-	clone := proto.Clone(health).(*protobufs.AgentHealth)
+	clone := proto.Clone(health).(*protobufs.ComponentHealth)
 
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
@@ -125,4 +148,60 @@ func (s *ClientSyncedState) SetPackageStatuses(status *protobufs.PackageStatuses
 	s.packageStatuses = clone
 
 	return nil
+}
+
+// SetCustomCapabilities sets the CustomCapabilities in the state.
+func (s *ClientSyncedState) SetCustomCapabilities(capabilities *protobufs.CustomCapabilities) error {
+	if capabilities == nil {
+		return errCustomCapabilitiesMissing
+	}
+
+	clone := proto.Clone(capabilities).(*protobufs.CustomCapabilities)
+
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	s.customCapabilities = clone
+
+	return nil
+}
+
+// HasCustomCapability returns true if the provided capability is in the
+// CustomCapabilities.
+func (s *ClientSyncedState) HasCustomCapability(capability string) bool {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+
+	if s.customCapabilities == nil {
+		return false
+	}
+
+	for _, c := range s.customCapabilities.Capabilities {
+		if c == capability {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (s *ClientSyncedState) SetAvailableComponents(components *protobufs.AvailableComponents) error {
+	if components == nil {
+		return errAvailableComponentsMissing
+	}
+
+	clone := proto.Clone(components).(*protobufs.AvailableComponents)
+
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	s.availableComponents = clone
+
+	return nil
+}
+
+// SetFlags sets the flags in the state.
+func (s *ClientSyncedState) SetFlags(flags protobufs.AgentToServerFlags) {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+
+	s.flags = flags
 }

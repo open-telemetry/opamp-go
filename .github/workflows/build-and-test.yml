@@ -5,24 +5,25 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+*"
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 jobs:
   setup-environment:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Setup Go
-        uses: actions/setup-go@v2.1.4
+        uses: actions/setup-go@v5.3.0
         with:
-          go-version: 1.17
+          go-version: "1.22"
       - name: Setup Go Environment
         run: |
           echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
       - name: Cache Go
         id: module-cache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: /home/runner/go/pkg/mod
           key: go-pkg-mod-${{ runner.os }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
@@ -31,7 +32,7 @@ jobs:
         run: make gomoddownload
       - name: Cache Tools
         id: tool-cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: /home/runner/go/bin
           key: tools-${{ runner.os }}-${{ hashFiles('./internal/tools/go.mod') }}
@@ -44,26 +45,30 @@ jobs:
     needs: [setup-environment]
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Setup Go
-        uses: actions/setup-go@v2.1.4
+        uses: actions/setup-go@v5.3.0
         with:
-          go-version: 1.17
+          go-version: "1.22"
       - name: Setup Go Environment
         run: |
           echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
       - name: Cache Go
         id: module-cache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: /home/runner/go/pkg/mod
           key: go-pkg-mod-${{ runner.os }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
       - name: Cache Build
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: /home/runner/.cache/go-build
           key: go-build-unittest-${{ runner.os }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
+      - name: Go fmt
+        run: |
+          make fmt
+          git diff --exit-code || (echo 'Code base is not Go formatted, please run "make fmt" and commit the changes in this PR.' && exit 1)
       - name: Build and Test
         run: make
 
@@ -72,36 +77,36 @@ jobs:
     needs: [setup-environment]
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
-          go-version: 1.17
+          go-version: "1.22"
       - name: Setup Go Environment
         run: |
           echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
       - name: Cache Go
         id: module-cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: /home/runner/go/pkg/mod
           key: go-pkg-mod-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
       - name: Cache Tools
         id: tool-cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: /home/runner/go/bin
           key: tools-${{ runner.os }}-${{ hashFiles('./internal/tools/go.mod') }}
       - name: Cache Build
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: /home/runner/.cache/go-build
           key: go-build-coverage-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
       - name: Run Unit Tests With Coverage
         run: make test-with-cover
       - name: Upload coverage report
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./coverage.out

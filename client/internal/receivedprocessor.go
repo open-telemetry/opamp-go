@@ -2,7 +2,9 @@ package internal
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"sync"
+	"time"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -24,6 +26,9 @@ type receivedProcessor struct {
 
 	packagesStateProvider types.PackagesStateProvider
 
+	// packageSyncMutex protects against multiple package syncing operations at the same time.
+	packageSyncMutex *sync.Mutex
+
 	// Agent's capabilities defined at Start() time.
 	capabilities protobufs.AgentCapabilities
 }
@@ -35,6 +40,7 @@ func newReceivedProcessor(
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
+	packageSyncMutex *sync.Mutex,
 ) receivedProcessor {
 	return receivedProcessor{
 		logger:                logger,
@@ -43,6 +49,7 @@ func newReceivedProcessor(
 		clientSyncedState:     clientSyncedState,
 		packagesStateProvider: packagesStateProvider,
 		capabilities:          capabilities,
+		packageSyncMutex:      packageSyncMutex,
 	}
 }
 
@@ -50,103 +57,117 @@ func newReceivedProcessor(
 // the received message and performs any processing necessary based on what fields are set.
 // This function will call any relevant callbacks.
 func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
-	if r.callbacks != nil {
-		// Note that anytime we add a new command capabilities we need to add a check here.
-		// This is because we want to ignore commands that the agent does not have the capability
-		// to process.
-		if msg.Command != nil {
-			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand) {
-				r.rcvCommand(msg.Command)
-				// If a command message exists, other messages will be ignored
-				return
-			} else {
-				r.logger.Debugf("Ignoring Command, agent does not have AcceptsCommands capability")
-			}
-		}
-
-		scheduled, err := r.rcvFlags(ctx, protobufs.ServerToAgentFlags(msg.Flags))
-		if err != nil {
-			r.logger.Errorf("cannot processed received flags:%v", err)
-		}
-
-		msgData := &types.MessageData{}
-
-		if msg.RemoteConfig != nil {
-			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig) {
-				msgData.RemoteConfig = msg.RemoteConfig
-			} else {
-				r.logger.Debugf("Ignoring RemoteConfig, agent does not have AcceptsRemoteConfig capability")
-			}
-		}
-
-		if msg.ConnectionSettings != nil {
-			if msg.ConnectionSettings.OwnMetrics != nil {
-				if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics) {
-					msgData.OwnMetricsConnSettings = msg.ConnectionSettings.OwnMetrics
-				} else {
-					r.logger.Debugf("Ignoring OwnMetrics, agent does not have ReportsOwnMetrics capability")
-				}
-			}
-
-			if msg.ConnectionSettings.OwnTraces != nil {
-				if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnTraces) {
-					msgData.OwnTracesConnSettings = msg.ConnectionSettings.OwnTraces
-				} else {
-					r.logger.Debugf("Ignoring OwnTraces, agent does not have ReportsOwnTraces capability")
-				}
-			}
-
-			if msg.ConnectionSettings.OwnLogs != nil {
-				if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnLogs) {
-					msgData.OwnLogsConnSettings = msg.ConnectionSettings.OwnLogs
-				} else {
-					r.logger.Debugf("Ignoring OwnLogs, agent does not have ReportsOwnLogs capability")
-				}
-			}
-
-			if msg.ConnectionSettings.OtherConnections != nil {
-				if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOtherConnectionSettings) {
-					msgData.OtherConnSettings = msg.ConnectionSettings.OtherConnections
-				} else {
-					r.logger.Debugf("Ignoring OtherConnections, agent does not have AcceptsOtherConnectionSettings capability")
-				}
-			}
-		}
-
-		if msg.PackagesAvailable != nil {
-			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages) {
-				msgData.PackagesAvailable = msg.PackagesAvailable
-				msgData.PackageSyncer = NewPackagesSyncer(
-					r.logger,
-					msgData.PackagesAvailable,
-					r.sender,
-					r.clientSyncedState,
-					r.packagesStateProvider,
-				)
-			} else {
-				r.logger.Debugf("Ignoring PackagesAvailable, agent does not have AcceptsPackages capability")
-			}
-		}
-
-		if msg.AgentIdentification != nil {
-			err := r.rcvAgentIdentification(msg.AgentIdentification)
-			if err == nil {
-				msgData.AgentIdentification = msg.AgentIdentification
-			}
-		}
-
-		r.callbacks.OnMessage(ctx, msgData)
-
-		r.rcvOpampConnectionSettings(ctx, msg.ConnectionSettings)
-
-		if scheduled {
-			r.sender.ScheduleSend()
+	// Note that anytime we add a new command capabilities we need to add a check here.
+	// This is because we want to ignore commands that the agent does not have the capability
+	// to process.
+	if msg.Command != nil {
+		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand) {
+			r.rcvCommand(ctx, msg.Command)
+			// If a command message exists, other messages will be ignored
+			return
+		} else {
+			r.logger.Debugf(ctx, "Ignoring Command, agent does not have AcceptsCommands capability")
 		}
 	}
 
-	err := msg.GetErrorResponse()
+	scheduled, err := r.rcvFlags(ctx, protobufs.ServerToAgentFlags(msg.Flags))
 	if err != nil {
-		r.processErrorResponse(err)
+		r.logger.Errorf(ctx, "cannot processed received flags:%v", err)
+	}
+
+	msgData := &types.MessageData{}
+
+	if msg.RemoteConfig != nil {
+		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig) {
+			msgData.RemoteConfig = msg.RemoteConfig
+		} else {
+			r.logger.Debugf(ctx, "Ignoring RemoteConfig, agent does not have AcceptsRemoteConfig capability")
+		}
+	}
+
+	if msg.ConnectionSettings != nil {
+		if msg.ConnectionSettings.OwnMetrics != nil {
+			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics) {
+				msgData.OwnMetricsConnSettings = msg.ConnectionSettings.OwnMetrics
+			} else {
+				r.logger.Debugf(ctx, "Ignoring OwnMetrics, agent does not have ReportsOwnMetrics capability")
+			}
+		}
+
+		if msg.ConnectionSettings.OwnTraces != nil {
+			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnTraces) {
+				msgData.OwnTracesConnSettings = msg.ConnectionSettings.OwnTraces
+			} else {
+				r.logger.Debugf(ctx, "Ignoring OwnTraces, agent does not have ReportsOwnTraces capability")
+			}
+		}
+
+		if msg.ConnectionSettings.OwnLogs != nil {
+			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnLogs) {
+				msgData.OwnLogsConnSettings = msg.ConnectionSettings.OwnLogs
+			} else {
+				r.logger.Debugf(ctx, "Ignoring OwnLogs, agent does not have ReportsOwnLogs capability")
+			}
+		}
+
+		if msg.ConnectionSettings.OtherConnections != nil {
+			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOtherConnectionSettings) {
+				msgData.OtherConnSettings = msg.ConnectionSettings.OtherConnections
+			} else {
+				r.logger.Debugf(ctx, "Ignoring OtherConnections, agent does not have AcceptsOtherConnectionSettings capability")
+			}
+		}
+	}
+
+	if msg.PackagesAvailable != nil {
+		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages) {
+			msgData.PackagesAvailable = msg.PackagesAvailable
+			msgData.PackageSyncer = NewPackagesSyncer(
+				r.logger,
+				msgData.PackagesAvailable,
+				r.sender,
+				r.clientSyncedState,
+				r.packagesStateProvider,
+				r.packageSyncMutex,
+			)
+		} else {
+			r.logger.Debugf(ctx, "Ignoring PackagesAvailable, agent does not have AcceptsPackages capability")
+		}
+	}
+
+	if msg.AgentIdentification != nil {
+		err := r.rcvAgentIdentification(ctx, msg.AgentIdentification)
+		if err != nil {
+			r.logger.Errorf(ctx, "Failed to set agent ID: %v", err)
+		} else {
+			msgData.AgentIdentification = msg.AgentIdentification
+		}
+	}
+
+	if msg.CustomCapabilities != nil {
+		msgData.CustomCapabilities = msg.CustomCapabilities
+	}
+
+	if msg.CustomMessage != nil {
+		// ensure that the agent supports the capability
+		if r.clientSyncedState.HasCustomCapability(msg.CustomMessage.Capability) {
+			msgData.CustomMessage = msg.CustomMessage
+		} else {
+			r.logger.Debugf(ctx, "Ignoring CustomMessage, agent does not have %s capability", msg.CustomMessage.Capability)
+		}
+	}
+
+	r.callbacks.OnMessage(ctx, msgData)
+
+	r.rcvOpampConnectionSettings(ctx, msg.ConnectionSettings)
+
+	if scheduled {
+		r.sender.ScheduleSend()
+	}
+
+	errResponse := msg.GetErrorResponse()
+	if errResponse != nil {
+		r.processErrorResponse(ctx, errResponse)
 	}
 }
 
@@ -164,7 +185,7 @@ func (r *receivedProcessor) rcvFlags(
 	if flags&protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState != 0 {
 		cfg, err := r.callbacks.GetEffectiveConfig(ctx)
 		if err != nil {
-			r.logger.Errorf("Cannot GetEffectiveConfig: %v", err)
+			r.logger.Errorf(ctx, "Cannot GetEffectiveConfig: %v", err)
 			cfg = nil
 		}
 
@@ -174,11 +195,23 @@ func (r *receivedProcessor) rcvFlags(
 				msg.Health = r.clientSyncedState.Health()
 				msg.RemoteConfigStatus = r.clientSyncedState.RemoteConfigStatus()
 				msg.PackageStatuses = r.clientSyncedState.PackageStatuses()
+				msg.CustomCapabilities = r.clientSyncedState.CustomCapabilities()
+				msg.Flags = r.clientSyncedState.Flags()
+				msg.AvailableComponents = r.clientSyncedState.AvailableComponents()
 
-				// The logic for EffectiveConfig is similar to the previous 4 sub-messages however
+				// The logic for EffectiveConfig is similar to the previous 6 sub-messages however
 				// the EffectiveConfig is fetched using GetEffectiveConfig instead of
 				// from clientSyncedState. We do this to avoid keeping EffectiveConfig in-memory.
 				msg.EffectiveConfig = cfg
+			},
+		)
+		scheduleSend = true
+	}
+
+	if flags&protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportAvailableComponents != 0 {
+		r.sender.NextMessage().Update(
+			func(msg *protobufs.AgentToServer) {
+				msg.AvailableComponents = r.clientSyncedState.AvailableComponents()
 			},
 		)
 		scheduleSend = true
@@ -192,40 +225,50 @@ func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, sett
 		return
 	}
 
+	if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat) {
+		interval := time.Duration(settings.Opamp.HeartbeatIntervalSeconds) * time.Second
+		if err := r.sender.SetHeartbeatInterval(interval); err != nil {
+			r.logger.Errorf(ctx, "Failed to set heartbeat interval: %v", err)
+		}
+	}
+
 	if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings) {
 		err := r.callbacks.OnOpampConnectionSettings(ctx, settings.Opamp)
-		if err == nil {
-			// TODO: verify connection using new settings.
-			r.callbacks.OnOpampConnectionSettingsAccepted(settings.Opamp)
+		if err != nil {
+			r.logger.Errorf(ctx, "Failed to process OpAMPConnectionSettings: %v", err)
 		}
 	} else {
-		r.logger.Debugf("Ignoring Opamp, agent does not have AcceptsOpAMPConnectionSettings capability")
+		r.logger.Debugf(ctx, "Ignoring Opamp, agent does not have AcceptsOpAMPConnectionSettings capability")
 	}
 }
 
-func (r *receivedProcessor) processErrorResponse(body *protobufs.ServerErrorResponse) {
-	// TODO: implement this.
-	r.logger.Errorf("received an error from server: %s", body.ErrorMessage)
+func (r *receivedProcessor) processErrorResponse(ctx context.Context, body *protobufs.ServerErrorResponse) {
+	if body != nil {
+		r.callbacks.OnError(ctx, body)
+	}
 }
 
-func (r *receivedProcessor) rcvAgentIdentification(agentId *protobufs.AgentIdentification) error {
-	if agentId.NewInstanceUid == "" {
-		err := errors.New("empty instance uid is not allowed")
-		r.logger.Debugf(err.Error())
+func (r *receivedProcessor) rcvAgentIdentification(ctx context.Context, agentId *protobufs.AgentIdentification) error {
+	if len(agentId.NewInstanceUid) != 16 {
+		err := fmt.Errorf("instance uid must be 16 bytes but is %d bytes long", len(agentId.NewInstanceUid))
+		r.logger.Debugf(ctx, err.Error())
 		return err
 	}
 
-	err := r.sender.SetInstanceUid(agentId.NewInstanceUid)
+	err := r.sender.SetInstanceUid(types.InstanceUid(agentId.NewInstanceUid))
 	if err != nil {
-		r.logger.Errorf("Error while setting instance uid: %v, err")
+		r.logger.Errorf(ctx, "Error while setting instance uid: %v", err)
 		return err
 	}
+
+	// If we set up a new instance ID, reset the RequestInstanceUid flag.
+	r.clientSyncedState.flags &^= protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid
 
 	return nil
 }
 
-func (r *receivedProcessor) rcvCommand(command *protobufs.ServerToAgentCommand) {
+func (r *receivedProcessor) rcvCommand(ctx context.Context, command *protobufs.ServerToAgentCommand) {
 	if command != nil {
-		r.callbacks.OnCommand(command)
+		r.callbacks.OnCommand(ctx, command)
 	}
 }

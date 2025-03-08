@@ -1,21 +1,23 @@
 package agent
 
 import (
+	"bytes"
 	"context"
+	cryptorand "crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"math/rand"
 	"os"
 	"runtime"
 	"sort"
-	"time"
 
+	"github.com/google/uuid"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/rawbytes"
-	"github.com/oklog/ulid/v2"
 
 	"github.com/open-telemetry/opamp-go/client"
 	"github.com/open-telemetry/opamp-go/client/types"
@@ -50,7 +52,7 @@ type Agent struct {
 
 	effectiveConfig string
 
-	instanceId ulid.ULID
+	instanceId uuid.UUID
 
 	agentDescription *protobufs.AgentDescription
 
@@ -63,6 +65,9 @@ type Agent struct {
 	// The TLS certificate used for the OpAMP connection. Can be nil, meaning no client-side
 	// certificate is used.
 	opampClientCert *tls.Certificate
+
+	certRequested       bool
+	clientPrivateKeyPEM []byte
 }
 
 func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent {
@@ -74,12 +79,12 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 	}
 
 	agent.createAgentIdentity()
-	agent.logger.Debugf("Agent starting, id=%v, type=%s, version=%s.",
-		agent.instanceId.String(), agentType, agentVersion)
+	agent.logger.Debugf(context.Background(), "Agent starting, id=%v, type=%s, version=%s.",
+		agent.instanceId, agentType, agentVersion)
 
 	agent.loadLocalConfig()
 	if err := agent.connect(); err != nil {
-		agent.logger.Errorf("Cannot connect OpAMP client: %v", err)
+		agent.logger.Errorf(context.Background(), "Cannot connect OpAMP client: %v", err)
 		return nil
 	}
 
@@ -89,7 +94,10 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 func (agent *Agent) connect() error {
 	agent.opampClient = client.NewWebSocket(agent.logger)
 
-	tlsConfig, err := internal.CreateClientTLSConfig(agent.opampClientCert, "../../certs")
+	tlsConfig, err := internal.CreateClientTLSConfig(
+		agent.opampClientCert,
+		"../../certs/certs/ca.cert.pem",
+	)
 	if err != nil {
 		return err
 	}
@@ -97,25 +105,25 @@ func (agent *Agent) connect() error {
 	settings := types.StartSettings{
 		OpAMPServerURL: "wss://127.0.0.1:4320/v1/opamp",
 		TLSConfig:      tlsConfig,
-		InstanceUid:    agent.instanceId.String(),
-		Callbacks: types.CallbacksStruct{
-			OnConnectFunc: func() {
-				agent.logger.Debugf("Connected to the server.")
+		InstanceUid:    types.InstanceUid(agent.instanceId),
+		Callbacks: types.Callbacks{
+			OnConnect: func(ctx context.Context) {
+				agent.logger.Debugf(ctx, "Connected to the server.")
 			},
-			OnConnectFailedFunc: func(err error) {
-				agent.logger.Errorf("Failed to connect to the server: %v", err)
+			OnConnectFailed: func(ctx context.Context, err error) {
+				agent.logger.Errorf(ctx, "Failed to connect to the server: %v", err)
 			},
-			OnErrorFunc: func(err *protobufs.ServerErrorResponse) {
-				agent.logger.Errorf("Server returned an error response: %v", err.ErrorMessage)
+			OnError: func(ctx context.Context, err *protobufs.ServerErrorResponse) {
+				agent.logger.Errorf(ctx, "Server returned an error response: %v", err.ErrorMessage)
 			},
-			SaveRemoteConfigStatusFunc: func(_ context.Context, status *protobufs.RemoteConfigStatus) {
+			SaveRemoteConfigStatus: func(_ context.Context, status *protobufs.RemoteConfigStatus) {
 				agent.remoteConfigStatus = status
 			},
-			GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+			GetEffectiveConfig: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 				return agent.composeEffectiveConfig(), nil
 			},
-			OnMessageFunc:                 agent.onMessage,
-			OnOpampConnectionSettingsFunc: agent.onOpampConnectionSettings,
+			OnMessage:                 agent.onMessage,
+			OnOpampConnectionSettings: agent.onOpampConnectionSettings,
 		},
 		RemoteConfigStatus: agent.remoteConfigStatus,
 		Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
@@ -130,27 +138,38 @@ func (agent *Agent) connect() error {
 		return err
 	}
 
-	agent.logger.Debugf("Starting OpAMP client...")
+	// This sets the request to create a client certificate before the OpAMP client
+	// is started, before the connection is established. However, this assumes the
+	// server supports "AcceptsConnectionRequest" capability.
+	// Alternatively the agent can perform this request after receiving the first
+	// message from the server (in onMessage), i.e. after the server capabilities
+	// become known and can be checked.
+	agent.requestClientCertificate()
+
+	agent.logger.Debugf(context.Background(), "Starting OpAMP client...")
 
 	err = agent.opampClient.Start(context.Background(), settings)
 	if err != nil {
 		return err
 	}
 
-	agent.logger.Debugf("OpAMP Client started.")
+	agent.logger.Debugf(context.Background(), "OpAMP Client started.")
 
 	return nil
 }
 
-func (agent *Agent) disconnect() {
-	agent.logger.Debugf("Disconnecting from server...")
-	agent.opampClient.Stop(context.Background())
+func (agent *Agent) disconnect(ctx context.Context) {
+	agent.logger.Debugf(ctx, "Disconnecting from server...")
+	agent.opampClient.Stop(ctx)
 }
 
 func (agent *Agent) createAgentIdentity() {
 	// Generate instance id.
-	entropy := ulid.Monotonic(rand.New(rand.NewSource(0)), 0)
-	agent.instanceId = ulid.MustNew(ulid.Timestamp(time.Now()), entropy)
+	uid, err := uuid.NewV7()
+	if err != nil {
+		panic(err)
+	}
+	agent.instanceId = uid
 
 	hostname, _ := os.Hostname()
 
@@ -191,10 +210,10 @@ func (agent *Agent) createAgentIdentity() {
 	}
 }
 
-func (agent *Agent) updateAgentIdentity(instanceId ulid.ULID) {
-	agent.logger.Debugf("Agent identify is being changed from id=%v to id=%v",
-		agent.instanceId.String(),
-		instanceId.String())
+func (agent *Agent) updateAgentIdentity(ctx context.Context, instanceId uuid.UUID) {
+	agent.logger.Debugf(ctx, "Agent identify is being changed from id=%v to id=%v",
+		agent.instanceId,
+		instanceId)
 	agent.instanceId = instanceId
 
 	if agent.metricReporter != nil {
@@ -204,7 +223,7 @@ func (agent *Agent) updateAgentIdentity(instanceId ulid.ULID) {
 }
 
 func (agent *Agent) loadLocalConfig() {
-	var k = koanf.New(".")
+	k := koanf.New(".")
 	_ = k.Load(rawbytes.Provider([]byte(localConfig)), yaml.Parser())
 
 	effectiveConfigBytes, err := k.Marshal(yaml.Parser())
@@ -228,7 +247,7 @@ func (agent *Agent) composeEffectiveConfig() *protobufs.EffectiveConfig {
 func (agent *Agent) initMeter(settings *protobufs.TelemetryConnectionSettings) {
 	reporter, err := NewMetricReporter(agent.logger, settings, agent.agentType, agent.agentVersion, agent.instanceId)
 	if err != nil {
-		agent.logger.Errorf("Cannot collect metrics: %v", err)
+		agent.logger.Errorf(context.Background(), "Cannot collect metrics: %v", err)
 		return
 	}
 
@@ -269,10 +288,10 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 		return false, nil
 	}
 
-	agent.logger.Debugf("Received remote config from server, hash=%x.", config.ConfigHash)
+	agent.logger.Debugf(context.Background(), "Received remote config from server, hash=%x.", config.ConfigHash)
 
 	// Begin with local config. We will later merge received configs on top of it.
-	var k = koanf.New(".")
+	k := koanf.New(".")
 	if err := k.Load(rawbytes.Provider([]byte(localConfig)), yaml.Parser()); err != nil {
 		return false, err
 	}
@@ -303,7 +322,7 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 
 	// Merge received configs.
 	for _, item := range orderedConfigs {
-		var k2 = koanf.New(".")
+		k2 := koanf.New(".")
 		err := k2.Load(rawbytes.Provider(item.file.Body), yaml.Parser())
 		if err != nil {
 			return false, fmt.Errorf("cannot parse config named %s: %v", item.name, err)
@@ -323,7 +342,7 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 	newEffectiveConfig := string(effectiveConfigBytes)
 	configChanged = false
 	if agent.effectiveConfig != newEffectiveConfig {
-		agent.logger.Debugf("Effective config changed. Need to report to server.")
+		agent.logger.Debugf(context.Background(), "Effective config changed. Need to report to server.")
 		agent.effectiveConfig = newEffectiveConfig
 		configChanged = true
 	}
@@ -332,10 +351,87 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 }
 
 func (agent *Agent) Shutdown() {
-	agent.logger.Debugf("Agent shutting down...")
+	agent.logger.Debugf(context.Background(), "Agent shutting down...")
 	if agent.opampClient != nil {
 		_ = agent.opampClient.Stop(context.Background())
 	}
+}
+
+// requestClientCertificate sets a request to be sent to the Server to create
+// a client certificate that the Agent can use in subsequent OpAMP connections.
+// This is the initiating step of the Client Signing Request (CSR) flow.
+func (agent *Agent) requestClientCertificate() {
+	if agent.certRequested {
+		// Request only once, for bootstrapping.
+		// TODO: the Agent may also for example check that the current certificate
+		// is approaching expiration date and re-requests a new certificate.
+		return
+	}
+
+	// Generate a keypair for new client cert.
+	clientCertKeyPair, err := rsa.GenerateKey(cryptorand.Reader, 4096)
+	if err != nil {
+		agent.logger.Errorf(context.Background(), "Cannot generate keypair: %v", err)
+		return
+	}
+
+	// Encode the private key of the keypair as DER.
+	privateKeyDER := x509.MarshalPKCS1PrivateKey(clientCertKeyPair)
+
+	// Convert private key from DER to PEM.
+	privateKeyPEM := new(bytes.Buffer)
+	pem.Encode(
+		privateKeyPEM, &pem.Block{
+			Type:  "RSA PRIVATE KEY",
+			Bytes: privateKeyDER,
+		},
+	)
+	// Keep it. We will need it in later steps of the flow.
+	agent.clientPrivateKeyPEM = privateKeyPEM.Bytes()
+
+	// Create the CSR.
+	template := x509.CertificateRequest{
+		Subject: pkix.Name{
+			CommonName:   "OpAMP Example Client",
+			Organization: []string{"OpenTelemetry OpAMP Workgroup"},
+			Locality:     []string{"Agent-initiated"},
+			// Where do we put instance_uid?
+		},
+		SignatureAlgorithm: x509.SHA256WithRSA,
+	}
+
+	derBytes, err := x509.CreateCertificateRequest(cryptorand.Reader, &template, clientCertKeyPair)
+	if err != nil {
+		agent.logger.Errorf(context.Background(), "Failed to create certificate request: %s", err)
+		return
+	}
+
+	// Convert CSR from DER to PEM format.
+	csrPEM := new(bytes.Buffer)
+	pem.Encode(
+		csrPEM, &pem.Block{
+			Type:  "CERTIFICATE REQUEST",
+			Bytes: derBytes,
+		},
+	)
+
+	// Send the request to the Server (immediately if already connected
+	// or upon next successful connection).
+	err = agent.opampClient.RequestConnectionSettings(
+		&protobufs.ConnectionSettingsRequest{
+			Opamp: &protobufs.OpAMPConnectionSettingsRequest{
+				CertificateRequest: &protobufs.CertificateRequest{
+					Csr: csrPEM.Bytes(),
+				},
+			},
+		},
+	)
+	if err != nil {
+		agent.logger.Errorf(context.Background(), "Failed to send CSR to server: %s", err)
+		return
+	}
+
+	agent.certRequested = true
 }
 
 func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
@@ -344,11 +440,13 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 		var err error
 		configChanged, err = agent.applyRemoteConfig(msg.RemoteConfig)
 		if err != nil {
-			agent.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
-				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
-				Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
-				ErrorMessage:         err.Error(),
-			})
+			agent.opampClient.SetRemoteConfigStatus(
+				&protobufs.RemoteConfigStatus{
+					LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
+					Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
+					ErrorMessage:         err.Error(),
+				},
+			)
 		} else {
 			agent.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
 				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
@@ -362,37 +460,47 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	}
 
 	if msg.AgentIdentification != nil {
-		newInstanceId, err := ulid.Parse(msg.AgentIdentification.NewInstanceUid)
+		uid, err := uuid.FromBytes(msg.AgentIdentification.NewInstanceUid)
 		if err != nil {
-			agent.logger.Errorf(err.Error())
+			agent.logger.Errorf(ctx, "invalid NewInstanceUid: %v", err)
+			return
 		}
-		agent.updateAgentIdentity(newInstanceId)
+		agent.updateAgentIdentity(ctx, uid)
 	}
 
 	if configChanged {
 		err := agent.opampClient.UpdateEffectiveConfig(ctx)
 		if err != nil {
-			agent.logger.Errorf(err.Error())
+			agent.logger.Errorf(ctx, err.Error())
 		}
 	}
+
+	// TODO: check that the Server has AcceptsConnectionSettingsRequest capability before
+	// requesting a certificate.
+	// This is actually a no-op since we already made the request when connecting
+	// (see connect()). However we keep this call here to demonstrate that requesting it
+	// in onMessage callback is also an option. This approach should be used if it is
+	// necessary to check for AcceptsConnectionSettingsRequest (if the Agent is
+	// not certain that the Server has this capability).
+	agent.requestClientCertificate()
 }
 
-func (agent *Agent) tryChangeOpAMPCert(cert *tls.Certificate) {
-	agent.logger.Debugf("Reconnecting to verify offered client certificate.\n")
+func (agent *Agent) tryChangeOpAMPCert(ctx context.Context, cert *tls.Certificate) {
+	agent.logger.Debugf(ctx, "Reconnecting to verify offered client certificate.\n")
 
-	agent.disconnect()
+	agent.disconnect(ctx)
 
 	agent.opampClientCert = cert
 	if err := agent.connect(); err != nil {
-		agent.logger.Errorf("Cannot connect using offered certificate: %s. Ignoring the offer\n", err)
+		agent.logger.Errorf(ctx, "Cannot connect using offered certificate: %s. Ignoring the offer\n", err)
 		agent.opampClientCert = nil
 
 		if err := agent.connect(); err != nil {
-			agent.logger.Errorf("Unable to reconnect after restoring client certificate: %v\n", err)
+			agent.logger.Errorf(ctx, "Unable to reconnect after restoring client certificate: %v\n", err)
 		}
 	}
 
-	agent.logger.Debugf("Successfully connected to server. Accepting new client certificate.\n")
+	agent.logger.Debugf(ctx, "Successfully connected to server. Accepting new client certificate.\n")
 
 	// TODO: we can also persist the successfully accepted certificate and use it when the
 	// agent connects to the server after the restart.
@@ -400,7 +508,7 @@ func (agent *Agent) tryChangeOpAMPCert(cert *tls.Certificate) {
 
 func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *protobufs.OpAMPConnectionSettings) error {
 	if settings == nil || settings.Certificate == nil {
-		agent.logger.Debugf("Received nil certificate offer, ignoring.\n")
+		agent.logger.Debugf(ctx, "Received nil certificate offer, ignoring.\n")
 		return nil
 	}
 
@@ -410,30 +518,50 @@ func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *pro
 	}
 
 	// TODO: also use settings.DestinationEndpoint and settings.Headers for future connections.
-	go agent.tryChangeOpAMPCert(cert)
+	go agent.tryChangeOpAMPCert(ctx, cert)
 
 	return nil
 }
 
 func (agent *Agent) getCertFromSettings(certificate *protobufs.TLSCertificate) (*tls.Certificate, error) {
-	// Parse the key pair to a certificate that can be used for network connections.
-	cert, err := tls.X509KeyPair(
-		certificate.PublicKey,
-		certificate.PrivateKey,
-	)
+	// Parse the key pair to a TLS certificate that can be used for network connections.
+
+	// There are 2 types of certificate creation flows in OpAMP: client-initiated CSR
+	// and server-initiated. In this example we demonstrate both flows.
+	// Real-world Agent implementations will probably choose and use only one of these flows.
+
+	var cert tls.Certificate
+	var err error
+	if certificate.PrivateKey == nil && agent.clientPrivateKeyPEM != nil {
+		// Client-initiated CSR flow. This is currently initiated when connecting
+		// to the Server for the first time (see requestClientCertificate()).
+		cert, err = tls.X509KeyPair(
+			certificate.Cert,          // We received the certificate from the Server.
+			agent.clientPrivateKeyPEM, // Private key was earlier locally generated.
+		)
+	} else {
+		// Server-initiated flow. This is currently initiated by user clicking a button in
+		// the Server UI.
+		// Both certificate and private key are from the Server.
+		cert, err = tls.X509KeyPair(
+			certificate.Cert,
+			certificate.PrivateKey,
+		)
+	}
+
 	if err != nil {
-		agent.logger.Errorf("Received invalid certificate offer: %s\n", err)
+		agent.logger.Errorf(context.Background(), "Received invalid certificate offer: %s\n", err.Error())
 		return nil, err
 	}
 
-	if len(certificate.CaPublicKey) != 0 {
-		caCertPB, _ := pem.Decode(certificate.CaPublicKey)
+	if len(certificate.CaCert) != 0 {
+		caCertPB, _ := pem.Decode(certificate.CaCert)
 		caCert, err := x509.ParseCertificate(caCertPB.Bytes)
 		if err != nil {
-			agent.logger.Errorf("Cannot parse CA cert: %v", err)
+			agent.logger.Errorf(context.Background(), "Cannot parse CA cert: %v", err)
 			return nil, err
 		}
-		agent.logger.Debugf("Received offer signed by CA: %v", caCert.Subject)
+		agent.logger.Debugf(context.Background(), "Received offer signed by CA: %v", caCert.Subject)
 		// TODO: we can verify the CA's identity here (to match our CA as we know it).
 	}
 
