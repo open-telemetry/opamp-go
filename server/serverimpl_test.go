@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -1181,4 +1182,81 @@ func TestServerNotResponse(t *testing.T) {
 	// Read Server's response.
 	_, _, err = conn.ReadMessage()
 	require.True(t, websocket.IsCloseError(err, websocket.CloseAbnormalClosure))
+}
+
+func TestServerTLS(t *testing.T) {
+	var rcvMsg atomic.Value
+	var onConnectedCalled, onCloseCalled int32
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnConnected: func(ctx context.Context, conn types.Connection) {
+					atomic.StoreInt32(&onConnectedCalled, 1)
+				},
+				OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					// Remember received message.
+					rcvMsg.Store(message)
+
+					// Send a response.
+					response := protobufs.ServerToAgent{
+						InstanceUid:  message.InstanceUid,
+						Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
+					}
+					return &response
+				},
+				OnConnectionClose: func(conn types.Connection) {
+					atomic.StoreInt32(&onCloseCalled, 1)
+				},
+			}}
+		},
+	}
+
+	// Start a Server.
+	srvTLSConfig, err := sharedinternal.CreateServerTLSConfig(
+		"../internal/certs/certs/ca.cert.pem",
+		"../internal/certs/server_certs/server.cert.pem",
+		"../internal/certs/server_certs/server.key.pem",
+	)
+	require.NoError(t, err)
+	settings := &StartSettings{Settings: Settings{Callbacks: callbacks}, TLSConfig: srvTLSConfig}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	// Send a message to the Server.
+	sendMsg := protobufs.AgentToServer{
+		InstanceUid: []byte("12345678"),
+	}
+	b, err := proto.Marshal(&sendMsg)
+	require.NoError(t, err)
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	hc := &http.Client{Transport: tr}
+	resp, err := hc.Post("https://"+settings.ListenEndpoint+settings.ListenPath, contentTypeProtobuf, bytes.NewReader(b))
+	require.NoError(t, err)
+
+	// Wait until Server receives the message.
+	eventually(t, func() bool { return rcvMsg.Load() != nil })
+	assert.True(t, atomic.LoadInt32(&onConnectedCalled) == 1)
+
+	// Verify the received message is what was sent.
+	assert.True(t, proto.Equal(rcvMsg.Load().(proto.Message), &sendMsg))
+
+	// Read Server's response.
+	b, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	assert.EqualValues(t, http.StatusOK, resp.StatusCode)
+	assert.EqualValues(t, contentTypeProtobuf, resp.Header.Get(headerContentType))
+
+	// Decode the response.
+	var response protobufs.ServerToAgent
+	err = proto.Unmarshal(b, &response)
+	require.NoError(t, err)
+
+	// Verify the response.
+	assert.EqualValues(t, sendMsg.InstanceUid, response.InstanceUid)
+	assert.EqualValues(t, protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus, response.Capabilities)
+
+	eventually(t, func() bool { return atomic.LoadInt32(&onCloseCalled) == 1 })
 }
