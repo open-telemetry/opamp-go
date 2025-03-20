@@ -9,7 +9,6 @@ import (
 
 // OpAMPClient is an interface representing the client side of the OpAMP protocol.
 type OpAMPClient interface {
-
 	// Start the client and begin attempts to connect to the Server. Once connection
 	// is established the client will attempt to maintain it by reconnecting if
 	// the connection is lost. All failed connection attempts will be reported via

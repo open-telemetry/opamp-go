@@ -468,7 +468,6 @@ func createRemoteConfig() *protobufs.AgentRemoteConfig {
 
 func TestFirstStatusReport(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		remoteConfig := createRemoteConfig()
 
 		// Start a Server.
@@ -629,13 +628,11 @@ func TestSetEffectiveConfig(t *testing.T) {
 		// Shutdown the client.
 		err := client.Stop(context.Background())
 		assert.NoError(t, err)
-
 	})
 }
 
 func TestSetAgentDescription(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		var rcvAgentDescr atomic.Value
@@ -927,7 +924,6 @@ func TestClientRequestConnectionSettings(t *testing.T) {
 
 func TestReportAgentDescription(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
@@ -990,7 +986,6 @@ func TestReportAgentDescription(t *testing.T) {
 
 func TestReportAgentHealth(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
@@ -1063,7 +1058,6 @@ func TestReportAgentHealth(t *testing.T) {
 
 func TestReportEffectiveConfig(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
@@ -1131,7 +1125,6 @@ func TestReportEffectiveConfig(t *testing.T) {
 
 func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *protobufs.RemoteConfigStatus) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
@@ -1235,7 +1228,6 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 }
 
 func TestRemoteConfigUpdate(t *testing.T) {
-
 	tests := []struct {
 		name           string
 		success        bool
@@ -1280,7 +1272,8 @@ const packageUpdateErrorMsg = "cannot update packages"
 
 func assertPackageStatus(t *testing.T,
 	testCase packageTestCase,
-	msg *protobufs.AgentToServer) (*protobufs.ServerToAgent, bool) {
+	msg *protobufs.AgentToServer,
+) (*protobufs.ServerToAgent, bool) {
 	expectedStatusReceived := false
 
 	status := msg.PackageStatuses
@@ -1327,7 +1320,6 @@ func assertPackageStatus(t *testing.T,
 
 func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
@@ -1383,7 +1375,8 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 		// ---> Server
 		// Wait for the expected package statuses to be received.
 		srv.EventuallyExpect("full PackageStatuses", func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent,
-			bool) {
+			bool,
+		) {
 			return assertPackageStatus(t, testCase, msg)
 		})
 
@@ -1512,7 +1505,6 @@ func createPackageTestCase(name string, downloadSrv *httptest.Server) packageTes
 }
 
 func TestUpdatePackages(t *testing.T) {
-
 	downloadSrv := createDownloadSrv(t)
 	defer downloadSrv.Close()
 
@@ -1661,14 +1653,12 @@ func TestMissingPackagesStateProvider(t *testing.T) {
 }
 
 func TestOfferUpdatedVersion(t *testing.T) {
-
 	downloadSrv := createDownloadSrv(t)
 	defer downloadSrv.Close()
 
 	testCase := createPackageTestCase("offer new version", downloadSrv)
 
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		localPackageState := internal.NewInMemPackagesStore()
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
@@ -1711,7 +1701,8 @@ func TestOfferUpdatedVersion(t *testing.T) {
 		// ---> Server
 		// Wait for the expected package statuses to be received.
 		srv.EventuallyExpect("full PackageStatuses", func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent,
-			bool) {
+			bool,
+		) {
 			return assertPackageStatus(t, testCase, msg)
 		})
 
@@ -1738,7 +1729,8 @@ func TestOfferUpdatedVersion(t *testing.T) {
 		// ---> Server
 		// Wait for the expected package statuses to be received.
 		srv.EventuallyExpect("full PackageStatuses updated version", func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent,
-			bool) {
+			bool,
+		) {
 			return assertPackageStatus(t, testCase, msg)
 		})
 
@@ -1753,7 +1745,6 @@ func TestOfferUpdatedVersion(t *testing.T) {
 
 func TestReportCustomCapabilities(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
@@ -1908,7 +1899,6 @@ func TestSendCustomMessage(t *testing.T) {
 // TestCustomMessages tests the custom messages functionality.
 func TestCustomMessages(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		var rcvCustomMessage atomic.Value
@@ -2141,7 +2131,6 @@ func TestCustomMessagesSendAndWait(t *testing.T) {
 // TestSetCustomCapabilities tests the ability for the client to change the set of custom capabilities that it supports.
 func TestSetCustomCapabilities(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		var rcvCustomCapabilities atomic.Value
@@ -2224,7 +2213,6 @@ func TestSetCustomCapabilities(t *testing.T) {
 // TestSetFlags tests the ability for the client to change the set of flags it sends.
 func TestSetFlags(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		var rcvCustomFlags atomic.Value
@@ -2377,7 +2365,6 @@ func TestSetAvailableComponents(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			testClients(t, func(t *testing.T, client OpAMPClient) {
-
 				// Start a Server.
 				srv := internal.StartMockServer(t)
 				srv.EnableExpectMode()

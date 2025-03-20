@@ -15,8 +15,10 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
-var htmlDir string
-var srv *http.Server
+var (
+	htmlDir string
+	srv     *http.Server
+)
 
 var logger = log.New(log.Default().Writer(), "[UI] ", log.Default().Flags()|log.Lmsgprefix|log.Lmicroseconds)
 
@@ -44,7 +46,6 @@ func renderTemplate(w http.ResponseWriter, htmlTemplateFile string, data interfa
 		path.Join(htmlDir, "header.html"),
 		path.Join(htmlDir, htmlTemplateFile),
 	)
-
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		logger.Printf("Error parsing html template %s: %v", htmlTemplateFile, err)

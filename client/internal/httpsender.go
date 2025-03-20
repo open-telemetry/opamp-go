@@ -21,11 +21,15 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
-const OpAMPPlainHTTPMethod = "POST"
-const defaultPollingIntervalMs = 30 * 1000 // default interval is 30 seconds.
+const (
+	OpAMPPlainHTTPMethod     = "POST"
+	defaultPollingIntervalMs = 30 * 1000 // default interval is 30 seconds.
+)
 
-const headerContentEncoding = "Content-Encoding"
-const encodingTypeGZip = "gzip"
+const (
+	headerContentEncoding = "Content-Encoding"
+	encodingTypeGZip      = "gzip"
+)
 
 type requestWrapper struct {
 	*http.Request
