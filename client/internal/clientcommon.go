@@ -62,7 +62,7 @@ type ClientCommon struct {
 	// Indicates that the Client is fully stopped.
 	stoppedSignal chan struct{}
 
-	downloadReporterInterval time.Duration
+	DownloadReporterInterval time.Duration
 }
 
 // NewClientCommon creates a new ClientCommon.
@@ -152,10 +152,10 @@ func (c *ClientCommon) PrepareStart(
 		return err
 	}
 
-	if settings.DownloadReporterInterval != nil && settings.DownloadReporterInterval < time.Second {
-		c.downloadReporterInterval = time.Second
+	if settings.DownloadReporterInterval != nil && *settings.DownloadReporterInterval < time.Second {
+		c.DownloadReporterInterval = time.Second
 	} else if settings.DownloadReporterInterval != nil {
-		c.downloadReporterInterval = settings.DownloadReporterInterval
+		c.DownloadReporterInterval = *settings.DownloadReporterInterval
 	}
 
 	return nil
