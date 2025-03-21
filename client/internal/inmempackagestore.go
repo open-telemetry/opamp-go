@@ -3,7 +3,6 @@ package internal
 import (
 	"context"
 	"io"
-	"maps"
 	"sync"
 
 	"github.com/open-telemetry/opamp-go/client/types"
@@ -96,7 +95,7 @@ func (l *InMemPackagesStore) SetAllPackagesHash(hash []byte) error {
 }
 
 func (l *InMemPackagesStore) GetContent() map[string][]byte {
-	return maps.Clone(l.fileContents)
+	return l.fileContents
 }
 
 func (l *InMemPackagesStore) GetSignature() map[string][]byte {
