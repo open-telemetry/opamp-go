@@ -87,5 +87,8 @@ type PackagesStateProvider interface {
 
 	// SetLastReportedStatuses saves the statuses in the local state. This is called
 	// periodically during syncing process to save the most recent statuses.
+	// Depending on implementation, this method may be called concurrently if a client
+	// downloads many packages at once. Implementors of this interface should take care
+	// to ensure that conflicting writes do not occur.
 	SetLastReportedStatuses(statuses *protobufs.PackageStatuses) error
 }

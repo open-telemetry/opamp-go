@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -60,6 +61,8 @@ type ClientCommon struct {
 
 	// Indicates that the Client is fully stopped.
 	stoppedSignal chan struct{}
+
+	DownloadReporterInterval time.Duration
 }
 
 // NewClientCommon creates a new ClientCommon.
@@ -147,6 +150,12 @@ func (c *ClientCommon) PrepareStart(
 
 	if err := c.sender.SetInstanceUid(settings.InstanceUid); err != nil {
 		return err
+	}
+
+	if settings.DownloadReporterInterval != nil && *settings.DownloadReporterInterval < time.Second {
+		c.DownloadReporterInterval = time.Second
+	} else if settings.DownloadReporterInterval != nil {
+		c.DownloadReporterInterval = *settings.DownloadReporterInterval
 	}
 
 	return nil
