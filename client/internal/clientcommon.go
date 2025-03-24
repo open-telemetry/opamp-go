@@ -494,7 +494,6 @@ func (c *ClientCommon) SetAvailableComponents(components *protobufs.AvailableCom
 
 // SetCapabilities sends a message to the Server with the new capabilities.
 func (c *ClientCommon) SetCapabilities(capabilities *protobufs.AgentCapabilities) error {
-
 	// store the customCapabilities to send
 	if err := c.ClientSyncedState.SetCapabilities(capabilities); err != nil {
 		return err
