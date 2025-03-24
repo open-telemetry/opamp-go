@@ -10,6 +10,8 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
+var _ OpAMPClient = &httpClient{}
+
 // httpClient is an OpAMP Client implementation for plain HTTP transport.
 // See specification: https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#plain-http-transport
 type httpClient struct {
@@ -125,6 +127,11 @@ func (c *httpClient) SetAvailableComponents(components *protobufs.AvailableCompo
 	return c.common.SetAvailableComponents(components)
 }
 
+// SetCapabilities implements OpAMPClient.
+func (c *httpClient) SetCapabilities(capabilities *protobufs.AgentCapabilities) error {
+	return c.common.SetCapabilities(capabilities)
+}
+
 func (c *httpClient) runUntilStopped(ctx context.Context) {
 	// Start the HTTP sender. This will make request/responses with retries for
 	// failures and will wait with configured polling interval if there is nothing
@@ -135,7 +142,7 @@ func (c *httpClient) runUntilStopped(ctx context.Context) {
 		c.common.Callbacks,
 		&c.common.ClientSyncedState,
 		c.common.PackagesStateProvider,
-		c.common.Capabilities,
+		c.common.ClientSyncedState.Capabilities(),
 		&c.common.PackageSyncMutex,
 	)
 }

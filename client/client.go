@@ -152,4 +152,17 @@ type OpAMPClient interface {
 	// This method is subject to agent status compression - if components is not
 	// different from the cached agent state, this method is a no-op.
 	SetAvailableComponents(components *protobufs.AvailableComponents) error
+
+	// SetCapabilities updates the set of capabilities that the client supports.
+	// These capabilities will be communicated to the server in the next message.
+	//
+	// This method can be called at any time after Start(), including from within
+	// an OnMessage handler, to dynamically update the set of supported capabilities.
+	// The updated capabilities will be sent to the server in the next outgoing message.
+	//
+	// The capabilities parameter must not be nil; passing a nil value will result in an error.
+	//
+	// For more details, refer to the OpAMP specification:
+	// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#agenttoservercapabilities
+	SetCapabilities(capabilities *protobufs.AgentCapabilities) error
 }
