@@ -1775,7 +1775,9 @@ func TestSetCapabilities(t *testing.T) {
 			}
 		})
 
-		newCapabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig
+		newCapabilities := protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
+			protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
+			protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
 		err := client.SetCapabilities(&newCapabilities)
 		assert.NoError(t, err)
 
@@ -1784,7 +1786,27 @@ func TestSetCapabilities(t *testing.T) {
 			// Check ReportsStatus is still true.
 			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus != 0)
 			// ReportsEffectiveConfig should no longer be present.
-			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig == 0)
+			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig != 0)
+			// AcceptsRemoteConfig should now be present
+			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig != 0)
+
+			// Send a custom message response and ask client for full state again.
+			return &protobufs.ServerToAgent{
+				InstanceUid: msg.InstanceUid,
+				Flags:       uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState),
+			}
+		})
+
+		newCapabilities = protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
+		newSetErr := client.SetCapabilities(&newCapabilities)
+		assert.Error(t, newSetErr)
+
+		// ---> Server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// Check ReportsStatus is still true.
+			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus != 0)
+			// ReportsEffectiveConfig should no longer be present.
+			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig != 0)
 			// AcceptsRemoteConfig should now be present
 			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig != 0)
 
