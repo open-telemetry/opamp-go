@@ -22,6 +22,8 @@ const (
 	defaultShutdownTimeout = 5 * time.Second
 )
 
+var _ OpAMPClient = &wsClient{}
+
 // wsClient is an OpAMP Client implementation for WebSocket transport.
 // See specification: https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#websocket-transport
 type wsClient struct {
@@ -160,6 +162,11 @@ func (c *wsClient) SendCustomMessage(message *protobufs.CustomMessage) (messageS
 // SetAvailableComponents implements OpAMPClient.SetAvailableComponents
 func (c *wsClient) SetAvailableComponents(components *protobufs.AvailableComponents) error {
 	return c.common.SetAvailableComponents(components)
+}
+
+// SetCapabilities implements OpAMPClient.
+func (c *wsClient) SetCapabilities(capabilities *protobufs.AgentCapabilities) error {
+	return c.common.SetCapabilities(capabilities)
 }
 
 func viaReq(resps []*http.Response) []*http.Request {
@@ -362,7 +369,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		c.sender,
 		&c.common.ClientSyncedState,
 		c.common.PackagesStateProvider,
-		c.common.Capabilities,
+		c.common.ClientSyncedState.Capabilities(),
 		&c.common.PackageSyncMutex,
 	)
 
