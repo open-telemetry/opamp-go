@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1384,7 +1385,10 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 			// Wait until all syncing is done.
 			<-syncerDoneCh
 
-			for pkgName, receivedContent := range localPackageState.GetContent() {
+			// Clone localPackageState instead of using directly to avoid a race when testing for the DOWNLADING status
+			// The downloading status occurs, but may experiance a concurrent write as it is very quickly marked as complete.
+			packageStateCopy := maps.Clone(localPackageState.GetContent())
+			for pkgName, receivedContent := range packageStateCopy {
 				expectedContent := testCase.expectedFileContent[pkgName]
 				assert.EqualValues(t, expectedContent, receivedContent)
 
