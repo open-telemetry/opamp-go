@@ -1388,11 +1388,12 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 			// Clone localPackageState instead of using directly to avoid a race when testing for the DOWNLADING status
 			// The downloading status occurs, but may experiance a concurrent write as it is very quickly marked as complete.
 			packageStateCopy := maps.Clone(localPackageState.GetContent())
+			signaturesCopy := maps.Clone(localPackageState.GetSignature())
 			for pkgName, receivedContent := range packageStateCopy {
 				expectedContent := testCase.expectedFileContent[pkgName]
 				assert.EqualValues(t, expectedContent, receivedContent)
 
-				actualSignature := localPackageState.GetSignature()[pkgName]
+				actualSignature := signaturesCopy[pkgName]
 				expectedSignature := testCase.expectedSignature[pkgName]
 				assert.EqualValues(t, expectedSignature, actualSignature)
 			}
