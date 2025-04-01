@@ -51,7 +51,7 @@ func (p *downloadReporter) report(ctx context.Context, updateFn func(context.Con
 			case <-p.done:
 				return
 			case <-ticker.C:
-				downloadTime := time.Now().Sub(p.start)
+				downloadTime := time.Since(p.start)
 				downloaded := float64(p.downloaded.Load())
 				bps := downloaded / float64(downloadTime/time.Second)
 				var downloadPercent float64
