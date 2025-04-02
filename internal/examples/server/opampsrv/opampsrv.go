@@ -19,11 +19,10 @@ import (
 type Server struct {
 	opampSrv server.OpAMPServer
 	agents   *data.Agents
-	sendCA   bool
 	logger   *Logger
 }
 
-func NewServer(agents *data.Agents, sendCA bool) *Server {
+func NewServer(agents *data.Agents) *Server {
 	logger := &Logger{
 		log.New(
 			log.Default().Writer(),
@@ -34,7 +33,6 @@ func NewServer(agents *data.Agents, sendCA bool) *Server {
 
 	srv := &Server{
 		agents: agents,
-		sendCA: sendCA,
 		logger: logger,
 	}
 
@@ -111,7 +109,7 @@ func (srv *Server) onMessage(ctx context.Context, conn types.Connection, msg *pr
 	// Process the status report and continue building the response.
 	agent.UpdateStatus(msg, response)
 
-	if srv.sendCA && msg.ConnectionSettingsRequest != nil {
+	if msg.ConnectionSettingsRequest != nil && msg.ConnectionSettingsRequest.SettingsRequest != nil {
 		srv.logger.Debugf(ctx, "agent: %v send ca\n", instanceId)
 		srv.setOpAMPCA(response, "../../certs/certs/ca.cert.pem")
 	}

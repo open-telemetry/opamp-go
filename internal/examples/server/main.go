@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -21,13 +20,8 @@ func main() {
 
 	logger.Println("OpAMP Server starting...")
 
-	var sendCA bool
-	flag.BoolVar(&sendCA, "send-ca", false, "Send the CA the OpAMP server uses in the initial response as part of offered settings.")
-
-	flag.Parse()
-
 	uisrv.Start(curDir)
-	opampSrv := opampsrv.NewServer(&data.AllAgents, sendCA)
+	opampSrv := opampsrv.NewServer(&data.AllAgents)
 	opampSrv.Start()
 
 	logger.Println("OpAMP Server running...")

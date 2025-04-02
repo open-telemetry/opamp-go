@@ -50,8 +50,8 @@ type Agent struct {
 	agentType    string
 	agentVersion string
 
-	// use insecure connection until offered settings has a CA
-	awaitCA bool
+	// use insecure initially
+	requestConnectionSettings bool
 
 	effectiveConfig string
 
@@ -75,14 +75,14 @@ type Agent struct {
 	clientPrivateKeyPEM []byte
 }
 
-func NewAgent(logger types.Logger, agentType string, agentVersion string, awaitCA bool) *Agent {
+func NewAgent(logger types.Logger, agentType string, agentVersion string, requestConnectionSettings bool) *Agent {
 	agent := &Agent{
-		effectiveConfig: localConfig,
-		logger:          logger,
-		agentType:       agentType,
-		agentVersion:    agentVersion,
-		awaitCA:         awaitCA,
-		tls:             &tls.Config{},
+		effectiveConfig:           localConfig,
+		logger:                    logger,
+		agentType:                 agentType,
+		agentVersion:              agentVersion,
+		requestConnectionSettings: requestConnectionSettings,
+		tls:                       &tls.Config{},
 	}
 
 	agent.createAgentIdentity()
@@ -90,7 +90,7 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string, awaitC
 		agent.instanceId, agentType, agentVersion)
 
 	agent.loadLocalConfig()
-	if awaitCA {
+	if requestConnectionSettings {
 		agent.tls.InsecureSkipVerify = true
 	} else {
 		tlsConfig, err := internal.CreateClientTLSConfig(
@@ -138,7 +138,8 @@ func (agent *Agent) connect(tlsConfig *tls.Config) error {
 			OnMessageFunc:                 agent.onMessage,
 			OnOpampConnectionSettingsFunc: agent.onOpampConnectionSettings,
 		},
-		RemoteConfigStatus: agent.remoteConfigStatus,
+		RemoteConfigStatus:        agent.remoteConfigStatus,
+		RequestConnectionSettings: agent.requestConnectionSettings,
 		Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
@@ -501,6 +502,7 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 func (agent *Agent) tryChangeOpAMP(ctx context.Context, cert *tls.Certificate, cfg *tls.Config) {
 	agent.logger.Debugf(ctx, "Reconnecting to verify new OpAMP settings.\n")
 	agent.disconnect(ctx)
+	agent.requestConnectionSettings = false
 
 	oldCfg := agent.tls
 	if cfg == nil {
@@ -570,11 +572,7 @@ func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *pro
 			if !ok {
 				return fmt.Errorf("unable to add PEM CA")
 			}
-			// no need to await once we have a CA
-			if agent.awaitCA {
-				agent.logger.Debugf(ctx, "CA in offered settings.\n")
-			}
-			agent.awaitCA = false
+			agent.logger.Debugf(ctx, "CA in offered settings.\n")
 		}
 	}
 	// TODO: also use settings.DestinationEndpoint and settings.Headers for future connections.
