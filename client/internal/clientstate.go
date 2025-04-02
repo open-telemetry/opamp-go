@@ -2,6 +2,7 @@ package internal
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -14,7 +15,13 @@ var (
 	errPackageStatusesMissing           = errors.New("PackageStatuses is not set")
 	errServerProvidedAllPackagesHashNil = errors.New("ServerProvidedAllPackagesHash is nil")
 	errCustomCapabilitiesMissing        = errors.New("CustomCapabilities is not set")
+	errCapabilitiesMissing              = errors.New("Capabilities is not set")
 	errAvailableComponentsMissing       = errors.New("AvailableComponents is not set")
+
+	modifiableFields = []protobufs.AgentCapabilities{
+		protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig,
+		protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig,
+	}
 )
 
 // ClientSyncedState stores the state of the Agent messages that the OpAMP Client needs to
@@ -42,6 +49,7 @@ type ClientSyncedState struct {
 	customCapabilities  *protobufs.CustomCapabilities
 	availableComponents *protobufs.AvailableComponents
 	flags               protobufs.AgentToServerFlags
+	agentCapabilities   protobufs.AgentCapabilities
 }
 
 func (s *ClientSyncedState) AgentDescription() *protobufs.AgentDescription {
@@ -84,6 +92,12 @@ func (s *ClientSyncedState) Flags() uint64 {
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	return uint64(s.flags)
+}
+
+func (s *ClientSyncedState) Capabilities() protobufs.AgentCapabilities {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	return s.agentCapabilities
 }
 
 // SetAgentDescription sets the AgentDescription in the state.
@@ -204,4 +218,31 @@ func (s *ClientSyncedState) SetFlags(flags protobufs.AgentToServerFlags) {
 	s.mutex.Lock()
 
 	s.flags = flags
+}
+
+// SetCapabilities sets the Capabilities in the state.
+func (s *ClientSyncedState) SetCapabilities(capabilities *protobufs.AgentCapabilities) error {
+	if capabilities == nil {
+		return errCapabilitiesMissing
+	}
+
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	currentCapabilities := s.agentCapabilities
+	if currentCapabilities != 0 {
+		// Create a mask for the modifiable fields
+		var modifiableMask protobufs.AgentCapabilities
+		for _, capability := range modifiableFields {
+			modifiableMask |= capability
+		}
+
+		// Check if any non-modifiable fields are being changed
+		currentCapabilities := s.agentCapabilities
+		if (currentCapabilities & ^modifiableMask) != (*capabilities & ^modifiableMask) {
+			return fmt.Errorf("only the following fields can be modified: %v", modifiableFields)
+		}
+	}
+	s.agentCapabilities = *capabilities
+
+	return nil
 }
