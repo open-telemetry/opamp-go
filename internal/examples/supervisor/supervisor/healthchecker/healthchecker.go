@@ -18,7 +18,6 @@ func NewHttpHealthChecker(endpoint string) *HttpHealthChecker {
 }
 
 func (h *HttpHealthChecker) Check(ctx context.Context) error {
-
 	req, err := http.NewRequestWithContext(ctx, "GET", h.endpoint, nil)
 	if err != nil {
 		return err

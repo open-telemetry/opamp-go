@@ -129,7 +129,6 @@ func (s *Supervisor) loadConfig() error {
 }
 
 func (s *Supervisor) startOpAMP() error {
-
 	s.opampClient = client.NewWebSocket(s.logger)
 
 	settings := types.StartSettings{
@@ -138,20 +137,20 @@ func (s *Supervisor) startOpAMP() error {
 			InsecureSkipVerify: true,
 		},
 		InstanceUid: types.InstanceUid(s.instanceId),
-		Callbacks: types.CallbacksStruct{
-			OnConnectFunc: func(ctx context.Context) {
+		Callbacks: types.Callbacks{
+			OnConnect: func(ctx context.Context) {
 				s.logger.Debugf(ctx, "Connected to the server.")
 			},
-			OnConnectFailedFunc: func(ctx context.Context, err error) {
+			OnConnectFailed: func(ctx context.Context, err error) {
 				s.logger.Errorf(ctx, "Failed to connect to the server: %v", err)
 			},
-			OnErrorFunc: func(ctx context.Context, err *protobufs.ServerErrorResponse) {
+			OnError: func(ctx context.Context, err *protobufs.ServerErrorResponse) {
 				s.logger.Errorf(ctx, "Server returned an error response: %v", err.ErrorMessage)
 			},
-			GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+			GetEffectiveConfig: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 				return s.createEffectiveConfigMsg(), nil
 			},
-			OnMessageFunc: s.onMessage,
+			OnMessage: s.onMessage,
 		},
 		Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig |
@@ -219,7 +218,6 @@ func (s *Supervisor) createAgentDescription() *protobufs.AgentDescription {
 }
 
 func (s *Supervisor) composeExtraLocalConfig() string {
-
 	return fmt.Sprintf(`
 service:
   telemetry:
@@ -331,7 +329,7 @@ service:
 // 1) the remote config from OpAMP Server, 2) the own metrics config section,
 // 3) the local override config that is hard-coded in the Supervisor.
 func (s *Supervisor) composeEffectiveConfig(ctx context.Context, config *protobufs.AgentRemoteConfig) (configChanged bool, err error) {
-	var k = koanf.New(".")
+	k := koanf.New(".")
 
 	// Begin with empty config. We will merge received configs on top of it.
 	if err := k.Load(rawbytes.Provider([]byte{}), yaml.Parser()); err != nil {
@@ -356,7 +354,7 @@ func (s *Supervisor) composeEffectiveConfig(ctx context.Context, config *protobu
 	// Merge received configs.
 	for _, name := range names {
 		item := config.Config.ConfigMap[name]
-		var k2 = koanf.New(".")
+		k2 := koanf.New(".")
 		err := k2.Load(rawbytes.Provider(item.Body), yaml.Parser())
 		if err != nil {
 			return false, fmt.Errorf("cannot parse config named %s: %v", name, err)
@@ -401,7 +399,6 @@ func (s *Supervisor) composeEffectiveConfig(ctx context.Context, config *protobu
 // Recalculate the Agent's effective config and if the config changes signal to the
 // background goroutine that the config needs to be applied to the Agent.
 func (s *Supervisor) recalcEffectiveConfig(ctx context.Context) (configChanged bool, err error) {
-
 	configChanged, err = s.composeEffectiveConfig(ctx, s.remoteConfig)
 	if err != nil {
 		s.logger.Errorf(ctx, "Error composing effective config. Ignoring received config: %v", err)

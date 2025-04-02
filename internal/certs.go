@@ -82,7 +82,6 @@ func CreateServerTLSConfig(caCertPath, serverCertPath, serverKeyPath string) (*t
 }
 
 func CreateTLSCert(caCertPath, caKeyPath string) (*protobufs.TLSCertificate, error) {
-
 	// Load CA Cert.
 	caCertBytes, err := os.ReadFile(caCertPath)
 	if err != nil {

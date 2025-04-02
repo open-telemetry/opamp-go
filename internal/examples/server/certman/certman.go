@@ -21,9 +21,11 @@ import (
 
 var logger = log.New(log.Default().Writer(), "[CertMan] ", log.Default().Flags()|log.Lmsgprefix|log.Lmicroseconds)
 
-var caCert *x509.Certificate
-var caPrivKey *rsa.PrivateKey
-var caCertBytes []byte
+var (
+	caCert      *x509.Certificate
+	caPrivKey   *rsa.PrivateKey
+	caCertBytes []byte
+)
 
 var loadCACertOnce sync.Once
 

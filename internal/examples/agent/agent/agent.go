@@ -119,24 +119,24 @@ func (agent *Agent) connect(tlsConfig *tls.Config) error {
 		OpAMPServerURL: "wss://127.0.0.1:4320/v1/opamp",
 		TLSConfig:      agent.tls,
 		InstanceUid:    types.InstanceUid(agent.instanceId),
-		Callbacks: types.CallbacksStruct{
-			OnConnectFunc: func(ctx context.Context) {
+		Callbacks: types.Callbacks{
+			OnConnect: func(ctx context.Context) {
 				agent.logger.Debugf(ctx, "Connected to the server.")
 			},
-			OnConnectFailedFunc: func(ctx context.Context, err error) {
+			OnConnectFailed: func(ctx context.Context, err error) {
 				agent.logger.Errorf(ctx, "Failed to connect to the server: %v", err)
 			},
-			OnErrorFunc: func(ctx context.Context, err *protobufs.ServerErrorResponse) {
+			OnError: func(ctx context.Context, err *protobufs.ServerErrorResponse) {
 				agent.logger.Errorf(ctx, "Server returned an error response: %v", err.ErrorMessage)
 			},
-			SaveRemoteConfigStatusFunc: func(_ context.Context, status *protobufs.RemoteConfigStatus) {
+			SaveRemoteConfigStatus: func(_ context.Context, status *protobufs.RemoteConfigStatus) {
 				agent.remoteConfigStatus = status
 			},
-			GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+			GetEffectiveConfig: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 				return agent.composeEffectiveConfig(), nil
 			},
-			OnMessageFunc:                 agent.onMessage,
-			OnOpampConnectionSettingsFunc: agent.onOpampConnectionSettings,
+			OnMessage:                 agent.onMessage,
+			OnOpampConnectionSettings: agent.onOpampConnectionSettings,
 		},
 		RemoteConfigStatus:        agent.remoteConfigStatus,
 		RequestConnectionSettings: agent.requestConnectionSettings,
@@ -237,7 +237,7 @@ func (agent *Agent) updateAgentIdentity(ctx context.Context, instanceId uuid.UUI
 }
 
 func (agent *Agent) loadLocalConfig() {
-	var k = koanf.New(".")
+	k := koanf.New(".")
 	_ = k.Load(rawbytes.Provider([]byte(localConfig)), yaml.Parser())
 
 	effectiveConfigBytes, err := k.Marshal(yaml.Parser())
@@ -305,7 +305,7 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 	agent.logger.Debugf(context.Background(), "Received remote config from server, hash=%x.", config.ConfigHash)
 
 	// Begin with local config. We will later merge received configs on top of it.
-	var k = koanf.New(".")
+	k := koanf.New(".")
 	if err := k.Load(rawbytes.Provider([]byte(localConfig)), yaml.Parser()); err != nil {
 		return false, err
 	}
@@ -336,7 +336,7 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 
 	// Merge received configs.
 	for _, item := range orderedConfigs {
-		var k2 = koanf.New(".")
+		k2 := koanf.New(".")
 		err := k2.Load(rawbytes.Provider(item.file.Body), yaml.Parser())
 		if err != nil {
 			return false, fmt.Errorf("cannot parse config named %s: %v", item.name, err)

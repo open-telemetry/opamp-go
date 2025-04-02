@@ -20,6 +20,7 @@ var (
 	ErrReportsRemoteConfigNotSet             = errors.New("ReportsRemoteConfig capability is not set")
 	ErrPackagesStateProviderNotSet           = errors.New("PackagesStateProvider must be set")
 	ErrAcceptsPackagesNotSet                 = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
+	ErrAvailableComponentsMissing            = errors.New("AvailableComponents is nil")
 	ErrAcceptsOpAMPConnectionsSettingsNotSet = errors.New("AcceptsOpAMPConnectionSettings must be set")
 
 	errAlreadyStarted               = errors.New("already started")
@@ -97,6 +98,10 @@ func (c *ClientCommon) PrepareStart(
 	}
 	c.requestInitialConnectionSettings = settings.RequestConnectionSettings
 
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents != 0 && c.ClientSyncedState.AvailableComponents() == nil {
+		return ErrAvailableComponentsMissing
+	}
+
 	// Prepare remote config status.
 	if settings.RemoteConfigStatus == nil {
 		// RemoteConfigStatus is not provided. Start with empty.
@@ -141,10 +146,7 @@ func (c *ClientCommon) PrepareStart(
 
 	// Prepare callbacks.
 	c.Callbacks = settings.Callbacks
-	if c.Callbacks == nil {
-		// Make sure it is always safe to call Callbacks.
-		c.Callbacks = types.CallbacksStruct{}
-	}
+	c.Callbacks.SetDefaults()
 
 	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat != 0 && settings.HeartbeatInterval != nil {
 		if err := c.sender.SetHeartbeatInterval(*settings.HeartbeatInterval); err != nil {
@@ -224,6 +226,15 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 		return err
 	}
 
+	// initially, do not send the full component state - just send the hash.
+	// full state is available on request from the server using the corresponding ServerToAgent flag
+	var availableComponents *protobufs.AvailableComponents
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents != 0 {
+		availableComponents = &protobufs.AvailableComponents{
+			Hash: c.ClientSyncedState.AvailableComponents().GetHash(),
+		}
+	}
+
 	c.sender.NextMessage().Update(
 		func(msg *protobufs.AgentToServer) {
 			msg.AgentDescription = c.ClientSyncedState.AgentDescription()
@@ -233,6 +244,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.Capabilities = uint64(c.Capabilities)
 			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()
 			msg.Flags = c.ClientSyncedState.Flags()
+			msg.AvailableComponents = availableComponents
 			c.injectInitialConnectionSettingsRequest(msg)
 		},
 	)
@@ -253,7 +265,6 @@ func (c *ClientCommon) injectInitialConnectionSettingsRequest(msg *protobufs.Age
 			msg.ConnectionSettingsRequest.SettingsRequest = &protobufs.SettingsRequest{}
 		}
 	})
-
 }
 
 // AgentDescription returns the current state of the AgentDescription.
@@ -462,4 +473,48 @@ func (c *ClientCommon) SendCustomMessage(message *protobufs.CustomMessage) (mess
 	c.sender.ScheduleSend()
 
 	return sendingChan, nil
+}
+
+// SetAvailableComponents sends a message to the server with the available components for the agent
+func (c *ClientCommon) SetAvailableComponents(components *protobufs.AvailableComponents) error {
+	if !c.isStarted {
+		return c.ClientSyncedState.SetAvailableComponents(components)
+	}
+
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents == 0 {
+		return types.ErrReportsAvailableComponentsNotSet
+	}
+
+	if components == nil {
+		return types.ErrAvailableComponentsMissing
+	}
+
+	if len(components.Hash) == 0 {
+		return types.ErrNoAvailableComponentHash
+	}
+
+	// implement agent status compression, don't send the message if it hasn't changed from the previous message
+	availableComponentsChanged := !proto.Equal(c.ClientSyncedState.AvailableComponents(), components)
+
+	if availableComponentsChanged {
+		if err := c.ClientSyncedState.SetAvailableComponents(components); err != nil {
+			return err
+		}
+
+		// initially, do not send the full component state - just send the hash.
+		// full state is available on request from the server using the corresponding ServerToAgent flag
+		availableComponents := &protobufs.AvailableComponents{
+			Hash: c.ClientSyncedState.AvailableComponents().GetHash(),
+		}
+
+		c.sender.NextMessage().Update(
+			func(msg *protobufs.AgentToServer) {
+				msg.AvailableComponents = availableComponents
+			},
+		)
+
+		c.sender.ScheduleSend()
+	}
+
+	return nil
 }

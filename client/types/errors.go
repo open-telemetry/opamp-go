@@ -13,4 +13,13 @@ var (
 	// ErrCustomMessagePending is returned by SendCustomMessage when called before the previous
 	// message has been sent.
 	ErrCustomMessagePending = errors.New("custom message already set")
+
+	// ErrReportsAvailableComponentsNotSet is returned by SetAvailableComponents without the ReportsAvailableComponents capability set
+	ErrReportsAvailableComponentsNotSet = errors.New("ReportsAvailableComponents capability is not set")
+
+	// ErrAvailableComponentsMissing is returned by SetAvailableComponents when called with a nil message
+	ErrAvailableComponentsMissing = errors.New("AvailableComponents is nil")
+
+	// ErrNoAvailableComponentHash is returned by SetAvailableComponents when called with a message with an empty hash
+	ErrNoAvailableComponentHash = errors.New("AvailableComponents.Hash is empty")
 )

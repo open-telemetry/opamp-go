@@ -41,7 +41,6 @@ const (
 )
 
 func TestServerToAgentCommand(t *testing.T) {
-
 	tests := []struct {
 		command *protobufs.ServerToAgentCommand
 		action  commandAction
@@ -72,8 +71,8 @@ func TestServerToAgentCommand(t *testing.T) {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			action := none
 
-			callbacks := types.CallbacksStruct{
-				OnCommandFunc: func(ctx context.Context, command *protobufs.ServerToAgentCommand) error {
+			callbacks := types.Callbacks{
+				OnCommand: func(ctx context.Context, command *protobufs.ServerToAgentCommand) error {
 					switch command.Type {
 					case protobufs.CommandType_CommandType_Restart:
 						action = restart
@@ -83,6 +82,7 @@ func TestServerToAgentCommand(t *testing.T) {
 					return nil
 				},
 			}
+			callbacks.SetDefaults()
 			clientSyncedState := ClientSyncedState{
 				remoteConfigStatus: &protobufs.RemoteConfigStatus{},
 			}
@@ -132,12 +132,12 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 		calledCommand := false
 		calledOnMessageConfig := false
 
-		callbacks := types.CallbacksStruct{
-			OnCommandFunc: func(ctx context.Context, command *protobufs.ServerToAgentCommand) error {
+		callbacks := types.Callbacks{
+			OnCommand: func(ctx context.Context, command *protobufs.ServerToAgentCommand) error {
 				calledCommand = true
 				return nil
 			},
-			OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+			OnMessage: func(ctx context.Context, msg *types.MessageData) {
 				calledOnMessageConfig = true
 			},
 		}
@@ -187,7 +187,6 @@ func TestDecodeMessage(t *testing.T) {
 }
 
 func TestReceiverLoopStop(t *testing.T) {
-
 	srv := StartMockServer(t)
 
 	conn, _, err := websocket.DefaultDialer.DialContext(
@@ -199,7 +198,7 @@ func TestReceiverLoopStop(t *testing.T) {
 
 	var receiverLoopStopped atomic.Bool
 
-	callbacks := types.CallbacksStruct{}
+	callbacks := types.Callbacks{}
 	clientSyncedState := ClientSyncedState{
 		remoteConfigStatus: &protobufs.RemoteConfigStatus{},
 	}
@@ -236,8 +235,8 @@ func TestWSPackageUpdatesInParallel(t *testing.T) {
 			<-blockSyncCh
 		}
 	}
-	callbacks := types.CallbacksStruct{
-		OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+	callbacks := types.Callbacks{
+		OnMessage: func(ctx context.Context, msg *types.MessageData) {
 			err := msg.PackageSyncer.Sync(ctx)
 			assert.NoError(t, err)
 			messages.Add(1)

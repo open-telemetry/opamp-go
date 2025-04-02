@@ -47,7 +47,6 @@ func NewPackagesSyncer(
 
 // Sync performs the package syncing process.
 func (s *packagesSyncer) Sync(ctx context.Context) error {
-
 	defer func() {
 		close(s.doneCh)
 	}()
@@ -162,7 +161,6 @@ func (s *packagesSyncer) syncPackage(
 	pkgName string,
 	pkgAvail *protobufs.PackageAvailable,
 ) error {
-
 	status := s.statuses.Packages[pkgName]
 	if status == nil {
 		// This package has no status. Create one.
@@ -253,7 +251,8 @@ func (s *packagesSyncer) syncPackageFile(
 // shouldDownloadFile returns true if the file should be downloaded.
 func (s *packagesSyncer) shouldDownloadFile(ctx context.Context,
 	packageName string,
-	file *protobufs.DownloadableFile) (bool, error) {
+	file *protobufs.DownloadableFile,
+) (bool, error) {
 	fileContentHash, err := s.localState.FileContentHash(packageName)
 
 	if err != nil {
@@ -278,6 +277,12 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 	req, err := http.NewRequestWithContext(ctx, "GET", file.DownloadUrl, nil)
 	if err != nil {
 		return fmt.Errorf("cannot download file from %s: %v", file.DownloadUrl, err)
+	}
+
+	if file.Headers != nil {
+		for _, h := range file.Headers.Headers {
+			req.Header.Add(h.GetKey(), h.GetValue())
+		}
 	}
 
 	resp, err := http.DefaultClient.Do(req)

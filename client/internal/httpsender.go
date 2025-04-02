@@ -21,11 +21,15 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
-const OpAMPPlainHTTPMethod = "POST"
-const defaultPollingIntervalMs = 30 * 1000 // default interval is 30 seconds.
+const (
+	OpAMPPlainHTTPMethod     = "POST"
+	defaultPollingIntervalMs = 30 * 1000 // default interval is 30 seconds.
+)
 
-const headerContentEncoding = "Content-Encoding"
-const encodingTypeGZip = "gzip"
+const (
+	headerContentEncoding = "Content-Encoding"
+	encodingTypeGZip      = "gzip"
+)
 
 type requestWrapper struct {
 	*http.Request
@@ -97,6 +101,14 @@ func (h *HTTPSender) Run(
 	h.url = url
 	h.callbacks = callbacks
 	h.receiveProcessor = newReceivedProcessor(h.logger, callbacks, h, clientSyncedState, packagesStateProvider, capabilities, packageSyncMutex)
+
+	// we need to detect if the redirect was ever set, if not, we want default behaviour
+	if callbacks.CheckRedirect != nil {
+		h.client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			// viaResp only non-nil for ws client
+			return callbacks.CheckRedirect(req, via, nil)
+		}
+	}
 
 	for {
 		pollingTimer := time.NewTimer(time.Millisecond * time.Duration(atomic.LoadInt64(&h.pollingIntervalMs)))

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -24,6 +25,9 @@ type Commander struct {
 	doneCh  chan struct{}
 	waitCh  chan struct{}
 	running int64
+
+	// Process should not be started while being stopped.
+	startStopMutex sync.RWMutex
 }
 
 func NewCommander(logger types.Logger, cfg *config.Agent, args ...string) (*Commander, error) {
@@ -41,6 +45,9 @@ func NewCommander(logger types.Logger, cfg *config.Agent, args ...string) (*Comm
 // Start the Agent and begin watching the process.
 // Agent's stdout and stderr are written to a file.
 func (c *Commander) Start(ctx context.Context) error {
+	c.startStopMutex.Lock()
+	defer c.startStopMutex.Unlock()
+
 	c.logger.Debugf(ctx, "Starting agent %s", c.cfg.Executable)
 
 	logFilePath := "agent.log"
@@ -116,6 +123,9 @@ func (c *Commander) IsRunning() bool {
 // and if the process does not finish kills it forcedly by sending SIGKILL.
 // Returns after the process is terminated.
 func (c *Commander) Stop(ctx context.Context) error {
+	c.startStopMutex.Lock()
+	defer c.startStopMutex.Unlock()
+
 	if c.cmd == nil || c.cmd.Process == nil {
 		// Not started, nothing to do.
 		return nil

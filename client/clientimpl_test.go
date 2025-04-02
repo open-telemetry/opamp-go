@@ -167,8 +167,8 @@ func TestOnConnectFail(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		var connectErr atomic.Value
 		settings := createNoServerSettings()
-		settings.Callbacks = types.CallbacksStruct{
-			OnConnectFailedFunc: func(ctx context.Context, err error) {
+		settings.Callbacks = types.Callbacks{
+			OnConnectFailed: func(ctx context.Context, err error) {
 				connectErr.Store(err)
 			},
 		}
@@ -244,8 +244,8 @@ func TestConnectWithServer(t *testing.T) {
 		// Start a client.
 		var connected int64
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{
-				OnConnectFunc: func(ctx context.Context) {
+			Callbacks: types.Callbacks{
+				OnConnect: func(ctx context.Context) {
 					atomic.StoreInt64(&connected, 1)
 				},
 			},
@@ -282,12 +282,12 @@ func TestConnectWithServer503(t *testing.T) {
 		var clientConnected int64
 		var connectErr atomic.Value
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{
-				OnConnectFunc: func(ctx context.Context) {
+			Callbacks: types.Callbacks{
+				OnConnect: func(ctx context.Context) {
 					atomic.StoreInt64(&clientConnected, 1)
 					assert.Fail(t, "Client should not be able to connect")
 				},
-				OnConnectFailedFunc: func(ctx context.Context, err error) {
+				OnConnectFailed: func(ctx context.Context, err error) {
 					connectErr.Store(err)
 				},
 			},
@@ -468,7 +468,6 @@ func createRemoteConfig() *protobufs.AgentRemoteConfig {
 
 func TestFirstStatusReport(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		remoteConfig := createRemoteConfig()
 
 		// Start a Server.
@@ -484,11 +483,11 @@ func TestFirstStatusReport(t *testing.T) {
 		// Start a client.
 		var connected, remoteConfigReceived int64
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{
-				OnConnectFunc: func(ctx context.Context) {
+			Callbacks: types.Callbacks{
+				OnConnect: func(ctx context.Context) {
 					atomic.AddInt64(&connected, 1)
 				},
-				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+				OnMessage: func(ctx context.Context, msg *types.MessageData) {
 					// Verify that the client received exactly the remote config that
 					// the Server sent.
 					assert.True(t, proto.Equal(remoteConfig, msg.RemoteConfig))
@@ -537,8 +536,8 @@ func TestIncludesDetailsOnReconnect(t *testing.T) {
 
 	var connected int64
 	settings := types.StartSettings{
-		Callbacks: types.CallbacksStruct{
-			OnConnectFunc: func(ctx context.Context) {
+		Callbacks: types.Callbacks{
+			OnConnect: func(ctx context.Context) {
 				atomic.AddInt64(&connected, 1)
 			},
 		},
@@ -589,8 +588,8 @@ func TestSetEffectiveConfig(t *testing.T) {
 		// Start a client.
 		sendConfig := createEffectiveConfig()
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{
-				GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+			Callbacks: types.Callbacks{
+				GetEffectiveConfig: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 					return sendConfig, nil
 				},
 			},
@@ -629,13 +628,11 @@ func TestSetEffectiveConfig(t *testing.T) {
 		// Shutdown the client.
 		err := client.Stop(context.Background())
 		assert.NoError(t, err)
-
 	})
 }
 
 func TestSetAgentDescription(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		var rcvAgentDescr atomic.Value
@@ -822,8 +819,8 @@ func TestServerOfferConnectionSettings(t *testing.T) {
 
 		// Start a client.
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{
-				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+			Callbacks: types.Callbacks{
+				OnMessage: func(ctx context.Context, msg *types.MessageData) {
 					assert.True(t, proto.Equal(metricsSettings, msg.OwnMetricsConnSettings))
 					assert.True(t, proto.Equal(tracesSettings, msg.OwnTracesConnSettings))
 					assert.True(t, proto.Equal(logsSettings, msg.OwnLogsConnSettings))
@@ -834,7 +831,7 @@ func TestServerOfferConnectionSettings(t *testing.T) {
 					atomic.AddInt64(&gotOtherSettings, 1)
 				},
 
-				OnOpampConnectionSettingsFunc: func(
+				OnOpampConnectionSettings: func(
 					ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
 				) error {
 					assert.True(t, proto.Equal(opampSettings, settings))
@@ -891,8 +888,8 @@ func TestClientRequestConnectionSettings(t *testing.T) {
 
 			// Start a client.
 			settings := types.StartSettings{
-				Callbacks: types.CallbacksStruct{
-					OnOpampConnectionSettingsFunc: func(
+				Callbacks: types.Callbacks{
+					OnOpampConnectionSettings: func(
 						ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
 					) error {
 						assert.True(t, proto.Equal(opampSettings, settings))
@@ -971,7 +968,6 @@ func TestInitialConnectionSettingsRequest(t *testing.T) {
 
 func TestReportAgentDescription(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
@@ -1034,7 +1030,6 @@ func TestReportAgentDescription(t *testing.T) {
 
 func TestReportAgentHealth(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
@@ -1107,7 +1102,6 @@ func TestReportAgentHealth(t *testing.T) {
 
 func TestReportEffectiveConfig(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
@@ -1117,8 +1111,8 @@ func TestReportEffectiveConfig(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
-			Callbacks: types.CallbacksStruct{
-				GetEffectiveConfigFunc: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
+			Callbacks: types.Callbacks{
+				GetEffectiveConfig: func(ctx context.Context) (*protobufs.EffectiveConfig, error) {
 					return clientEffectiveConfig, nil
 				},
 			},
@@ -1175,7 +1169,6 @@ func TestReportEffectiveConfig(t *testing.T) {
 
 func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *protobufs.RemoteConfigStatus) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
@@ -1183,8 +1176,8 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
-			Callbacks: types.CallbacksStruct{
-				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+			Callbacks: types.Callbacks{
+				OnMessage: func(ctx context.Context, msg *types.MessageData) {
 					if msg.RemoteConfig != nil {
 						if successCase {
 							client.SetRemoteConfigStatus(
@@ -1279,7 +1272,6 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 }
 
 func TestRemoteConfigUpdate(t *testing.T) {
-
 	tests := []struct {
 		name           string
 		success        bool
@@ -1324,7 +1316,8 @@ const packageUpdateErrorMsg = "cannot update packages"
 
 func assertPackageStatus(t *testing.T,
 	testCase packageTestCase,
-	msg *protobufs.AgentToServer) (*protobufs.ServerToAgent, bool) {
+	msg *protobufs.AgentToServer,
+) (*protobufs.ServerToAgent, bool) {
 	expectedStatusReceived := false
 
 	status := msg.PackageStatuses
@@ -1371,7 +1364,6 @@ func assertPackageStatus(t *testing.T,
 
 func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
@@ -1399,8 +1391,8 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
-			Callbacks: types.CallbacksStruct{
-				OnMessageFunc: onMessageFunc,
+			Callbacks: types.Callbacks{
+				OnMessage: onMessageFunc,
 			},
 			PackagesStateProvider: localPackageState,
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages |
@@ -1427,7 +1419,8 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 		// ---> Server
 		// Wait for the expected package statuses to be received.
 		srv.EventuallyExpect("full PackageStatuses", func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent,
-			bool) {
+			bool,
+		) {
 			return assertPackageStatus(t, testCase, msg)
 		})
 
@@ -1483,10 +1476,16 @@ const packageFileURL = "/validfile.pkg"
 
 var packageFileContent = []byte("Package File Content")
 
+var optionalAuthHeaders = protobufs.Header{Key: "Authorization", Value: "Basic YWxhZGRpbjpvcGVuc2VzYW1l"}
+
 func createDownloadSrv(t *testing.T) *httptest.Server {
 	m := http.NewServeMux()
 	m.HandleFunc(packageFileURL,
 		func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get(optionalAuthHeaders.GetKey()) != "" {
+				assert.Equal(t, r.Header.Get(optionalAuthHeaders.GetKey()), optionalAuthHeaders.GetValue())
+			}
+
 			w.WriteHeader(http.StatusOK)
 			_, err := w.Write(packageFileContent)
 			assert.NoError(t, err)
@@ -1550,7 +1549,6 @@ func createPackageTestCase(name string, downloadSrv *httptest.Server) packageTes
 }
 
 func TestUpdatePackages(t *testing.T) {
-
 	downloadSrv := createDownloadSrv(t)
 	defer downloadSrv.Close()
 
@@ -1571,6 +1569,11 @@ func TestUpdatePackages(t *testing.T) {
 	errorOnCallback.errorOnCallback = true
 	tests = append(tests, errorOnCallback)
 
+	// A case where we send optional headers
+	withHeaders := createPackageTestCase("with optional HTTP headers", downloadSrv)
+	withHeaders.available.Packages["package1"].File.Headers = &protobufs.Headers{Headers: []*protobufs.Header{&optionalAuthHeaders}}
+	tests = append(tests, withHeaders)
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			verifyUpdatePackages(t, test)
@@ -1586,8 +1589,8 @@ func TestMissingCapabilities(t *testing.T) {
 
 		// Start a client.
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{
-				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+			Callbacks: types.Callbacks{
+				OnMessage: func(ctx context.Context, msg *types.MessageData) {
 					// These fields must not be set since we did not define the capabilities to accept them.
 					assert.Nil(t, msg.RemoteConfig)
 					assert.Nil(t, msg.OwnLogsConnSettings)
@@ -1596,7 +1599,7 @@ func TestMissingCapabilities(t *testing.T) {
 					assert.Nil(t, msg.OtherConnSettings)
 					assert.Nil(t, msg.PackagesAvailable)
 				},
-				OnOpampConnectionSettingsFunc: func(
+				OnOpampConnectionSettings: func(
 					ctx context.Context, settings *protobufs.OpAMPConnectionSettings,
 				) error {
 					assert.Fail(t, "should not be called since capability is not set to accept it")
@@ -1657,7 +1660,7 @@ func TestMissingPackagesStateProvider(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a client.
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{},
+			Callbacks: types.Callbacks{},
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages |
 				protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
 		}
@@ -1668,7 +1671,7 @@ func TestMissingPackagesStateProvider(t *testing.T) {
 		// Start a client.
 		localPackageState := internal.NewInMemPackagesStore()
 		settings = types.StartSettings{
-			Callbacks:             types.CallbacksStruct{},
+			Callbacks:             types.Callbacks{},
 			PackagesStateProvider: localPackageState,
 			Capabilities:          protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages,
 		}
@@ -1678,7 +1681,7 @@ func TestMissingPackagesStateProvider(t *testing.T) {
 
 		// Start a client.
 		settings = types.StartSettings{
-			Callbacks:             types.CallbacksStruct{},
+			Callbacks:             types.Callbacks{},
 			PackagesStateProvider: localPackageState,
 			Capabilities:          protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
 		}
@@ -1689,14 +1692,12 @@ func TestMissingPackagesStateProvider(t *testing.T) {
 }
 
 func TestOfferUpdatedVersion(t *testing.T) {
-
 	downloadSrv := createDownloadSrv(t)
 	defer downloadSrv.Close()
 
 	testCase := createPackageTestCase("offer new version", downloadSrv)
 
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		localPackageState := internal.NewInMemPackagesStore()
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
@@ -1712,8 +1713,8 @@ func TestOfferUpdatedVersion(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
-			Callbacks: types.CallbacksStruct{
-				OnMessageFunc: onMessageFunc,
+			Callbacks: types.Callbacks{
+				OnMessage: onMessageFunc,
 			},
 			PackagesStateProvider: localPackageState,
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages |
@@ -1739,7 +1740,8 @@ func TestOfferUpdatedVersion(t *testing.T) {
 		// ---> Server
 		// Wait for the expected package statuses to be received.
 		srv.EventuallyExpect("full PackageStatuses", func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent,
-			bool) {
+			bool,
+		) {
 			return assertPackageStatus(t, testCase, msg)
 		})
 
@@ -1766,7 +1768,8 @@ func TestOfferUpdatedVersion(t *testing.T) {
 		// ---> Server
 		// Wait for the expected package statuses to be received.
 		srv.EventuallyExpect("full PackageStatuses updated version", func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent,
-			bool) {
+			bool,
+		) {
 			return assertPackageStatus(t, testCase, msg)
 		})
 
@@ -1781,7 +1784,6 @@ func TestOfferUpdatedVersion(t *testing.T) {
 
 func TestReportCustomCapabilities(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
@@ -1791,8 +1793,8 @@ func TestReportCustomCapabilities(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
-			Callbacks: types.CallbacksStruct{
-				OnMessageFunc: func(ctx context.Context, msg *types.MessageData) {
+			Callbacks: types.Callbacks{
+				OnMessage: func(ctx context.Context, msg *types.MessageData) {
 					clientRcvCustomMessage.Store(msg.CustomMessage)
 				},
 			},
@@ -1887,7 +1889,7 @@ func TestReportCustomCapabilities(t *testing.T) {
 func TestSendCustomMessage(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		settings := types.StartSettings{
-			Callbacks: types.CallbacksStruct{},
+			Callbacks: types.Callbacks{},
 		}
 		prepareClient(t, &settings, client)
 		clientCustomCapabilities := &protobufs.CustomCapabilities{
@@ -1936,7 +1938,6 @@ func TestSendCustomMessage(t *testing.T) {
 // TestCustomMessages tests the custom messages functionality.
 func TestCustomMessages(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		var rcvCustomMessage atomic.Value
@@ -2169,7 +2170,6 @@ func TestCustomMessagesSendAndWait(t *testing.T) {
 // TestSetCustomCapabilities tests the ability for the client to change the set of custom capabilities that it supports.
 func TestSetCustomCapabilities(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		var rcvCustomCapabilities atomic.Value
@@ -2252,7 +2252,6 @@ func TestSetCustomCapabilities(t *testing.T) {
 // TestSetFlags tests the ability for the client to change the set of flags it sends.
 func TestSetFlags(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
-
 		// Start a Server.
 		srv := internal.StartMockServer(t)
 		var rcvCustomFlags atomic.Value
@@ -2348,4 +2347,126 @@ func TestSetFlagsBeforeStart(t *testing.T) {
 		err := client.Stop(context.Background())
 		assert.NoError(t, err)
 	})
+}
+
+func TestSetAvailableComponents(t *testing.T) {
+	testCases := []struct {
+		desc         string
+		capabilities protobufs.AgentCapabilities
+		testFunc     func(t *testing.T, client OpAMPClient, srv *internal.MockServer)
+	}{
+		{
+			desc:         "apply nil AvailableComponents",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents,
+			testFunc: func(t *testing.T, client OpAMPClient, _ *internal.MockServer) {
+				require.ErrorIs(t, client.SetAvailableComponents(nil), types.ErrAvailableComponentsMissing)
+			},
+		},
+		{
+			desc:         "apply AvailableComponents with empty hash",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents,
+			testFunc: func(t *testing.T, client OpAMPClient, _ *internal.MockServer) {
+				require.ErrorIs(t, client.SetAvailableComponents(&protobufs.AvailableComponents{}), types.ErrNoAvailableComponentHash)
+			},
+		},
+		{
+			desc: "apply AvailableComponents without required capability",
+			testFunc: func(t *testing.T, client OpAMPClient, _ *internal.MockServer) {
+				require.ErrorIs(t, client.SetAvailableComponents(generateTestAvailableComponents()), types.ErrReportsAvailableComponentsNotSet)
+			},
+		},
+		{
+			desc:         "apply AvailableComponents with cached AvailableComponents",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents,
+			testFunc: func(t *testing.T, client OpAMPClient, _ *internal.MockServer) {
+				require.NoError(t, client.SetAvailableComponents(generateTestAvailableComponents()))
+			},
+		},
+		{
+			desc:         "apply AvailableComponents with new AvailableComponents",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents,
+			testFunc: func(t *testing.T, client OpAMPClient, srv *internal.MockServer) {
+				availableComponents := generateTestAvailableComponents()
+				availableComponents.Hash = []byte("different")
+				require.NoError(t, client.SetAvailableComponents(availableComponents))
+				srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					assert.EqualValues(t, 1, msg.SequenceNum)
+					msgAvailableComponents := msg.GetAvailableComponents()
+					require.NotNil(t, msgAvailableComponents)
+					require.Equal(t, msgAvailableComponents.GetHash(), availableComponents.GetHash())
+					require.Nil(t, msgAvailableComponents.GetComponents())
+					return nil
+				})
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			testClients(t, func(t *testing.T, client OpAMPClient) {
+				// Start a Server.
+				srv := internal.StartMockServer(t)
+				srv.EnableExpectMode()
+
+				availableComponents := generateTestAvailableComponents()
+				client.SetAvailableComponents(availableComponents)
+
+				// Start a client.
+				settings := types.StartSettings{
+					OpAMPServerURL: "ws://" + srv.Endpoint,
+					Callbacks: types.Callbacks{
+						OnMessage: func(ctx context.Context, msg *types.MessageData) {},
+					},
+					Capabilities: tc.capabilities,
+				}
+				prepareClient(t, &settings, client)
+
+				// Client --->
+				assert.NoError(t, client.Start(context.Background(), settings))
+
+				// ---> Server
+				srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					assert.EqualValues(t, 0, msg.SequenceNum)
+					msgAvailableComponents := msg.GetAvailableComponents()
+					if tc.capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents != 0 {
+						require.NotNil(t, msgAvailableComponents)
+						require.Equal(t, msgAvailableComponents.GetHash(), availableComponents.GetHash())
+						require.Nil(t, msgAvailableComponents.GetComponents())
+					} else {
+						require.Nil(t, msgAvailableComponents)
+					}
+					return nil
+				})
+
+				tc.testFunc(t, client, srv)
+
+				// Shutdown the Server.
+				srv.Close()
+
+				// Shutdown the client.
+				err := client.Stop(context.Background())
+				assert.NoError(t, err)
+			})
+		})
+	}
+}
+
+func generateTestAvailableComponents() *protobufs.AvailableComponents {
+	return &protobufs.AvailableComponents{
+		Hash: []byte("fake-hash"),
+		Components: map[string]*protobufs.ComponentDetails{
+			"receivers": {
+				Metadata: []*protobufs.KeyValue{
+					{
+						Key: "component",
+						Value: &protobufs.AnyValue{
+							Value: &protobufs.AnyValue_StringValue{
+								StringValue: "filereceiver",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }

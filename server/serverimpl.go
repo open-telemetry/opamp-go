@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -19,16 +20,16 @@ import (
 	serverTypes "github.com/open-telemetry/opamp-go/server/types"
 )
 
-var (
-	errAlreadyStarted = errors.New("already started")
-)
+var errAlreadyStarted = errors.New("already started")
 
-const defaultOpAMPPath = "/v1/opamp"
-const headerContentType = "Content-Type"
-const headerContentEncoding = "Content-Encoding"
-const headerAcceptEncoding = "Accept-Encoding"
-const contentEncodingGzip = "gzip"
-const contentTypeProtobuf = "application/x-protobuf"
+const (
+	defaultOpAMPPath      = "/v1/opamp"
+	headerContentType     = "Content-Type"
+	headerContentEncoding = "Content-Encoding"
+	headerAcceptEncoding  = "Accept-Encoding"
+	contentEncodingGzip   = "gzip"
+	contentTypeProtobuf   = "application/x-protobuf"
+)
 
 type server struct {
 	logger   types.Logger
@@ -39,7 +40,8 @@ type server struct {
 
 	// The listening HTTP Server after successful Start() call. Nil if Start()
 	// is not called or was not successful.
-	httpServer *http.Server
+	httpServer        *http.Server
+	httpServerServeWg *sync.WaitGroup
 
 	// The network address Server is listening on. Nil if not started.
 	addr net.Addr
@@ -68,6 +70,7 @@ func New(logger types.Logger) *server {
 
 func (s *server) Attach(settings Settings) (HTTPHandlerFunc, ConnContext, error) {
 	s.settings = settings
+	s.settings.Callbacks.SetDefaults()
 	s.wsUpgrader = websocket.Upgrader{
 		EnableCompression: settings.EnableCompression,
 	}
@@ -107,6 +110,9 @@ func (s *server) Start(settings StartSettings) error {
 		ConnContext: contextWithConn,
 	}
 	s.httpServer = hs
+	httpServerServeWg := sync.WaitGroup{}
+	httpServerServeWg.Add(1)
+	s.httpServerServeWg = &httpServerServeWg
 
 	listenAddr := s.httpServer.Addr
 
@@ -117,7 +123,10 @@ func (s *server) Start(settings StartSettings) error {
 		}
 		err = s.startHttpServer(
 			listenAddr,
-			func(l net.Listener) error { return hs.ServeTLS(l, "", "") },
+			func(l net.Listener) error {
+				defer httpServerServeWg.Done()
+				return hs.ServeTLS(l, "", "")
+			},
 		)
 	} else {
 		if listenAddr == "" {
@@ -125,7 +134,10 @@ func (s *server) Start(settings StartSettings) error {
 		}
 		err = s.startHttpServer(
 			listenAddr,
-			func(l net.Listener) error { return hs.Serve(l) },
+			func(l net.Listener) error {
+				defer httpServerServeWg.Done()
+				return hs.Serve(l)
+			},
 		)
 	}
 	return err
@@ -158,7 +170,16 @@ func (s *server) Stop(ctx context.Context) error {
 		defer func() { s.httpServer = nil }()
 		// This stops accepting new connections. TODO: close existing
 		// connections and wait them to be terminated.
-		return s.httpServer.Shutdown(ctx)
+		err := s.httpServer.Shutdown(ctx)
+		if err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			s.httpServerServeWg.Wait()
+		}
 	}
 	return nil
 }
@@ -169,26 +190,25 @@ func (s *server) Addr() net.Addr {
 
 func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 	var connectionCallbacks serverTypes.ConnectionCallbacks
-	if s.settings.Callbacks != nil {
-		resp := s.settings.Callbacks.OnConnecting(req)
-		if !resp.Accept {
-			// HTTP connection is not accepted. Set the response headers.
-			for k, v := range resp.HTTPResponseHeader {
-				w.Header().Set(k, v)
-			}
-			// And write the response status code.
-			w.WriteHeader(resp.HTTPStatusCode)
-			return
+	resp := s.settings.Callbacks.OnConnecting(req)
+	if !resp.Accept {
+		// HTTP connection is not accepted. Set the response headers.
+		for k, v := range resp.HTTPResponseHeader {
+			w.Header().Set(k, v)
 		}
-		// use connection-specific handler provided by ConnectionResponse
-		connectionCallbacks = resp.ConnectionCallbacks
+		// And write the response status code.
+		w.WriteHeader(resp.HTTPStatusCode)
+		return
 	}
+	// use connection-specific handler provided by ConnectionResponse
+	connectionCallbacks = resp.ConnectionCallbacks
+	connectionCallbacks.SetDefaults()
 
 	// HTTP connection is accepted. Check if it is a plain HTTP request.
 
 	if req.Header.Get(headerContentType) == contentTypeProtobuf {
 		// Yes, a plain HTTP request.
-		s.handlePlainHTTPRequest(req, w, connectionCallbacks)
+		s.handlePlainHTTPRequest(req, w, &connectionCallbacks)
 		return
 	}
 
@@ -201,10 +221,10 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 
 	// Return from this func to reduce memory usage.
 	// Handle the connection on a separate goroutine.
-	go s.handleWSConnection(req.Context(), conn, connectionCallbacks)
+	go s.handleWSConnection(req.Context(), conn, &connectionCallbacks)
 }
 
-func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Conn, connectionCallbacks serverTypes.ConnectionCallbacks) {
+func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Conn, connectionCallbacks *serverTypes.ConnectionCallbacks) {
 	agentConn := wsConnection{wsConn: wsConn, connMutex: &sync.Mutex{}}
 
 	defer func() {
@@ -216,59 +236,69 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			}
 		}()
 
-		if connectionCallbacks != nil {
-			connectionCallbacks.OnConnectionClose(agentConn)
-		}
+		connectionCallbacks.OnConnectionClose(agentConn)
 	}()
 
-	if connectionCallbacks != nil {
-		connectionCallbacks.OnConnected(reqCtx, agentConn)
-	}
+	connectionCallbacks.OnConnected(reqCtx, agentConn)
 
 	sentCustomCapabilities := false
 
 	// Loop until fail to read from the WebSocket connection.
 	for {
 		msgContext := context.Background()
+		request := protobufs.AgentToServer{}
+
 		// Block until the next message can be read.
 		mt, msgBytes, err := wsConn.ReadMessage()
+		isBreak, err := func() (bool, error) {
+			if err != nil {
+				if !websocket.IsUnexpectedCloseError(err) {
+					s.logger.Errorf(msgContext, "Cannot read a message from WebSocket: %v", err)
+					return true, err
+				}
+				// This is a normal closing of the WebSocket connection.
+				s.logger.Debugf(msgContext, "Agent disconnected: %v", err)
+				return true, err
+			}
+			if mt != websocket.BinaryMessage {
+				err = fmt.Errorf("unexpected message type: %v, must be binary message", mt)
+				s.logger.Errorf(msgContext, "Cannot process a message from WebSocket: %v", err)
+				return false, err
+			}
+
+			// Decode WebSocket message as a Protobuf message.
+			err = internal.DecodeWSMessage(msgBytes, &request)
+			if err != nil {
+				s.logger.Errorf(msgContext, "Cannot decode message from WebSocket: %v", err)
+				return false, err
+			}
+			return false, nil
+		}()
 		if err != nil {
-			if !websocket.IsUnexpectedCloseError(err) {
-				s.logger.Errorf(msgContext, "Cannot read a message from WebSocket: %v", err)
+			connectionCallbacks.OnReadMessageError(agentConn, mt, msgBytes, err)
+			if isBreak {
 				break
 			}
-			// This is a normal closing of the WebSocket connection.
-			s.logger.Debugf(msgContext, "Agent disconnected: %v", err)
-			break
-		}
-		if mt != websocket.BinaryMessage {
-			s.logger.Errorf(msgContext, "Received unexpected message type from WebSocket: %v", mt)
 			continue
 		}
 
-		// Decode WebSocket message as a Protobuf message.
-		var request protobufs.AgentToServer
-		err = internal.DecodeWSMessage(msgBytes, &request)
+		response := connectionCallbacks.OnMessage(msgContext, agentConn, &request)
+		if response == nil { // No send message when 'response' is empty
+			continue
+		}
+
+		if len(response.InstanceUid) == 0 {
+			response.InstanceUid = request.InstanceUid
+		}
+		if !sentCustomCapabilities {
+			response.CustomCapabilities = &protobufs.CustomCapabilities{
+				Capabilities: s.settings.CustomCapabilities,
+			}
+			sentCustomCapabilities = true
+		}
+		err = agentConn.Send(msgContext, response)
 		if err != nil {
-			s.logger.Errorf(msgContext, "Cannot decode message from WebSocket: %v", err)
-			continue
-		}
-
-		if connectionCallbacks != nil {
-			response := connectionCallbacks.OnMessage(msgContext, agentConn, &request)
-			if len(response.InstanceUid) == 0 {
-				response.InstanceUid = request.InstanceUid
-			}
-			if !sentCustomCapabilities {
-				response.CustomCapabilities = &protobufs.CustomCapabilities{
-					Capabilities: s.settings.CustomCapabilities,
-				}
-				sentCustomCapabilities = true
-			}
-			err = agentConn.Send(msgContext, response)
-			if err != nil {
-				s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
-			}
+			s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
 		}
 	}
 }
@@ -310,7 +340,7 @@ func compressGzip(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter, connectionCallbacks serverTypes.ConnectionCallbacks) {
+func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter, connectionCallbacks *serverTypes.ConnectionCallbacks) {
 	bodyBytes, err := s.readReqBody(req)
 	if err != nil {
 		s.logger.Debugf(req.Context(), "Cannot read HTTP body: %v", err)
@@ -331,11 +361,6 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 		conn: connFromRequest(req),
 	}
 
-	if connectionCallbacks == nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
 	connectionCallbacks.OnConnected(req.Context(), agentConn)
 
 	defer func() {
@@ -347,6 +372,10 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	}()
 
 	response := connectionCallbacks.OnMessage(req.Context(), agentConn, &request)
+
+	if response == nil {
+		response = &protobufs.ServerToAgent{}
+	}
 
 	// Set the InstanceUid if it is not set by the callback.
 	if len(response.InstanceUid) == 0 {
@@ -377,7 +406,6 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 		w.Header().Set(headerContentEncoding, contentEncodingGzip)
 	}
 	_, err = w.Write(bodyBytes)
-
 	if err != nil {
 		s.logger.Debugf(req.Context(), "Cannot send HTTP response: %v", err)
 	}

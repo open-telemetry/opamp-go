@@ -42,16 +42,16 @@ Approvers ([@open-telemetry/opamp-go-approvers](https://github.com/orgs/open-tel
 
 - [Anthony Mirabella](https://github.com/Aneurysm9), AWS
 - [Evan Bradley](https://github.com/evan-bradley), Dynatrace
-- [Srikanth Chekuri](https://github.com/srikanthccv), signoz.io
 
 Emeritus Approvers
 
 - [Alex Boten](https://github.com/codeboten), Lightstep
 - [Przemek Maciolek](https://github.com/pmm-sumo), Sumo Logic
+- [Srikanth Chekuri](https://github.com/srikanthccv), signoz.io
 
 Maintainers ([@open-telemetry/opamp-go-maintainers](https://github.com/orgs/open-telemetry/teams/opamp-go-maintainers)):
 
-- [Andy Keller](https://github.com/andykellr), observIQ
+- [Andy Keller](https://github.com/andykellr), Bindplane
 - [Tigran Najaryan](https://github.com/tigrannajaryan), Splunk
 
 Learn more about roles in the [community repository](https://github.com/open-telemetry/community/blob/main/community-membership.md).
