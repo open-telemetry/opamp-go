@@ -34,7 +34,7 @@ type receivedProcessor struct {
 
 	// Download reporter interval value
 	// a negative number indicates that the default should be used instead.
-	reporterInterval time.Duration
+	downloadReporterInt time.Duration
 }
 
 func newReceivedProcessor(
@@ -45,7 +45,7 @@ func newReceivedProcessor(
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
 	packageSyncMutex *sync.Mutex,
-	reporterInt time.Duration,
+	downloadReporterInt time.Duration,
 ) receivedProcessor {
 	return receivedProcessor{
 		logger:                logger,
@@ -55,7 +55,7 @@ func newReceivedProcessor(
 		packagesStateProvider: packagesStateProvider,
 		capabilities:          capabilities,
 		packageSyncMutex:      packageSyncMutex,
-		reporterInterval:      reporterInt,
+		downloadReporterInt:   downloadReporterInt,
 	}
 }
 
@@ -135,7 +135,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 				r.clientSyncedState,
 				r.packagesStateProvider,
 				r.packageSyncMutex,
-				r.reporterInterval,
+				r.downloadReporterInt,
 			)
 		} else {
 			r.logger.Debugf(ctx, "Ignoring PackagesAvailable, agent does not have AcceptsPackages capability")

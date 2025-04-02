@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1267,6 +1266,12 @@ type packageTestCase struct {
 	expectedFileContent map[string][]byte
 	expectedSignature   map[string][]byte
 	expectedError       string
+
+	// temporaryStatuses is a slice used by a test case to check if a non-final package status occurs.
+	// When a PackageStatuses message is added to the slice only the Packages name and Status will be checked
+	// If they are successfully obsereved then the corresponding entry in observedTemporartStatuses will be marked as true
+	temporaryStatuses         []*protobufs.PackageStatuses
+	observedTemporaryStatuses []bool
 }
 
 const packageUpdateErrorMsg = "cannot update packages"
@@ -1276,6 +1281,7 @@ func assertPackageStatus(t *testing.T,
 	msg *protobufs.AgentToServer,
 ) (*protobufs.ServerToAgent, bool) {
 	expectedStatusReceived := false
+	testCase.observedTemporaryStatuses = make([]bool, len(testCase.temporaryStatuses))
 
 	status := msg.PackageStatuses
 	if status == nil {
@@ -1313,6 +1319,19 @@ func assertPackageStatus(t *testing.T,
 		if pkgStatus.Status == pkgExpected.Status {
 			expectedStatusReceived = true
 			assert.Len(t, status.Packages, len(testCase.available.Packages))
+		}
+	}
+
+	for i, tempStatus := range testCase.temporaryStatuses {
+		for name, pack := range tempStatus.Packages {
+			obsPackage, ok := status.Packages[name]
+			if !ok {
+				// name does not match
+				continue
+			}
+			if pack.Status == obsPackage.Status {
+				testCase.observedTemporaryStatuses[i] = true
+			}
 		}
 	}
 
@@ -1385,17 +1404,17 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 			// Wait until all syncing is done.
 			<-syncerDoneCh
 
-			// Clone localPackageState instead of using directly to avoid a race when testing for the DOWNLADING status
-			// The downloading status occurs, but may experiance a concurrent write as it is very quickly marked as complete.
-			packageStateCopy := maps.Clone(localPackageState.GetContent())
-			signaturesCopy := maps.Clone(localPackageState.GetSignature())
-			for pkgName, receivedContent := range packageStateCopy {
+			for pkgName, receivedContent := range localPackageState.GetContent() {
 				expectedContent := testCase.expectedFileContent[pkgName]
 				assert.EqualValues(t, expectedContent, receivedContent)
 
-				actualSignature := signaturesCopy[pkgName]
+				actualSignature := localPackageState.GetSignature()[pkgName]
 				expectedSignature := testCase.expectedSignature[pkgName]
 				assert.EqualValues(t, expectedSignature, actualSignature)
+			}
+
+			for i, ok := range testCase.observedTemporaryStatuses {
+				assert.Truef(t, ok, "expected to observe temporary status %#v", testCase.temporaryStatuses[i])
 			}
 		}
 
@@ -1506,6 +1525,8 @@ func createPackageTestCase(name string, downloadSrv *httptest.Server) packageTes
 		expectedSignature: map[string][]byte{
 			"package1": {6, 7},
 		},
+
+		temporaryStatuses: make([]*protobufs.PackageStatuses, 0),
 	}
 }
 
@@ -1532,7 +1553,14 @@ func TestUpdatePackages(t *testing.T) {
 
 	// Check that the downloading status is sent
 	downloading := createPackageTestCase("download status set", downloadSrv)
-	downloading.expectedStatus.Packages["package1"].Status = protobufs.PackageStatusEnum_PackageStatusEnum_Downloading
+	downloading.temporaryStatuses = append(downloading.temporaryStatuses, &protobufs.PackageStatuses{
+		Packages: map[string]*protobufs.PackageStatus{
+			"package1": {
+				Name:   "package1",
+				Status: protobufs.PackageStatusEnum_PackageStatusEnum_Downloading,
+			},
+		},
+	})
 	tests = append(tests, downloading)
 
 	// A case where we send optional headers
