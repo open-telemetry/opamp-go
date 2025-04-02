@@ -109,6 +109,30 @@ func (srv *Server) onMessage(ctx context.Context, conn types.Connection, msg *pr
 	// Process the status report and continue building the response.
 	agent.UpdateStatus(msg, response)
 
+	if msg.ConnectionSettingsRequest != nil && msg.ConnectionSettingsRequest.SettingsRequest != nil {
+		srv.logger.Debugf(ctx, "agent: %v send ca\n", instanceId)
+		srv.setOpAMPCA(response, "../../certs/certs/ca.cert.pem")
+	}
+
 	// Send the response back to the Agent.
 	return response
+}
+
+func (srv *Server) setOpAMPCA(response *protobufs.ServerToAgent, pathToPEM string) {
+	p, err := os.ReadFile(pathToPEM)
+	if err != nil {
+		srv.logger.Errorf(context.Background(), "Unable to read ca PEM file (%s): %v", pathToPEM, err)
+		return
+	}
+
+	if response.ConnectionSettings == nil {
+		response.ConnectionSettings = &protobufs.ConnectionSettingsOffers{}
+	}
+	if response.ConnectionSettings.Opamp == nil {
+		response.ConnectionSettings.Opamp = &protobufs.OpAMPConnectionSettings{}
+	}
+	if response.ConnectionSettings.Opamp.Tls == nil {
+		response.ConnectionSettings.Opamp.Tls = &protobufs.TLSConnectionSettings{}
+	}
+	response.ConnectionSettings.Opamp.Tls.CaPemContents = string(p)
 }
