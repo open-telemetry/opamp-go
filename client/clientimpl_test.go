@@ -1267,10 +1267,10 @@ type packageTestCase struct {
 	expectedSignature   map[string][]byte
 	expectedError       string
 
-	// temporaryStatuses is a slice used by a test case to check if a non-final package status occurs.
+	// expectedTemporaryStatuses is a slice used by a test case to check if a non-final package status occurs.
 	// When a PackageStatuses message is added to the slice only the Packages name and Status will be checked
-	// If they are successfully obsereved then the corresponding entry in observedTemporartStatuses will be marked as true
-	temporaryStatuses         []*protobufs.PackageStatuses
+	// If they are successfully observed then the corresponding entry in observedTemporaryStatuses will be marked as true
+	expectedTemporaryStatuses []*protobufs.PackageStatuses
 	observedTemporaryStatuses []bool
 }
 
@@ -1281,7 +1281,7 @@ func assertPackageStatus(t *testing.T,
 	msg *protobufs.AgentToServer,
 ) (*protobufs.ServerToAgent, bool) {
 	expectedStatusReceived := false
-	testCase.observedTemporaryStatuses = make([]bool, len(testCase.temporaryStatuses))
+	testCase.observedTemporaryStatuses = make([]bool, len(testCase.expectedTemporaryStatuses))
 
 	status := msg.PackageStatuses
 	if status == nil {
@@ -1322,7 +1322,7 @@ func assertPackageStatus(t *testing.T,
 		}
 	}
 
-	for i, tempStatus := range testCase.temporaryStatuses {
+	for i, tempStatus := range testCase.expectedTemporaryStatuses {
 		for name, pack := range tempStatus.Packages {
 			obsPackage, ok := status.Packages[name]
 			if !ok {
@@ -1414,7 +1414,7 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 			}
 
 			for i, ok := range testCase.observedTemporaryStatuses {
-				assert.Truef(t, ok, "expected to observe temporary status %#v", testCase.temporaryStatuses[i])
+				assert.Truef(t, ok, "expected to observe temporary status %#v", testCase.expectedTemporaryStatuses[i])
 			}
 		}
 
@@ -1525,8 +1525,6 @@ func createPackageTestCase(name string, downloadSrv *httptest.Server) packageTes
 		expectedSignature: map[string][]byte{
 			"package1": {6, 7},
 		},
-
-		temporaryStatuses: make([]*protobufs.PackageStatuses, 0),
 	}
 }
 
@@ -1553,7 +1551,7 @@ func TestUpdatePackages(t *testing.T) {
 
 	// Check that the downloading status is sent
 	downloading := createPackageTestCase("download status set", downloadSrv)
-	downloading.temporaryStatuses = append(downloading.temporaryStatuses, &protobufs.PackageStatuses{
+	downloading.expectedTemporaryStatuses = append(downloading.expectedTemporaryStatuses, &protobufs.PackageStatuses{
 		Packages: map[string]*protobufs.PackageStatus{
 			"package1": {
 				Name:   "package1",

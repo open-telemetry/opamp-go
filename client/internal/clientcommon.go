@@ -62,6 +62,8 @@ type ClientCommon struct {
 	// Indicates that the Client is fully stopped.
 	stoppedSignal chan struct{}
 
+	// DownloadReporterInterval is the interval used to update a package's status while it is downloading.
+	// It is set to 10s by default, a min value of 1s is forced.
 	DownloadReporterInterval time.Duration
 }
 
