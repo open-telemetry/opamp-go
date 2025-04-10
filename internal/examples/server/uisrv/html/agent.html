@@ -124,5 +124,22 @@
     {{end}}
 </form>
 
+<h3>OpAMP Connection Settings</h3>
+
+<br/>
+
+<form action="/opamp_connection_settings" method="post">
+    <input type="hidden" name="instanceid" value="{{ .InstanceIdStr }}"/>
+    <input type="radio" name="tls_min" value="TLSv1.0">
+      <label for="TLSv1.0">TLSv1.0</label><br/>
+    <input type="radio" name="tls_min" value="TLSv1.1">
+      <label for="TLSv1.1">TLSv1.1</label><br/>
+    <input type="radio" name="tls_min" value="TLSv1.2">
+      <label for="TLSv1.2">TLSv1.2</label><br/>
+    <input type="radio" name="tls_min" value="TLSv1.3">
+      <label for="TLSv1.3">TLSv1.3</label><br/>
+    <input type="submit" value="Set min TLS version"/>
+</form>
+
 </body>
 </html>
