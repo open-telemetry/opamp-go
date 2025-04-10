@@ -97,10 +97,11 @@ func (h *HTTPSender) Run(
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
 	packageSyncMutex *sync.Mutex,
+	reporterInterval time.Duration,
 ) {
 	h.url = url
 	h.callbacks = callbacks
-	h.receiveProcessor = newReceivedProcessor(h.logger, callbacks, h, clientSyncedState, packagesStateProvider, capabilities, packageSyncMutex)
+	h.receiveProcessor = newReceivedProcessor(h.logger, callbacks, h, clientSyncedState, packagesStateProvider, capabilities, packageSyncMutex, reporterInterval)
 
 	// we need to detect if the redirect was ever set, if not, we want default behaviour
 	if callbacks.CheckRedirect != nil {

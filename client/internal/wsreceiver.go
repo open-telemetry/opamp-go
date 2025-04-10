@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/open-telemetry/opamp-go/client/types"
@@ -34,13 +35,14 @@ func NewWSReceiver(
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
 	packageSyncMutex *sync.Mutex,
+	reporterInterval time.Duration,
 ) *wsReceiver {
 	w := &wsReceiver{
 		conn:      conn,
 		logger:    logger,
 		sender:    sender,
 		callbacks: callbacks,
-		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider, capabilities, packageSyncMutex),
+		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider, capabilities, packageSyncMutex, reporterInterval),
 		stopped:   make(chan struct{}),
 	}
 
