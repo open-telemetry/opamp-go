@@ -7,7 +7,7 @@ toolchain go1.24.1
 require (
 	github.com/ory/go-acc v0.2.8
 	golang.org/x/tools v0.32.0
-	mvdan.cc/gofumpt v0.7.0
+	mvdan.cc/gofumpt v0.8.0
 )
 
 require (
