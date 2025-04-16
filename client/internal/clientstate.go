@@ -2,7 +2,6 @@ package internal
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -17,11 +16,6 @@ var (
 	errCustomCapabilitiesMissing        = errors.New("CustomCapabilities is not set")
 	errCapabilitiesMissing              = errors.New("Capabilities is not set")
 	errAvailableComponentsMissing       = errors.New("AvailableComponents is not set")
-
-	modifiableFields = []protobufs.AgentCapabilities{
-		protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig,
-		protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig,
-	}
 )
 
 // ClientSyncedState stores the state of the Agent messages that the OpAMP Client needs to
@@ -228,20 +222,6 @@ func (s *ClientSyncedState) SetCapabilities(capabilities *protobufs.AgentCapabil
 
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
-	currentCapabilities := s.agentCapabilities
-	if currentCapabilities != 0 {
-		// Create a mask for the modifiable fields
-		var modifiableMask protobufs.AgentCapabilities
-		for _, capability := range modifiableFields {
-			modifiableMask |= capability
-		}
-
-		// Check if any non-modifiable fields are being changed
-		currentCapabilities := s.agentCapabilities
-		if (currentCapabilities & ^modifiableMask) != (*capabilities & ^modifiableMask) {
-			return fmt.Errorf("only the following fields can be modified: %v", modifiableFields)
-		}
-	}
 	s.agentCapabilities = *capabilities
 
 	return nil
