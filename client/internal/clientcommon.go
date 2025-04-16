@@ -14,14 +14,15 @@ import (
 )
 
 var (
-	ErrAgentDescriptionMissing      = errors.New("AgentDescription is nil")
-	ErrAgentDescriptionNoAttributes = errors.New("AgentDescription has no attributes defined")
-	ErrHealthMissing                = errors.New("health is nil")
-	ErrReportsEffectiveConfigNotSet = errors.New("ReportsEffectiveConfig capability is not set")
-	ErrReportsRemoteConfigNotSet    = errors.New("ReportsRemoteConfig capability is not set")
-	ErrPackagesStateProviderNotSet  = errors.New("PackagesStateProvider must be set")
-	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
-	ErrAvailableComponentsMissing   = errors.New("AvailableComponents is nil")
+	ErrAgentDescriptionMissing               = errors.New("AgentDescription is nil")
+	ErrAgentDescriptionNoAttributes          = errors.New("AgentDescription has no attributes defined")
+	ErrHealthMissing                         = errors.New("health is nil")
+	ErrReportsEffectiveConfigNotSet          = errors.New("ReportsEffectiveConfig capability is not set")
+	ErrReportsRemoteConfigNotSet             = errors.New("ReportsRemoteConfig capability is not set")
+	ErrPackagesStateProviderNotSet           = errors.New("PackagesStateProvider must be set")
+	ErrAcceptsPackagesNotSet                 = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
+	ErrAvailableComponentsMissing            = errors.New("AvailableComponents is nil")
+	ErrAcceptsOpAMPConnectionsSettingsNotSet = errors.New("AcceptsOpAMPConnectionSettings must be set")
 
 	errAlreadyStarted               = errors.New("already started")
 	errCannotStopNotStarted         = errors.New("cannot stop because not started")
@@ -45,6 +46,9 @@ type ClientCommon struct {
 
 	// PackageSyncMutex makes sure only one package syncing operation happens at a time.
 	PackageSyncMutex sync.Mutex
+
+	requestInitialConnectionSettings bool
+	requestConnectionSettingsOnce    sync.Once
 
 	// The transport-specific sender.
 	sender Sender
@@ -97,6 +101,11 @@ func (c *ClientCommon) PrepareStart(
 	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents != 0 && c.ClientSyncedState.AvailableComponents() == nil {
 		return ErrAvailableComponentsMissing
 	}
+
+	if settings.RequestConnectionSettings && c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings == 0 {
+		return fmt.Errorf("connection settings request indicated: %w", ErrAcceptsOpAMPConnectionsSettingsNotSet)
+	}
+	c.requestInitialConnectionSettings = settings.RequestConnectionSettings
 
 	// Prepare remote config status.
 	if settings.RemoteConfigStatus == nil {
@@ -247,9 +256,27 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()
 			msg.Flags = c.ClientSyncedState.Flags()
 			msg.AvailableComponents = availableComponents
+			c.injectInitialConnectionSettingsRequest(msg)
 		},
 	)
 	return nil
+}
+
+// injectInitialConnectionSettingsRequest will add a SettingsRequest to passed message once.
+func (c *ClientCommon) injectInitialConnectionSettingsRequest(msg *protobufs.AgentToServer) {
+	if !c.requestInitialConnectionSettings {
+		return
+	}
+	c.requestConnectionSettingsOnce.Do(func() {
+		if msg.ConnectionSettingsRequest == nil {
+			msg.ConnectionSettingsRequest = &protobufs.ConnectionSettingsRequest{
+				SettingsRequest: &protobufs.SettingsRequest{},
+			}
+		} else if msg.ConnectionSettingsRequest.SettingsRequest == nil {
+			msg.ConnectionSettingsRequest.SettingsRequest = &protobufs.SettingsRequest{}
+		}
+	})
+
 }
 
 // AgentDescription returns the current state of the AgentDescription.
