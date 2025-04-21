@@ -962,6 +962,10 @@ func TestInitialConnectionSettingsRequest(t *testing.T) {
 			case <-time.After(time.Second * 5):
 				t.Errorf("timeout waiting for server to respond when initial connection settings are requested.")
 			}
+
+			// Shutdown the client.
+			err := client.Stop(context.Background())
+			assert.NoError(t, err)
 		},
 	)
 }
