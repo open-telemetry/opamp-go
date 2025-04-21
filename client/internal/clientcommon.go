@@ -276,7 +276,6 @@ func (c *ClientCommon) injectInitialConnectionSettingsRequest(msg *protobufs.Age
 			msg.ConnectionSettingsRequest.SettingsRequest = &protobufs.SettingsRequest{}
 		}
 	})
-
 }
 
 // AgentDescription returns the current state of the AgentDescription.
