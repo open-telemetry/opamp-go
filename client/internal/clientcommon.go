@@ -47,8 +47,8 @@ type ClientCommon struct {
 	// PackageSyncMutex makes sure only one package syncing operation happens at a time.
 	PackageSyncMutex sync.Mutex
 
+	// requestInitialConnectionSettings indicates the client should populate ConnectionSettingsRequest.SettingsRequest
 	requestInitialConnectionSettings bool
-	requestConnectionSettingsOnce    sync.Once
 
 	// The transport-specific sender.
 	sender Sender
@@ -267,15 +267,13 @@ func (c *ClientCommon) injectInitialConnectionSettingsRequest(msg *protobufs.Age
 	if !c.requestInitialConnectionSettings {
 		return
 	}
-	c.requestConnectionSettingsOnce.Do(func() {
-		if msg.ConnectionSettingsRequest == nil {
-			msg.ConnectionSettingsRequest = &protobufs.ConnectionSettingsRequest{
-				SettingsRequest: &protobufs.SettingsRequest{},
-			}
-		} else if msg.ConnectionSettingsRequest.SettingsRequest == nil {
-			msg.ConnectionSettingsRequest.SettingsRequest = &protobufs.SettingsRequest{}
+	if msg.ConnectionSettingsRequest == nil {
+		msg.ConnectionSettingsRequest = &protobufs.ConnectionSettingsRequest{
+			SettingsRequest: &protobufs.SettingsRequest{},
 		}
-	})
+	} else if msg.ConnectionSettingsRequest.SettingsRequest == nil {
+		msg.ConnectionSettingsRequest.SettingsRequest = &protobufs.SettingsRequest{}
+	}
 }
 
 // AgentDescription returns the current state of the AgentDescription.
