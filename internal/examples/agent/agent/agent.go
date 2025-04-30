@@ -50,9 +50,6 @@ type Agent struct {
 	agentType    string
 	agentVersion string
 
-	// use insecure initially
-	requestConnectionSettings bool
-
 	effectiveConfig string
 
 	instanceId uuid.UUID
@@ -75,14 +72,13 @@ type Agent struct {
 	clientPrivateKeyPEM []byte
 }
 
-func NewAgent(logger types.Logger, agentType string, agentVersion string, requestConnectionSettings bool) *Agent {
+func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent {
 	agent := &Agent{
-		effectiveConfig:           localConfig,
-		logger:                    logger,
-		agentType:                 agentType,
-		agentVersion:              agentVersion,
-		requestConnectionSettings: requestConnectionSettings,
-		tls:                       &tls.Config{},
+		effectiveConfig: localConfig,
+		logger:          logger,
+		agentType:       agentType,
+		agentVersion:    agentVersion,
+		tls:             &tls.Config{},
 	}
 
 	agent.createAgentIdentity()
@@ -90,19 +86,15 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string, reques
 		agent.instanceId, agentType, agentVersion)
 
 	agent.loadLocalConfig()
-	if requestConnectionSettings {
-		agent.tls.InsecureSkipVerify = true
-	} else {
-		tlsConfig, err := internal.CreateClientTLSConfig(
-			agent.opampClientCert,
-			"../../certs/certs/ca.cert.pem",
-		)
-		if err != nil {
-			agent.logger.Errorf(context.Background(), "Cannot load client TLS config: %v", err)
-			return nil
-		}
-		agent.tls = tlsConfig
+	tlsConfig, err := internal.CreateClientTLSConfig(
+		agent.opampClientCert,
+		"../../certs/certs/ca.cert.pem",
+	)
+	if err != nil {
+		agent.logger.Errorf(context.Background(), "Cannot load client TLS config: %v", err)
+		return nil
 	}
+	agent.tls = tlsConfig
 	if err := agent.connect(agent.tls); err != nil {
 		agent.logger.Errorf(context.Background(), "Cannot connect OpAMP client: %v", err)
 		return nil
@@ -138,8 +130,7 @@ func (agent *Agent) connect(tlsConfig *tls.Config) error {
 			OnMessage:                 agent.onMessage,
 			OnOpampConnectionSettings: agent.onOpampConnectionSettings,
 		},
-		RemoteConfigStatus:        agent.remoteConfigStatus,
-		RequestConnectionSettings: agent.requestConnectionSettings,
+		RemoteConfigStatus: agent.remoteConfigStatus,
 		Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
@@ -502,7 +493,6 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 func (agent *Agent) tryChangeOpAMP(ctx context.Context, cert *tls.Certificate, cfg *tls.Config) {
 	agent.logger.Debugf(ctx, "Reconnecting to verify new OpAMP settings.\n")
 	agent.disconnect(ctx)
-	agent.requestConnectionSettings = false
 
 	oldCfg := agent.tls
 	if cfg == nil {

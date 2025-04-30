@@ -39,7 +39,6 @@ type StartSettings struct {
 	// the Server to send a remote config back.
 	RemoteConfigStatus *protobufs.RemoteConfigStatus
 
-	RequestConnectionSettings  bool
 	LastConnectionSettingsHash []byte
 
 	// PackagesStateProvider provides access to the local state of packages.
