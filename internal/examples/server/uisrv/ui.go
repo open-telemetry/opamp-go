@@ -227,7 +227,7 @@ func opampConnectionSettings(w http.ResponseWriter, r *http.Request) {
 			Tls: &protobufs.TLSConnectionSettings{
 				CaPemContents: opampCA(),
 				MinVersion:    tlsMin,
-				MaxVersion:    "TLSv1.3",
+				MaxVersion:    "1.3",
 			},
 		},
 	}
