@@ -2,10 +2,11 @@ package uisrv
 
 import (
 	"context"
-	_ "embed"
 	"log"
 	"net/http"
+	"os"
 	"path"
+	"sync"
 	"text/template"
 	"time"
 
@@ -19,10 +20,14 @@ import (
 var (
 	htmlDir string
 	srv     *http.Server
+	opampCA = sync.OnceValue(func() string {
+		p, err := os.ReadFile("../../certs/certs/ca.cert.pem")
+		if err != nil {
+			panic(err)
+		}
+		return string(p)
+	})
 )
-
-//go:embed ../../certs/certs/ca.cert.pem
-var opampCA []byte
 
 var logger = log.New(log.Default().Writer(), "[UI] ", log.Default().Flags()|log.Lmsgprefix|log.Lmicroseconds)
 
@@ -220,7 +225,7 @@ func opampConnectionSettings(w http.ResponseWriter, r *http.Request) {
 	offers := &protobufs.ConnectionSettingsOffers{
 		Opamp: &protobufs.OpAMPConnectionSettings{
 			Tls: &protobufs.TLSConnectionSettings{
-				CaPemContents: string(opampCA),
+				CaPemContents: opampCA(),
 				MinVersion:    tlsMin,
 				MaxVersion:    "TLSv1.3",
 			},
