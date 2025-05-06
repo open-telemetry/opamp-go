@@ -18,7 +18,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
+	"go.uber.org/goleak"
 	"google.golang.org/protobuf/proto"
 
 	clienttypes "github.com/open-telemetry/opamp-go/client/types"
@@ -76,6 +76,15 @@ func TestServerStartStopWithCancel(t *testing.T) {
 
 	err = srv.Stop(canceledCtx)
 	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestServerStartStopCloseNoLeakGoroutine(t *testing.T) {
+	goleak.VerifyNone(t)
+	startSettings := &StartSettings{}
+	srv := startServer(t, startSettings)
+
+	_, _, _ = dialClient(startSettings) // make sure we have a connection
+	srv.Stop(context.Background())
 }
 
 func TestServerStartStopIdempotency(t *testing.T) {
