@@ -45,6 +45,11 @@ type server struct {
 
 	// The network address Server is listening on. Nil if not started.
 	addr net.Addr
+
+	// To gracefully stop the server.
+	serverCtx    context.Context
+	serverCancel context.CancelFunc
+	connWg       *sync.WaitGroup
 }
 
 var _ OpAMPServer = (*server)(nil)
@@ -113,6 +118,8 @@ func (s *server) Start(settings StartSettings) error {
 	httpServerServeWg := sync.WaitGroup{}
 	httpServerServeWg.Add(1)
 	s.httpServerServeWg = &httpServerServeWg
+	s.connWg = &sync.WaitGroup{}
+	s.serverCtx, s.serverCancel = context.WithCancel(context.Background())
 
 	listenAddr := s.httpServer.Addr
 
@@ -174,6 +181,11 @@ func (s *server) Stop(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		if s.serverCancel != nil {
+			s.serverCancel()
+			s.serverCancel = nil
+			s.connWg.Wait()
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -221,7 +233,11 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 
 	// Return from this func to reduce memory usage.
 	// Handle the connection on a separate goroutine.
-	go s.handleWSConnection(req.Context(), conn, &connectionCallbacks)
+	s.connWg.Add(1)
+	go func() {
+		defer s.connWg.Done()
+		s.handleWSConnection(req.Context(), conn, &connectionCallbacks)
+	}()
 }
 
 func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Conn, connectionCallbacks *serverTypes.ConnectionCallbacks) {
@@ -247,13 +263,40 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 
 	sentCustomCapabilities := false
 
+	type webSocketMessage struct {
+		mt       int
+		msgBytes []byte
+		err      error
+	}
+	msgCh := make(chan webSocketMessage)
+
 	// Loop until fail to read from the WebSocket connection.
 	for {
-		msgContext := context.Background()
+		msgContext := s.serverCtx
 		request := protobufs.AgentToServer{}
 
-		// Block until the next message can be read.
-		mt, msgBytes, err := wsConn.ReadMessage()
+		go func() {
+			// Block until the next message can be read.
+			mt, msgBytes, err := wsConn.ReadMessage()
+			msgCh <- webSocketMessage{
+				mt:       mt,
+				msgBytes: msgBytes,
+				err:      err,
+			}
+		}()
+
+		var mt int
+		var msgBytes []byte
+		var err error
+
+		// Wait for the message to be read or for the server to shut down.
+		select {
+		case <-s.serverCtx.Done():
+			s.logger.Debugf(msgContext, "Server is shutting down.: %v", s.serverCtx.Err())
+			return
+		case msg := <-msgCh:
+			mt, msgBytes, err = msg.mt, msg.msgBytes, msg.err
+		}
 		isBreak, err := func() (bool, error) {
 			if err != nil {
 				if !websocket.IsUnexpectedCloseError(err) {
