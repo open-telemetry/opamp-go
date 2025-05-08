@@ -1,6 +1,8 @@
 package data
 
 import (
+	"crypto/sha256"
+	"io"
 	"log"
 	"sync"
 
@@ -122,7 +124,10 @@ func (a *Agents) OfferAgentConnectionSettings(
 	id InstanceId,
 	offers *protobufs.ConnectionSettingsOffers,
 ) {
-	logger.Printf("Begin rotate client certificate for %s\n", id)
+	if len(offers.Hash) == 0 {
+		offers.Hash = toHash(offers)
+	}
+	logger.Printf("Begin offer connection settings to %s (hash=%x)\n", id, offers.Hash)
 
 	a.mux.Lock()
 	defer a.mux.Unlock()
@@ -130,7 +135,7 @@ func (a *Agents) OfferAgentConnectionSettings(
 	agent, ok := a.agentsById[id]
 	if ok {
 		agent.OfferConnectionSettings(offers)
-		logger.Printf("Client certificate offers sent to %s\n", id)
+		logger.Printf("Client connection settings offers sent to %s (hash=%x)\n", id, offers.Hash)
 	} else {
 		logger.Printf("Agent %s not found\n", id)
 	}
@@ -139,4 +144,53 @@ func (a *Agents) OfferAgentConnectionSettings(
 var AllAgents = Agents{
 	agentsById:  map[InstanceId]*Agent{},
 	connections: map[types.Connection]map[InstanceId]bool{},
+}
+
+// toHash computes a sha256 hash from fields within ConnectionSettingsOffers
+func toHash(c *protobufs.ConnectionSettingsOffers) []byte {
+	hasher := sha256.New()
+	if c.Opamp != nil {
+		hashEndpoint(hasher, c.Opamp)
+	}
+	if c.OwnMetrics != nil {
+		hashEndpoint(hasher, c.OwnMetrics)
+	}
+	if c.OwnTraces != nil {
+		hashEndpoint(hasher, c.OwnTraces)
+	}
+	if c.OwnLogs != nil {
+		hashEndpoint(hasher, c.OwnLogs)
+	}
+	for name, endpoint := range c.OtherConnections {
+		hasher.Write([]byte(name))
+		hashEndpoint(hasher, endpoint)
+	}
+
+	return hasher.Sum(nil)
+}
+
+// endpoint is an incomplete interface to assist with turning an offered connection into a hash.
+type endpoint interface {
+	GetDestinationEndpoint() string
+	GetHeaders() *protobufs.Headers
+	GetCertificate() *protobufs.TLSCertificate
+	GetTls() *protobufs.TLSConnectionSettings
+}
+
+// hashEndpoint writes some shared attributes of the passed enpoint to the passed writer.
+func hashEndpoint(w io.Writer, e endpoint) {
+	w.Write([]byte(e.GetDestinationEndpoint()))
+	if headers := e.GetHeaders(); headers != nil {
+		for _, header := range headers.Headers {
+			w.Write([]byte(header.Key + header.Value))
+		}
+	}
+	if cert := e.GetCertificate(); cert != nil {
+		w.Write(cert.Cert)
+		w.Write(cert.PrivateKey)
+		w.Write(cert.CaCert)
+	}
+	if tlsSettings := e.GetTls(); tlsSettings != nil {
+		w.Write([]byte(tlsSettings.CaPemContents))
+	}
 }

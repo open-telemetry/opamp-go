@@ -39,7 +39,8 @@ type StartSettings struct {
 	// the Server to send a remote config back.
 	RemoteConfigStatus *protobufs.RemoteConfigStatus
 
-	LastConnectionSettingsHash []byte
+	// The last offered connection settings status.
+	LastConnectionSettingsStatus *protobufs.ConnectionSettingsStatus
 
 	// PackagesStateProvider provides access to the local state of packages.
 	// If nil then ReportsPackageStatuses and AcceptsPackages capabilities will be disabled,

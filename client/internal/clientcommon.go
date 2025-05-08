@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -23,9 +24,10 @@ var (
 	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 	ErrAvailableComponentsMissing   = errors.New("AvailableComponents is nil")
 
-	errAlreadyStarted               = errors.New("already started")
-	errCannotStopNotStarted         = errors.New("cannot stop because not started")
-	errReportsPackageStatusesNotSet = errors.New("ReportsPackageStatuses capability is not set")
+	errAlreadyStarted                        = errors.New("already started")
+	errCannotStopNotStarted                  = errors.New("cannot stop because not started")
+	errReportsPackageStatusesNotSet          = errors.New("ReportsPackageStatuses capability is not set")
+	errReportsConnectionSettingsStatusNotSet = errors.New("ReportsConnectionSettingsStatus capability is not set")
 )
 
 // ClientCommon contains the OpAMP logic that is common between WebSocket and
@@ -160,6 +162,10 @@ func (c *ClientCommon) PrepareStart(
 		c.DownloadReporterInterval = *settings.DownloadReporterInterval
 	}
 
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus != 0 && settings.LastConnectionSettingsStatus != nil {
+		c.SetConnectionStatus(settings.LastConnectionSettingsStatus, false) // will be sent as part of the initial message
+	}
+
 	return nil
 }
 
@@ -237,6 +243,11 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 		}
 	}
 
+	var connectionSettingsStatus *protobufs.ConnectionSettingsStatus
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus != 0 {
+		connectionSettingsStatus = c.ClientSyncedState.ConnectionSettingsStatus()
+	}
+
 	c.sender.NextMessage().Update(
 		func(msg *protobufs.AgentToServer) {
 			msg.AgentDescription = c.ClientSyncedState.AgentDescription()
@@ -247,6 +258,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()
 			msg.Flags = c.ClientSyncedState.Flags()
 			msg.AvailableComponents = availableComponents
+			msg.ConnectionStatus = connectionSettingsStatus
 		},
 	)
 	return nil
@@ -502,4 +514,38 @@ func (c *ClientCommon) SetAvailableComponents(components *protobufs.AvailableCom
 	}
 
 	return nil
+}
+
+func (c *ClientCommon) SetConnectionStatus(status *protobufs.ConnectionSettingsStatus, scheduleSend bool) error {
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus == 0 {
+		return errReportsConnectionSettingsStatusNotSet
+	}
+
+	oldStatus := c.ClientSyncedState.ConnectionSettingsStatus()
+
+	if updateStoredConnectionStatus(oldStatus, status) {
+		if err := c.ClientSyncedState.SetConnectionSettingsStatus(status); err != nil {
+			return err
+		}
+		c.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+			msg.ConnectionStatus = c.ClientSyncedState.ConnectionSettingsStatus()
+		})
+		if scheduleSend {
+			c.sender.ScheduleSend()
+		}
+	}
+	return nil
+}
+
+// updateStoredConnectionStatus returns a bool of if status should replace oldStatus.
+// It's true if:
+// - no oldStatus
+// - hash changes
+// - status changes from APPLYING or UNSET
+// - status changes to FAILED
+func updateStoredConnectionStatus(oldStatus, status *protobufs.ConnectionSettingsStatus) bool {
+	return oldStatus == nil || !bytes.Equal(oldStatus.LastConnectionSettingsHash, status.LastConnectionSettingsHash) ||
+		oldStatus.Status == protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLYING ||
+		oldStatus.Status == protobufs.RemoteConfigStatuses_RemoteConfigStatuses_UNSET ||
+		status.Status == protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED
 }

@@ -135,7 +135,8 @@ func (agent *Agent) connect(tlsConfig *tls.Config) error {
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
-			protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings,
+			protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings |
+			protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus,
 	}
 
 	err := agent.opampClient.SetAgentDescription(agent.agentDescription)
@@ -249,11 +250,11 @@ func (agent *Agent) composeEffectiveConfig() *protobufs.EffectiveConfig {
 	}
 }
 
-func (agent *Agent) initMeter(settings *protobufs.TelemetryConnectionSettings) {
+func (agent *Agent) initMeter(settings *protobufs.TelemetryConnectionSettings) error {
 	reporter, err := NewMetricReporter(agent.logger, settings, agent.agentType, agent.agentVersion, agent.instanceId)
 	if err != nil {
 		agent.logger.Errorf(context.Background(), "Cannot collect metrics: %v", err)
-		return
+		return err
 	}
 
 	prevReporter := agent.metricReporter
@@ -264,7 +265,7 @@ func (agent *Agent) initMeter(settings *protobufs.TelemetryConnectionSettings) {
 		prevReporter.Shutdown()
 	}
 
-	return
+	return nil
 }
 
 type agentConfigFileItem struct {
@@ -461,7 +462,18 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	}
 
 	if msg.OwnMetricsConnSettings != nil {
-		agent.initMeter(msg.OwnMetricsConnSettings)
+		connectionStatus := &protobufs.ConnectionSettingsStatus{
+			LastConnectionSettingsHash: msg.OfferedConnectionsHash,
+			Status:                     protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED,
+		}
+		if err := agent.initMeter(msg.OwnMetricsConnSettings); err != nil {
+			connectionStatus.Status = protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED
+			connectionStatus.ErrorMessage = err.Error()
+		}
+		// the OnMessageCallback runs after the OpAMPConnectionSettings callback; if it results in a failed state we should send the update.
+		if err := agent.opampClient.SetConnectionStatus(connectionStatus, true); err != nil {
+			agent.logger.Errorf(ctx, "Failed to update server with connection settings status change %v: %v", connectionStatus, err)
+		}
 	}
 
 	if msg.AgentIdentification != nil {
