@@ -116,6 +116,13 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 }
 
 func (c *wsClient) Stop(ctx context.Context) error {
+	// AgentDisconnect MUST be set in the last AgentToServer message sent from the Client to the Server.
+	c.sender.NextMessage().Update(
+		func(msg *protobufs.AgentToServer) {
+			msg.AgentDisconnect = &protobufs.AgentDisconnect{}
+		},
+	)
+	c.sender.ScheduleSend()
 	return c.common.Stop(ctx)
 }
 
