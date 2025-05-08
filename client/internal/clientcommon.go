@@ -28,6 +28,12 @@ var (
 	errReportsPackageStatusesNotSet = errors.New("ReportsPackageStatuses capability is not set")
 )
 
+const (
+	// defaultClientAgentDisconnectTimeout is the default timeout for the AgentDisconnect message.
+	// TODO: this should be configurable. 1 second is not enough for some environments.
+	defaultClientAgentDisconnectTimeout = 1 * time.Second
+)
+
 // ClientCommon contains the OpAMP logic that is common between WebSocket and
 // plain HTTP transports.
 type ClientCommon struct {
@@ -169,10 +175,23 @@ func (c *ClientCommon) Stop(ctx context.Context) error {
 		return errCannotStopNotStarted
 	}
 
+	// AgentDisconnect MUST be set in the last AgentToServer message sent from the Client to the Server.
+	c.sender.NextMessage().Update(
+		func(msg *protobufs.AgentToServer) {
+			msg.AgentDisconnect = &protobufs.AgentDisconnect{}
+		},
+	)
+	c.sender.ScheduleSend()
+	lastMsgCtx, lastMsgCancel := context.WithTimeout(ctx, defaultClientAgentDisconnectTimeout)
+	defer lastMsgCancel()
+
 	c.isStoppingMutex.Lock()
 	cancelFunc := c.runCancel
 	c.isStoppingFlag = true
 	c.isStoppingMutex.Unlock()
+
+	// Wait until the last message is sent.
+	<-lastMsgCtx.Done()
 
 	cancelFunc()
 
