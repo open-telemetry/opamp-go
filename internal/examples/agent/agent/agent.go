@@ -13,6 +13,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/knadh/koanf"
@@ -66,7 +67,7 @@ type Agent struct {
 	// certificate is used.
 	opampClientCert *tls.Certificate
 
-	tls *tls.Config
+	tlsConfig *tls.Config
 
 	certRequested       bool
 	clientPrivateKeyPEM []byte
@@ -78,7 +79,6 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 		logger:          logger,
 		agentType:       agentType,
 		agentVersion:    agentVersion,
-		tls:             &tls.Config{},
 	}
 
 	agent.createAgentIdentity()
@@ -94,8 +94,8 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 		agent.logger.Errorf(context.Background(), "Cannot load client TLS config: %v", err)
 		return nil
 	}
-	agent.tls = tlsConfig
-	if err := agent.connect(agent.tls); err != nil {
+	agent.tlsConfig = tlsConfig
+	if err := agent.connect(agent.tlsConfig); err != nil {
 		agent.logger.Errorf(context.Background(), "Cannot connect OpAMP client: %v", err)
 		return nil
 	}
@@ -106,10 +106,10 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 func (agent *Agent) connect(tlsConfig *tls.Config) error {
 	agent.opampClient = client.NewWebSocket(agent.logger)
 
-	agent.tls = tlsConfig
+	agent.tlsConfig = tlsConfig
 	settings := types.StartSettings{
 		OpAMPServerURL: "wss://127.0.0.1:4320/v1/opamp",
-		TLSConfig:      agent.tls,
+		TLSConfig:      agent.tlsConfig,
 		InstanceUid:    types.InstanceUid(agent.instanceId),
 		Callbacks: types.Callbacks{
 			OnConnect: func(ctx context.Context) {
@@ -490,20 +490,20 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	agent.requestClientCertificate()
 }
 
-func (agent *Agent) tryChangeOpAMP(ctx context.Context, cert *tls.Certificate, cfg *tls.Config) {
+func (agent *Agent) tryChangeOpAMP(ctx context.Context, cert *tls.Certificate, tlsConfig *tls.Config) {
 	agent.logger.Debugf(ctx, "Reconnecting to verify new OpAMP settings.\n")
 	agent.disconnect(ctx)
 
-	oldCfg := agent.tls
-	if cfg == nil {
-		cfg = oldCfg.Clone()
+	oldCfg := agent.tlsConfig
+	if tlsConfig == nil {
+		tlsConfig = oldCfg.Clone()
 	}
 	if cert != nil {
 		agent.logger.Debugf(ctx, "Using new certificate\n")
-		cfg.Certificates = []tls.Certificate{*cert}
+		tlsConfig.Certificates = []tls.Certificate{*cert}
 	}
 
-	if err := agent.connect(cfg); err != nil {
+	if err := agent.connect(tlsConfig); err != nil {
 		agent.logger.Errorf(ctx, "Cannot connect after using new tls config: %s. Ignoring the offer\n", err)
 		if err := agent.connect(oldCfg); err != nil {
 			agent.logger.Errorf(ctx, "Unable to reconnect after restoring tls config: %s\n", err)
@@ -572,14 +572,14 @@ func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *pro
 }
 
 func getTLSVersionNumber(input string) (uint16, error) {
-	switch input {
-	case "1.0":
+	switch strings.ToUpper(input) {
+	case "1.0", "TLSV1", "TLSV1.0":
 		return tls.VersionTLS10, nil
-	case "1.1":
+	case "1.1", "TLSV1.1":
 		return tls.VersionTLS11, nil
-	case "1.2":
+	case "1.2", "TLSV1.2":
 		return tls.VersionTLS12, nil
-	case "1.3":
+	case "1.3", "TLSV1.3":
 		return tls.VersionTLS13, nil
 	case "":
 		// Do nothing if no value is set
