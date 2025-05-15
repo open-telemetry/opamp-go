@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -311,6 +312,44 @@ func TestRedirectHTTP(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHTTPClientStopSendAgentDisconnectMessage(t *testing.T) {
+	srv := internal.StartMockServer(t)
+	var lastMsg *protobufs.AgentToServer
+	var mu sync.Mutex
+	waitFirstMessage := make(chan struct{})
+
+	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+		if waitFirstMessage != nil {
+			close(waitFirstMessage)
+			waitFirstMessage = nil
+		}
+
+		mu.Lock()
+		defer mu.Unlock()
+		lastMsg = msg
+		return nil
+	}
+
+	client := NewHTTP(nil)
+	startClient(t, types.StartSettings{
+		OpAMPServerURL: srv.GetHTTPTestServer().URL,
+	}, client)
+
+	select {
+	case <-waitFirstMessage:
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "Connection never established")
+	}
+
+	client.Stop(context.Background())
+
+	assert.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return lastMsg != nil && lastMsg.AgentDisconnect != nil
+	}, 2*time.Second, 250*time.Millisecond)
 }
 
 func TestHTTPReportsAvailableComponents(t *testing.T) {
