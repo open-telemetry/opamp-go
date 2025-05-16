@@ -611,7 +611,8 @@ func TestSetEffectiveConfig(t *testing.T) {
 
 		// Now change the config.
 		sendConfig.ConfigMap.ConfigMap["key2"] = &protobufs.AgentConfigFile{}
-		_ = client.UpdateEffectiveConfig(context.Background())
+		updateErr := client.UpdateEffectiveConfig(context.Background())
+		require.NoError(t, updateErr)
 
 		// Verify change is delivered.
 		eventually(
@@ -1774,6 +1775,98 @@ func TestOfferUpdatedVersion(t *testing.T) {
 	})
 }
 
+func TestSetCapabilities(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		// Start a Server.
+		srv := internal.StartMockServer(t)
+		srv.EnableExpectMode()
+
+		var clientRcvCustomMessage atomic.Value
+
+		// Start a client.
+		settings := types.StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			Callbacks: types.Callbacks{
+				OnMessage: func(ctx context.Context, msg *types.MessageData) {
+					clientRcvCustomMessage.Store(msg.CustomMessage)
+				},
+			},
+			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig,
+		}
+		prepareClient(t, &settings, client)
+
+		// Client --->
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		// ---> Server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			assert.EqualValues(t, 0, msg.SequenceNum)
+			// The first status report after Start must have the ReportsStatus.
+			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus != 0)
+			// The first status report after Start must have the ReportsEffectiveConfig.
+			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig != 0)
+			// The first status report after Start must not  have the AcceptsRemoteConfig.
+			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig == 0)
+			return &protobufs.ServerToAgent{
+				InstanceUid: msg.InstanceUid,
+			}
+		})
+
+		newCapabilities := protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
+			protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
+			protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
+		err := client.SetCapabilities(&newCapabilities)
+		assert.NoError(t, err)
+
+		// ---> Server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// Check ReportsStatus is still true.
+			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus != 0)
+			// ReportsEffectiveConfig should no longer be present.
+			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig != 0)
+			// AcceptsRemoteConfig should now be present
+			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig != 0)
+
+			// Send a custom message response and ask client for full state again.
+			return &protobufs.ServerToAgent{
+				InstanceUid: msg.InstanceUid,
+				Flags:       uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState),
+			}
+		})
+
+		newCapabilities = protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand |
+			protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
+			protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
+			protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
+		newSetErr := client.SetCapabilities(&newCapabilities)
+		assert.NoError(t, newSetErr)
+
+		// ---> Server
+		srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			// Check ReportsStatus is still true.
+			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus != 0)
+			// ReportsEffectiveConfig should  present.
+			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig != 0)
+			// AcceptsRemoteConfig should now be present
+			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig != 0)
+			// AcceptsRestartCommand should now be present
+			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand != 0)
+			// Send a custom message response and ask client for full state again.
+			return &protobufs.ServerToAgent{
+				InstanceUid: msg.InstanceUid,
+				Flags:       uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState),
+			}
+		})
+
+		// Shutdown the Server.
+		srv.Close()
+
+		// Shutdown the client.
+		err = client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
 func TestReportCustomCapabilities(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a Server.
@@ -2438,6 +2531,119 @@ func TestSetAvailableComponents(t *testing.T) {
 				// Shutdown the client.
 				err := client.Stop(context.Background())
 				assert.NoError(t, err)
+			})
+		})
+	}
+}
+
+func TestValidateCapabilities(t *testing.T) {
+	testCases := []struct {
+		name          string
+		capabilities  protobufs.AgentCapabilities
+		setupFunc     func(t *testing.T, client OpAMPClient)
+		expectedError error
+	}{
+		{
+			name:         "ReportsHealth capability without health",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsHealth,
+			setupFunc: func(t *testing.T, client OpAMPClient) {
+				// Do not set health
+			},
+			expectedError: internal.ErrHealthMissing,
+		},
+		{
+			name:         "ReportsHealth capability with health",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsHealth,
+			setupFunc: func(t *testing.T, client OpAMPClient) {
+				err := client.SetHealth(&protobufs.ComponentHealth{})
+				require.NoError(t, err)
+			},
+			expectedError: nil,
+		},
+		{
+			name:         "ReportsAvailableComponents capability without available components",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents,
+			setupFunc: func(t *testing.T, client OpAMPClient) {
+				// Do not set available components
+			},
+			expectedError: internal.ErrAvailableComponentsMissing,
+		},
+		{
+			name:         "ReportsAvailableComponents capability with available components",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents,
+			setupFunc: func(t *testing.T, client OpAMPClient) {
+				err := client.SetAvailableComponents(generateTestAvailableComponents())
+				require.NoError(t, err)
+			},
+			expectedError: nil,
+		},
+		{
+			name:         "AcceptsPackages capability without PackagesStateProvider",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages,
+			setupFunc: func(t *testing.T, client OpAMPClient) {
+				// Do not set PackagesStateProvider
+			},
+			expectedError: internal.ErrPackagesStateProviderNotSet,
+		},
+		// {
+		// 	name:         "AcceptsPackages capability with PackagesStateProvider",
+		// 	capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages,
+		// 	setupFunc: func(t *testing.T, client OpAMPClient) {
+		// 		client.SetPackageStatuses(statuses *protobufs.PackageStatuses)
+		// 	},
+		// 	expectedError: nil,
+		// },
+		{
+			name:         "ReportsPackageStatuses capability without PackagesStateProvider",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
+			setupFunc: func(t *testing.T, client OpAMPClient) {
+				// Do not set PackagesStateProvider
+			},
+			expectedError: internal.ErrPackagesStateProviderNotSet,
+		},
+		// {
+		// 	name:         "ReportsPackageStatuses capability with PackagesStateProvider",
+		// 	capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
+		// 	setupFunc: func(t *testing.T, client OpAMPClient) {
+		// 		client.(*ClientCommon).PackagesStateProvider = internal.NewInMemPackagesStore()
+		// 	},
+		// 	expectedError: nil,
+		// },
+		{
+			name:         "AcceptsPackages and ReportsPackageStatuses capabilities without PackagesStateProvider",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages | protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
+			setupFunc: func(t *testing.T, client OpAMPClient) {
+				// Do not set PackagesStateProvider
+			},
+			expectedError: internal.ErrPackagesStateProviderNotSet,
+		},
+		// {
+		// 	name:         "AcceptsPackages and ReportsPackageStatuses capabilities with PackagesStateProvider",
+		// 	capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages | protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
+		// 	setupFunc: func(t *testing.T, client OpAMPClient) {
+		// 		client.(*ClientCommon).PackagesStateProvider = internal.NewInMemPackagesStore()
+		// 	},
+		// 	expectedError: nil,
+		// },
+		{
+			name:         "No capabilities set",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_Unspecified,
+			setupFunc: func(t *testing.T, client OpAMPClient) {
+				// No setup needed
+			},
+			expectedError: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			testClients(t, func(t *testing.T, client OpAMPClient) {
+				// Setup the client state as per the test case
+				tc.setupFunc(t, client)
+
+				// Validate capabilities
+				err := client.SetCapabilities(&tc.capabilities)
+				assert.Equal(t, tc.expectedError, err)
 			})
 		})
 	}
