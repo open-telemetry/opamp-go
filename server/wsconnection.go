@@ -27,6 +27,10 @@ func (c wsConnection) Connection() net.Conn {
 	return c.wsConn.UnderlyingConn()
 }
 
+func (c wsConnection) Type() types.ConnectionType {
+	return types.ConnectionTypeWebSocket
+}
+
 func (c wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent) error {
 	c.connMutex.Lock()
 	defer c.connMutex.Unlock()
