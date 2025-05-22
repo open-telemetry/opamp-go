@@ -35,6 +35,10 @@ func (c httpConnection) Send(_ context.Context, _ *protobufs.ServerToAgent) erro
 	return ErrInvalidHTTPConnection
 }
 
+func (c httpConnection) Type() types.ConnectionType {
+	return types.ConnectionTypeHTTP
+}
+
 func (c httpConnection) Disconnect() error {
 	// Disconnect() should not be called for plain HTTP connection.
 	return ErrInvalidHTTPConnection
