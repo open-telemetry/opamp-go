@@ -19,6 +19,7 @@ var (
 	ErrReportsEffectiveConfigNotSet = errors.New("ReportsEffectiveConfig capability is not set")
 	ErrReportsRemoteConfigNotSet    = errors.New("ReportsRemoteConfig capability is not set")
 	ErrPackagesStateProviderNotSet  = errors.New("PackagesStateProvider must be set")
+	ErrCapabilitiesNotSet           = errors.New("Capabilities is not set")
 	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 	ErrAvailableComponentsMissing   = errors.New("AvailableComponents is nil")
 
@@ -97,12 +98,17 @@ func (c *ClientCommon) PrepareStart(
 	if c.isStarted {
 		return errAlreadyStarted
 	}
-	capabilities := settings.Capabilities
-
-	// According to OpAMP spec this capability MUST be set, since all Agents MUST report status.
-	capabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
-	if err := c.ClientSyncedState.SetCapabilities(&capabilities); err != nil {
-		return err
+	// Deprecated: Use client.SetCapabilities() instead.
+	if settings.Capabilities != 0 {
+		capabilities := settings.Capabilities
+		// According to OpAMP spec this capability MUST be set, since all Agents MUST report status.
+		capabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
+		if err := c.ClientSyncedState.SetCapabilities(&capabilities); err != nil {
+			return err
+		}
+	}
+	if c.ClientSyncedState.Capabilities() == 0 {
+		return ErrCapabilitiesNotSet
 	}
 
 	if c.ClientSyncedState.AgentDescription() == nil {
@@ -111,7 +117,7 @@ func (c *ClientCommon) PrepareStart(
 
 	// Prepare package statuses.
 	c.PackagesStateProvider = settings.PackagesStateProvider
-	if err := c.validateCapabilities(capabilities); err != nil {
+	if err := c.validateCapabilities(c.ClientSyncedState.Capabilities()); err != nil {
 		return err
 	}
 

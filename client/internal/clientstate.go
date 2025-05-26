@@ -14,7 +14,6 @@ var (
 	errPackageStatusesMissing           = errors.New("PackageStatuses is not set")
 	errServerProvidedAllPackagesHashNil = errors.New("ServerProvidedAllPackagesHash is nil")
 	errCustomCapabilitiesMissing        = errors.New("CustomCapabilities is not set")
-	errCapabilitiesMissing              = errors.New("Capabilities is not set")
 	errAvailableComponentsMissing       = errors.New("AvailableComponents is not set")
 )
 
@@ -217,7 +216,7 @@ func (s *ClientSyncedState) SetFlags(flags protobufs.AgentToServerFlags) {
 // SetCapabilities sets the Capabilities in the state.
 func (s *ClientSyncedState) SetCapabilities(capabilities *protobufs.AgentCapabilities) error {
 	if capabilities == nil {
-		return errCapabilitiesMissing
+		return ErrCapabilitiesNotSet
 	}
 
 	defer s.mutex.Unlock()

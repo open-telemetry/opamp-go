@@ -25,6 +25,8 @@ import (
 
 const retryAfterHTTPHeader = "Retry-After"
 
+var coreCapabilities = protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
+
 func createAgentDescr() *protobufs.AgentDescription {
 	agentDescr := &protobufs.AgentDescription{
 		IdentifyingAttributes: []*protobufs.KeyValue{
@@ -129,6 +131,12 @@ func prepareClient(t *testing.T, settings *types.StartSettings, c OpAMPClient) {
 	prepareSettings(t, settings, c)
 	err := c.SetAgentDescription(createAgentDescr())
 	assert.NoError(t, err)
+	// We ignore the error here.
+	if settings.Capabilities != 0 {
+		c.SetCapabilities(&settings.Capabilities)
+	} else {
+		c.SetCapabilities(&coreCapabilities)
+	}
 }
 
 func startClient(t *testing.T, settings types.StartSettings, client OpAMPClient) {
@@ -218,10 +226,23 @@ func TestStopCancellation(t *testing.T) {
 
 func TestStartNoDescription(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
+		setErr := client.SetCapabilities(&coreCapabilities)
+		assert.NoError(t, setErr)
 		settings := createNoServerSettings()
 		prepareSettings(t, &settings, client)
 		err := client.Start(context.Background(), settings)
 		assert.EqualValues(t, err, internal.ErrAgentDescriptionMissing)
+	})
+}
+
+func TestStartNoCapabilities(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		setErr := client.SetAgentDescription(createAgentDescr())
+		require.NoError(t, setErr)
+		settings := createNoServerSettings()
+		prepareSettings(t, &settings, client)
+		err := client.Start(context.Background(), settings)
+		assert.EqualValues(t, internal.ErrCapabilitiesNotSet, err)
 	})
 }
 
@@ -1622,7 +1643,6 @@ func TestMissingPackagesStateProvider(t *testing.T) {
 				protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
 		}
 		prepareClient(t, &settings, client)
-
 		assert.ErrorIs(t, client.Start(context.Background(), settings), internal.ErrPackagesStateProviderNotSet)
 
 		// Start a client.
