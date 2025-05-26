@@ -53,6 +53,12 @@ func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) er
 		c.sender.EnableCompression()
 	}
 
+	if settings.ProxyURL != "" {
+		if err := c.sender.SetProxy(settings.ProxyURL, settings.ProxyHeaders); err != nil {
+			return err
+		}
+	}
+
 	// Prepare the first message to send.
 	err := c.common.PrepareFirstMessage(ctx)
 	if err != nil {

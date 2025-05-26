@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"net/http"
 	"os"
 	"runtime"
 	"sort"
@@ -67,10 +68,23 @@ type Agent struct {
 	// certificate is used.
 	opampClientCert *tls.Certificate
 
-	tlsConfig *tls.Config
+	tlsConfig     *tls.Config
+	proxySettings *proxySettings
 
 	certRequested       bool
 	clientPrivateKeyPEM []byte
+}
+
+type proxySettings struct {
+	url     string
+	headers http.Header
+}
+
+func (p *proxySettings) Clone() *proxySettings {
+	return &proxySettings{
+		url:     p.url,
+		headers: p.headers.Clone(),
+	}
 }
 
 func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent {
@@ -95,7 +109,7 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 		return nil
 	}
 	agent.tlsConfig = tlsConfig
-	if err := agent.connect(agent.tlsConfig); err != nil {
+	if err := agent.connect(withTLSConfig(agent.tlsConfig)); err != nil {
 		agent.logger.Errorf(context.Background(), "Cannot connect OpAMP client: %v", err)
 		return nil
 	}
@@ -103,13 +117,31 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 	return agent
 }
 
-func (agent *Agent) connect(tlsConfig *tls.Config) error {
+type settingsOp func(*types.StartSettings)
+
+// withTLSConfig sets the StartSettings.TLSConfig option.
+func withTLSConfig(tlsConfig *tls.Config) settingsOp {
+	return func(settings *types.StartSettings) {
+		settings.TLSConfig = tlConfig
+	}
+}
+
+// withProxy sets the StartSettings.ProxyURL and StartSettings.ProxyHeaders options.
+func withProxy(proxy *proxySettings) {
+	return func(settings *types.StartSettings) {
+		if proxy == nil {
+			return
+		}
+		settings.ProxyURL = proxy.url
+		settings.ProxyHeaders = proxy.headers
+	}
+}
+
+func (agent *Agent) connect(ops ...settingsOp) error {
 	agent.opampClient = client.NewWebSocket(agent.logger)
 
-	agent.tlsConfig = tlsConfig
 	settings := types.StartSettings{
 		OpAMPServerURL: "wss://127.0.0.1:4320/v1/opamp",
-		TLSConfig:      agent.tlsConfig,
 		InstanceUid:    types.InstanceUid(agent.instanceId),
 		Callbacks: types.Callbacks{
 			OnConnect: func(ctx context.Context) {
@@ -136,6 +168,14 @@ func (agent *Agent) connect(tlsConfig *tls.Config) error {
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
 			protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings,
+	}
+	for _, op := range ops {
+		op(settings)
+	}
+	agent.tlsConfig = settings.TLSConfig
+	agent.proxySettings = &proxySettings{
+		url:    settings.ProxyURL,
+		header: settings.ProxyHeader,
 	}
 
 	err := agent.opampClient.SetAgentDescription(agent.agentDescription)
@@ -490,7 +530,7 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	agent.requestClientCertificate()
 }
 
-func (agent *Agent) tryChangeOpAMP(ctx context.Context, cert *tls.Certificate, tlsConfig *tls.Config) {
+func (agent *Agent) tryChangeOpAMP(ctx context.Context, cert *tls.Certificate, tlsConfig *tls.Config, proxy *proxySettings) {
 	agent.logger.Debugf(ctx, "Reconnecting to verify new OpAMP settings.\n")
 	agent.disconnect(ctx)
 
@@ -503,7 +543,12 @@ func (agent *Agent) tryChangeOpAMP(ctx context.Context, cert *tls.Certificate, t
 		tlsConfig.Certificates = []tls.Certificate{*cert}
 	}
 
-	if err := agent.connect(tlsConfig); err != nil {
+	oldProxy := agent.proxySettings
+	if proxy == nil && oldProxy != nil {
+		proxy = oldProxy.Clone()
+	}
+
+	if err := agent.connect(withTLConfig(tlsConfig), withProxy(proxy)); err != nil {
 		agent.logger.Errorf(ctx, "Cannot connect after using new tls config: %s. Ignoring the offer\n", err)
 		if err := agent.connect(oldCfg); err != nil {
 			agent.logger.Errorf(ctx, "Unable to reconnect after restoring tls config: %s\n", err)
@@ -565,8 +610,17 @@ func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *pro
 			agent.logger.Debugf(ctx, "CA in offered settings.\n")
 		}
 	}
+
+	// proxy settings
+	var proxy *proxySettings
+	if settings.Proxy != nil {
+		proxy := &proxySettings{
+			url:     settings.Proxy.Url,
+			headers: toHeaders(settings.Proxy.Headers),
+		}
+	}
 	// TODO: also use settings.DestinationEndpoint and settings.Headers for future connections.
-	go agent.tryChangeOpAMP(ctx, cert, tlsConfig)
+	go agent.tryChangeOpAMP(ctx, cert, tlsConfig, proxy)
 
 	return nil
 }
@@ -632,4 +686,16 @@ func (agent *Agent) getCertFromSettings(certificate *protobufs.TLSCertificate) (
 	}
 
 	return &cert, nil
+}
+
+// toHeaders transforms a *protobufs.Headers to an http.Header
+func toHeaders(ph *protobufs.Headers) http.Header {
+	var header http.Header
+	if ph == nil {
+		return header
+	}
+	for _, h := range ph.Headers {
+		header.Set(h.Key, h.Value)
+	}
+	return header
 }

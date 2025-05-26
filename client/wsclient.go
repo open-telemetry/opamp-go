@@ -77,7 +77,16 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 	}
 
 	// Prepare connection settings.
-	c.dialer = *websocket.DefaultDialer
+	c.dialer = websocket.Dialer{
+		Proxy:            http.ProxyFromEnvironment,
+		HandshakeTimeout: 45 * time.Second,
+	}
+
+	if settings.ProxyURL != "" {
+		if err := c.useProxy(settings.ProxyURL, settings.ProxyHeaders); err != nil {
+			return err
+		}
+	}
 
 	var err error
 	c.url, err = url.Parse(settings.OpAMPServerURL)
@@ -412,4 +421,19 @@ func (c *wsClient) runUntilStopped(ctx context.Context) {
 
 		c.runOneCycle(ctx)
 	}
+}
+
+// useProxy sets the websocket dialer to use the passed proxy URL.
+// If the proxy has no schema http is used.
+// This method is not thread safe and must be called before c.dialer is used.
+// TODO: Once http://github.com/gorilla/websocket/issues/479 is complete add support for settings.ProxyHeaders
+func (c *wsClient) useProxy(proxy string, _ http.Header) error {
+	proxyURL, err := url.Parse(proxy)
+	if err != nil || proxyURL.Scheme == "" || proxyURL.Host == "" { // error or bad URL - try to use http as scheme to resolve
+		proxyURL, err = url.Parse("http://" + proxy)
+		if err != nil {
+			return err
+		}
+	}
+	c.dialer.Proxy = http.ProxyURL(proxyURL)
 }
