@@ -122,12 +122,12 @@ type settingsOp func(*types.StartSettings)
 // withTLSConfig sets the StartSettings.TLSConfig option.
 func withTLSConfig(tlsConfig *tls.Config) settingsOp {
 	return func(settings *types.StartSettings) {
-		settings.TLSConfig = tlConfig
+		settings.TLSConfig = tlsConfig
 	}
 }
 
 // withProxy sets the StartSettings.ProxyURL and StartSettings.ProxyHeaders options.
-func withProxy(proxy *proxySettings) {
+func withProxy(proxy *proxySettings) settingsOp {
 	return func(settings *types.StartSettings) {
 		if proxy == nil {
 			return
@@ -170,12 +170,12 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 			protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings,
 	}
 	for _, op := range ops {
-		op(settings)
+		op(&settings)
 	}
 	agent.tlsConfig = settings.TLSConfig
 	agent.proxySettings = &proxySettings{
-		url:    settings.ProxyURL,
-		header: settings.ProxyHeader,
+		url:     settings.ProxyURL,
+		headers: settings.ProxyHeaders,
 	}
 
 	err := agent.opampClient.SetAgentDescription(agent.agentDescription)
@@ -548,9 +548,9 @@ func (agent *Agent) tryChangeOpAMP(ctx context.Context, cert *tls.Certificate, t
 		proxy = oldProxy.Clone()
 	}
 
-	if err := agent.connect(withTLConfig(tlsConfig), withProxy(proxy)); err != nil {
+	if err := agent.connect(withTLSConfig(tlsConfig), withProxy(proxy)); err != nil {
 		agent.logger.Errorf(ctx, "Cannot connect after using new tls config: %s. Ignoring the offer\n", err)
-		if err := agent.connect(oldCfg); err != nil {
+		if err := agent.connect(withTLSConfig(oldCfg), withProxy(oldProxy)); err != nil {
 			agent.logger.Errorf(ctx, "Unable to reconnect after restoring tls config: %s\n", err)
 		}
 		return
@@ -614,9 +614,9 @@ func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *pro
 	// proxy settings
 	var proxy *proxySettings
 	if settings.Proxy != nil {
-		proxy := &proxySettings{
+		proxy = &proxySettings{
 			url:     settings.Proxy.Url,
-			headers: toHeaders(settings.Proxy.Headers),
+			headers: toHeaders(settings.Proxy.ConnectHeaders),
 		}
 	}
 	// TODO: also use settings.DestinationEndpoint and settings.Headers for future connections.
