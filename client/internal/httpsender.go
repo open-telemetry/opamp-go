@@ -95,12 +95,18 @@ func (h *HTTPSender) SetProxy(proxy string, headers http.Header) error {
 			return err
 		}
 	}
-
-	transport, ok := h.client.Transport.(*http.Transport)
-	if !ok {
-		return fmt.Errorf("unable to coorce client transport as *http.Transport detected type is: %T", h.client.Transport)
+	if proxyURL.Hostname() == "" {
+		return url.InvalidHostError(proxy)
 	}
-	proxyTransport := transport.Clone()
+
+	proxyTransport := &http.Transport{}
+	if h.client.Transport != nil {
+		transport, ok := h.client.Transport.(*http.Transport)
+		if !ok {
+			return fmt.Errorf("unable to coorce client transport as *http.Transport detected type is: %T", h.client.Transport)
+		}
+		proxyTransport = transport.Clone()
+	}
 	proxyTransport.Proxy = http.ProxyURL(proxyURL)
 	proxyTransport.ProxyConnectHeader = headers
 	h.client.Transport = proxyTransport

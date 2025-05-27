@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -350,4 +351,39 @@ func TestPackageUpdatesWithError(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond, "both messages must have been processed successfully")
 
 	cancel()
+}
+
+func TestHTTPSenderSetProxy(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		err  error
+	}{{
+		name: "http proxy",
+		url:  "http://proxy.internal:8080",
+		err:  nil,
+	}, {
+		name: "socks5 proxy",
+		url:  "socks5://proxy.internal:8080",
+		err:  nil,
+	}, {
+		name: "no schema",
+		url:  "proxy.internal:8080",
+		err:  nil,
+	}, {
+		name: "empty url",
+		url:  "",
+		err:  url.InvalidHostError(""),
+	}}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sender := NewHTTPSender(&sharedinternal.NopLogger{})
+			err := sender.SetProxy(tc.url, http.Header{})
+			if tc.err != nil {
+				assert.ErrorAs(t, err, &tc.err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

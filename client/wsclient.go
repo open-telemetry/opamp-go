@@ -435,6 +435,9 @@ func (c *wsClient) useProxy(proxy string, _ http.Header) error {
 			return err
 		}
 	}
+	if proxyURL.Hostname() == "" {
+		return url.InvalidHostError(proxy)
+	}
 	c.dialer.Proxy = http.ProxyURL(proxyURL)
 	return nil
 }
