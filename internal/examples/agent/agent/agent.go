@@ -543,6 +543,10 @@ func (agent *Agent) tryChangeOpAMP(ctx context.Context, cert *tls.Certificate, t
 		tlsConfig.Certificates = []tls.Certificate{*cert}
 	}
 
+	if proxy != nil {
+		agent.logger.Debugf(ctx, "Proxy settings revieved: %v\n", proxy)
+	}
+
 	oldProxy := agent.proxySettings
 	if proxy == nil && oldProxy != nil {
 		proxy = oldProxy.Clone()
