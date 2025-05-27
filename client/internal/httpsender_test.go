@@ -378,7 +378,7 @@ func TestHTTPSenderSetProxy(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			sender := NewHTTPSender(&sharedinternal.NopLogger{})
-			err := sender.SetProxy(tc.url, http.Header{})
+			err := sender.SetProxy(tc.url, nil)
 			if tc.err != nil {
 				assert.ErrorAs(t, err, &tc.err)
 			} else {
@@ -386,4 +386,23 @@ func TestHTTPSenderSetProxy(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("old transport settings are preserved", func(t *testing.T) {
+		sender := &HTTPSender{
+			client: &http.Client{
+				Transport: &http.Transport{
+					MaxResponseHeaderBytes: 1024,
+				},
+			},
+		}
+		err := sender.SetProxy("https://proxy.internal:8080", nil)
+		assert.NoError(t, err)
+		transport, ok := sender.client.Transport.(*http.Transport)
+		if !ok {
+			t.Logf("Transport: %v", sender.client.Transport)
+			t.Fatalf("Unable to coorce as *http.Transport detected type: %T", sender.client.Transport)
+		}
+		assert.NotNil(t, transport.Proxy)
+		assert.Equal(t, int64(1024), transport.MaxResponseHeaderBytes)
+	})
 }

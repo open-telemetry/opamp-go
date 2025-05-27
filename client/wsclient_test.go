@@ -846,7 +846,7 @@ func TestWSClientUseProxy(t *testing.T) {
 			client := &wsClient{
 				dialer: websocket.Dialer{},
 			}
-			err := client.useProxy(tc.url, http.Header{})
+			err := client.useProxy(tc.url, nil)
 			if tc.err != nil {
 				assert.ErrorAs(t, err, &tc.err)
 			} else {
