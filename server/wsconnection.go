@@ -37,9 +37,8 @@ func (c wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent) 
 }
 
 func (c wsConnection) Disconnect() error {
-	if c.closed.Load() {
+	if !c.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	c.closed.Store(true)
 	return c.wsConn.Close()
 }
