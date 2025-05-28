@@ -29,19 +29,8 @@ import (
 )
 
 func startServer(t *testing.T, settings *StartSettings) *server {
-	srv := New(&sharedinternal.NopLogger{})
-	require.NotNil(t, srv)
-	if settings.ListenEndpoint == "" {
-		// Find an avaiable port to listen on.
-		settings.ListenEndpoint = testhelpers.GetAvailableLocalAddress()
-	}
-	if settings.ListenPath == "" {
-		settings.ListenPath = "/"
-	}
-	err := srv.Start(*settings)
-	require.NoError(t, err)
+	return startServerWithLogger(t, settings, &sharedinternal.NopLogger{})
 
-	return srv
 }
 
 func startServerWithLogger(t *testing.T, settings *StartSettings, logger clienttypes.Logger) *server {
@@ -321,14 +310,13 @@ func (o *testLogger) Errorf(_ context.Context, format string, v ...any) {
 func TestDisconnectServerWSConnection(t *testing.T) {
 	connectionCloseCalled := int32(0)
 	var serverConn types.Connection
-	mutex := sync.Mutex{}
+	connReady := make(chan struct{}) // Channel to signal when serverConn is assigned
 	callback := types.Callbacks{
 		OnConnecting: func(request *http.Request) types.ConnectionResponse {
 			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
 				OnConnected: func(ctx context.Context, conn types.Connection) {
-					mutex.Lock()
 					serverConn = conn
-					mutex.Unlock()
+					close(connReady)
 				},
 				OnConnectionClose: func(conn types.Connection) {
 					atomic.StoreInt32(&connectionCloseCalled, 1)
@@ -350,10 +338,11 @@ func TestDisconnectServerWSConnection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, atomic.LoadInt32(&connectionCloseCalled) == 0)
 
+	// Wait for serverConn to be assigned
+	<-connReady
+
 	// Close connection from server side
-	mutex.Lock()
 	serverConn.Disconnect()
-	mutex.Unlock()
 
 	// Verify connection disconnected from server side
 	eventually(t, func() bool { return atomic.LoadInt32(&connectionCloseCalled) == 1 })
