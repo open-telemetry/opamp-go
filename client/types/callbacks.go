@@ -18,6 +18,7 @@ type MessageData struct {
 
 	// Connection settings are offered by the Server. These fields should be processed
 	// as described in the ConnectionSettingsOffers message.
+	OfferedConnectionsHash []byte
 	OwnMetricsConnSettings *protobufs.TelemetryConnectionSettings
 	OwnTracesConnSettings  *protobufs.TelemetryConnectionSettings
 	OwnLogsConnSettings    *protobufs.TelemetryConnectionSettings

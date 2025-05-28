@@ -162,6 +162,11 @@ func (c *wsClient) SetAvailableComponents(components *protobufs.AvailableCompone
 	return c.common.SetAvailableComponents(components)
 }
 
+// SetConnectionStatus implements OpAMPClient.SetConnectionStatus
+func (c *wsClient) SetConnectionStatus(status *protobufs.ConnectionSettingsStatus, scheduleSend bool) error {
+	return c.common.SetConnectionStatus(status, scheduleSend)
+}
+
 func viaReq(resps []*http.Response) []*http.Request {
 	reqs := make([]*http.Request, 0, len(resps))
 	for _, resp := range resps {
