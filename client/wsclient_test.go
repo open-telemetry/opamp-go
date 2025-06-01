@@ -290,8 +290,21 @@ func TestVerifyWSCompress(t *testing.T) {
 			)
 
 			// Stop the client.
-			err := client.Stop(context.Background())
-			assert.NoError(t, err)
+			var stopWg sync.WaitGroup
+			stopWg.Add(1)
+
+			go func() {
+				defer stopWg.Done()
+
+				// client.Stop() should send an AgentDisconnect message to the server.
+				// because we are using Expect mode, we should stop asynchronously
+				err := client.Stop(context.Background())
+				assert.NoError(t, err)
+			}()
+			srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+			})
+			stopWg.Wait()
 
 			proxy.Stop()
 
@@ -787,6 +800,7 @@ func TestWSSenderReportsAvailableComponents(t *testing.T) {
 
 			var firstMsg atomic.Bool
 			var conn atomic.Value
+			var availableComponentsMsgReceived atomic.Bool
 			srv.OnWSConnect = func(c *websocket.Conn) {
 				conn.Store(c)
 				firstMsg.Store(true)
@@ -815,10 +829,13 @@ func TestWSSenderReportsAvailableComponents(t *testing.T) {
 				}
 				msgCount.Add(1)
 				if tc.availableComponents != nil {
-					availableComponents := msg.GetAvailableComponents()
-					require.NotNil(t, availableComponents)
-					require.Equal(t, tc.availableComponents.GetHash(), availableComponents.GetHash())
-					require.Equal(t, tc.availableComponents.GetComponents(), availableComponents.GetComponents())
+					if !availableComponentsMsgReceived.Load() {
+						availableComponentsMsgReceived.Store(true)
+						availableComponents := msg.GetAvailableComponents()
+						require.NotNil(t, availableComponents)
+						require.Equal(t, tc.availableComponents.GetHash(), availableComponents.GetHash())
+						require.Equal(t, tc.availableComponents.GetComponents(), availableComponents.GetComponents())
+					}
 				} else {
 					require.Error(t, errors.New("should not receive a second message when ReportsAvailableComponents is disabled"))
 				}
