@@ -640,21 +640,7 @@ func TestHandlesSlowCloseMessageFromServer(t *testing.T) {
 
 func TestWSClientStopSendAgentDisconnectMessage(t *testing.T) {
 	srv := internal.StartMockServer(t)
-	var lastMsg *protobufs.AgentToServer
-	var mu sync.Mutex
-	waitFirstMessage := make(chan struct{})
-
-	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-		if waitFirstMessage != nil {
-			close(waitFirstMessage)
-			waitFirstMessage = nil
-		}
-
-		mu.Lock()
-		defer mu.Unlock()
-		lastMsg = msg
-		return nil
-	}
+	srv.EnableExpectMode()
 
 	client := NewWebSocket(nil)
 	client.connShutdownTimeout = 100 * time.Millisecond
@@ -662,19 +648,24 @@ func TestWSClientStopSendAgentDisconnectMessage(t *testing.T) {
 		OpAMPServerURL: srv.GetHTTPTestServer().URL,
 	}, client)
 
-	select {
-	case <-waitFirstMessage:
-	case <-time.After(2 * time.Second):
-		require.Fail(t, "Connection never established")
-	}
+	// Wait for connection to be established.
+	srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+		return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+	})
 
-	client.Stop(context.Background())
+	var stopWg sync.WaitGroup
+	stopWg.Add(1)
+	go func() {
+		defer stopWg.Done()
+		client.Stop(context.Background())
+	}()
 
-	assert.Eventually(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return lastMsg != nil && lastMsg.AgentDisconnect != nil
-	}, 2*time.Second, 250*time.Millisecond)
+	srv.Expect(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+		assert.NotNil(t, msg.AgentDisconnect)
+		return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+	})
+
+	stopWg.Wait()
 }
 
 func TestHandlesNoCloseMessageFromServer(t *testing.T) {
