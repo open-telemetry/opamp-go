@@ -93,13 +93,14 @@ func (c *ClientCommon) validateCapabilities(capabilities protobufs.AgentCapabili
 // PrepareStart prepares the client state for the next Start() call.
 // It returns an error if the client is already started, or if the settings are invalid.
 func (c *ClientCommon) PrepareStart(
-	_ context.Context, settings types.StartSettings,
+	ctx context.Context, settings types.StartSettings,
 ) error {
 	if c.isStarted {
 		return errAlreadyStarted
 	}
 	// Deprecated: Use client.SetCapabilities() instead.
 	if settings.Capabilities != 0 {
+		c.Logger.Errorf(ctx, "settings.Capabilities is deprecated, use client.SetCapabilities() instead")
 		capabilities := settings.Capabilities
 		// According to OpAMP spec this capability MUST be set, since all Agents MUST report status.
 		capabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
@@ -108,7 +109,13 @@ func (c *ClientCommon) PrepareStart(
 		}
 	}
 	if c.ClientSyncedState.Capabilities() == 0 {
-		return ErrCapabilitiesNotSet
+		c.Logger.Errorf(ctx, "you must call client.SetCapabilities before start.")
+		capabilities := protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
+		if err := c.ClientSyncedState.SetCapabilities(&capabilities); err != nil {
+			return err
+		}
+		// Eventually we will error here.
+		// return ErrCapabilitiesNotSet
 	}
 
 	if c.ClientSyncedState.AgentDescription() == nil {
