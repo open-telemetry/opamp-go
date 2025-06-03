@@ -153,9 +153,9 @@ type OpAMPClient interface {
 	// different from the cached agent state, this method is a no-op.
 	SetAvailableComponents(components *protobufs.AvailableComponents) error
 
-	// SetConnectionStatus sets the current ConnectionSettingsStatus.
+	// SetConnectionSettingsStatus sets the current ConnectionSettingsStatus.
 	// All attributes may be unset within the ConnectionSettingsStatus message.
 	// May be called anytime after Start(), including from OnMessage handler.
 	// ConnectionSettingsStatus must not be nil.
-	SetConnectionStatus(status *protobufs.ConnectionSettingsStatus, scheduleSend bool) error
+	SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus, scheduleSend bool) error
 }

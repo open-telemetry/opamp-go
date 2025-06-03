@@ -462,17 +462,17 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	}
 
 	if msg.OwnMetricsConnSettings != nil {
-		connectionStatus := &protobufs.ConnectionSettingsStatus{
+		connectionSettingsStatus := &protobufs.ConnectionSettingsStatus{
 			LastConnectionSettingsHash: msg.OfferedConnectionsHash,
 			Status:                     protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED,
 		}
 		if err := agent.initMeter(msg.OwnMetricsConnSettings); err != nil {
-			connectionStatus.Status = protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED
-			connectionStatus.ErrorMessage = err.Error()
+			connectionSettingsStatus.Status = protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED
+			connectionSettingsStatus.ErrorMessage = err.Error()
 		}
 		// the OnMessageCallback runs after the OpAMPConnectionSettings callback; if it results in a failed state we should send the update.
-		if err := agent.opampClient.SetConnectionStatus(connectionStatus, true); err != nil {
-			agent.logger.Errorf(ctx, "Failed to update server with connection settings status change %v: %v", connectionStatus, err)
+		if err := agent.opampClient.SetConnectionSettingsStatus(connectionSettingsStatus, true); err != nil {
+			agent.logger.Errorf(ctx, "Failed to update server with connection settings status change %v: %v", connectionSettingsStatus, err)
 		}
 	}
 

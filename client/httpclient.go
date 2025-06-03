@@ -125,9 +125,9 @@ func (c *httpClient) SetAvailableComponents(components *protobufs.AvailableCompo
 	return c.common.SetAvailableComponents(components)
 }
 
-// SetConnectionStatus implements OpAMPClient.SetConnectionStatus
-func (c *httpClient) SetConnectionStatus(status *protobufs.ConnectionSettingsStatus, scheduleSend bool) error {
-	return c.common.SetConnectionStatus(status, scheduleSend)
+// SetConnectionSettingsStatus implements OpAMPClient.SetConnectionStatus
+func (c *httpClient) SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus, scheduleSend bool) error {
+	return c.common.SetConnectionSettingsStatus(status, scheduleSend)
 }
 
 func (c *httpClient) runUntilStopped(ctx context.Context) {

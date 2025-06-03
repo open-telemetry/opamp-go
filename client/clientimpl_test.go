@@ -2463,18 +2463,18 @@ func generateTestAvailableComponents() *protobufs.AvailableComponents {
 	}
 }
 
-func TestSetConnectionStatus(t *testing.T) {
+func TestSetConnectionSettingsStatus(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a Server.
 		srv := internal.StartMockServer(t)
-		var rcvConnectionStatus atomic.Value
+		var rcvConnectionSettingsStatus atomic.Value
 		var isFirstMessage atomic.Bool
 		isFirstMessage.Store(true)
 
 		// Make sure we only record connection status the 1st time we receive it
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			if isFirstMessage.Load() && msg.ConnectionStatus != nil {
-				rcvConnectionStatus.Store(msg.ConnectionStatus)
+			if isFirstMessage.Load() && msg.ConnectionSettingsStatus != nil {
+				rcvConnectionSettingsStatus.Store(msg.ConnectionSettingsStatus)
 				isFirstMessage.Store(false)
 			}
 			return nil
@@ -2494,14 +2494,14 @@ func TestSetConnectionStatus(t *testing.T) {
 		assert.NoError(t, client.Start(context.Background(), settings))
 
 		// send status
-		err := client.SetConnectionStatus(status, true)
+		err := client.SetConnectionSettingsStatus(status, true)
 		assert.NoError(t, err)
 
 		// verify server gets the message
 		eventually(
 			t,
 			func() bool {
-				msg, ok := rcvConnectionStatus.Load().(*protobufs.ConnectionSettingsStatus)
+				msg, ok := rcvConnectionSettingsStatus.Load().(*protobufs.ConnectionSettingsStatus)
 				if !ok || msg == nil {
 					return false
 				}

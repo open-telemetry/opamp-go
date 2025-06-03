@@ -163,7 +163,7 @@ func (c *ClientCommon) PrepareStart(
 	}
 
 	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus != 0 && settings.LastConnectionSettingsStatus != nil {
-		c.SetConnectionStatus(settings.LastConnectionSettingsStatus, false) // will be sent as part of the initial message
+		c.SetConnectionSettingsStatus(settings.LastConnectionSettingsStatus, false) // will be sent as part of the initial message
 	}
 
 	return nil
@@ -258,7 +258,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()
 			msg.Flags = c.ClientSyncedState.Flags()
 			msg.AvailableComponents = availableComponents
-			msg.ConnectionStatus = connectionSettingsStatus
+			msg.ConnectionSettingsStatus = connectionSettingsStatus
 		},
 	)
 	return nil
@@ -516,19 +516,19 @@ func (c *ClientCommon) SetAvailableComponents(components *protobufs.AvailableCom
 	return nil
 }
 
-func (c *ClientCommon) SetConnectionStatus(status *protobufs.ConnectionSettingsStatus, scheduleSend bool) error {
+func (c *ClientCommon) SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus, scheduleSend bool) error {
 	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus == 0 {
 		return errReportsConnectionSettingsStatusNotSet
 	}
 
 	oldStatus := c.ClientSyncedState.ConnectionSettingsStatus()
 
-	if updateStoredConnectionStatus(oldStatus, status) {
+	if updateStoredConnectionSettingsStatus(oldStatus, status) {
 		if err := c.ClientSyncedState.SetConnectionSettingsStatus(status); err != nil {
 			return err
 		}
 		c.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
-			msg.ConnectionStatus = c.ClientSyncedState.ConnectionSettingsStatus()
+			msg.ConnectionSettingsStatus = c.ClientSyncedState.ConnectionSettingsStatus()
 		})
 		if scheduleSend {
 			c.sender.ScheduleSend()
@@ -537,13 +537,13 @@ func (c *ClientCommon) SetConnectionStatus(status *protobufs.ConnectionSettingsS
 	return nil
 }
 
-// updateStoredConnectionStatus returns a bool of if status should replace oldStatus.
+// updateStoredConnectionSettingsStatus returns a bool of if status should replace oldStatus.
 // It's true if:
 // - no oldStatus
 // - hash changes
 // - status changes from APPLYING or UNSET
 // - status changes to FAILED
-func updateStoredConnectionStatus(oldStatus, status *protobufs.ConnectionSettingsStatus) bool {
+func updateStoredConnectionSettingsStatus(oldStatus, status *protobufs.ConnectionSettingsStatus) bool {
 	return oldStatus == nil || !bytes.Equal(oldStatus.LastConnectionSettingsHash, status.LastConnectionSettingsHash) ||
 		oldStatus.Status == protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLYING ||
 		oldStatus.Status == protobufs.RemoteConfigStatuses_RemoteConfigStatuses_UNSET ||

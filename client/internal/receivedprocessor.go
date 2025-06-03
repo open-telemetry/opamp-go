@@ -102,7 +102,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 				r.logger.Errorf(ctx, "Unable to persist connection settings status applying state: %v", err)
 			}
 			r.sender.NextMessage().Update(func(sendMsg *protobufs.AgentToServer) {
-				sendMsg.ConnectionStatus = connectionStatus
+				sendMsg.ConnectionSettingsStatus = connectionStatus
 			})
 			r.sender.ScheduleSend() // TODO: this might be noisy
 		}
@@ -273,7 +273,7 @@ func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, sett
 			}
 			oldStatus := r.clientSyncedState.ConnectionSettingsStatus()
 
-			if !updateStoredConnectionStatus(oldStatus, connectionStatus) {
+			if !updateStoredConnectionSettingsStatus(oldStatus, connectionStatus) {
 				r.logger.Debugf(ctx, "Client skipping connection status state update from %v to %v", oldStatus, connectionStatus)
 				return
 			}
@@ -282,7 +282,7 @@ func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, sett
 				r.logger.Errorf(ctx, "Unable to persist connection settings status %s state: %v", status.String(), err)
 			}
 			r.sender.NextMessage().Update(func(sendMsg *protobufs.AgentToServer) {
-				sendMsg.ConnectionStatus = connectionStatus
+				sendMsg.ConnectionSettingsStatus = connectionStatus
 			})
 			r.sender.ScheduleSend()
 		}
