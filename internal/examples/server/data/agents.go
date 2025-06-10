@@ -126,9 +126,7 @@ func (a *Agents) OfferAgentConnectionSettings(
 ) {
 	if len(offers.Hash) == 0 {
 		offers.Hash = toHash(offers)
-		logger.Printf("Calculated hash len %d", len(offers.Hash))
 	}
-	logger.Printf("Begin offer connection settings to %s (hash=%x)\n", id, offers.Hash)
 
 	a.mux.Lock()
 	defer a.mux.Unlock()
