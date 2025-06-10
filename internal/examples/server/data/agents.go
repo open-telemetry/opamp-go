@@ -126,6 +126,7 @@ func (a *Agents) OfferAgentConnectionSettings(
 ) {
 	if len(offers.Hash) == 0 {
 		offers.Hash = toHash(offers)
+		logger.Printf("Calculated hash len %d", len(offers.Hash))
 	}
 	logger.Printf("Begin offer connection settings to %s (hash=%x)\n", id, offers.Hash)
 
@@ -179,18 +180,36 @@ type endpoint interface {
 
 // hashEndpoint writes some shared attributes of the passed enpoint to the passed writer.
 func hashEndpoint(w io.Writer, e endpoint) {
-	w.Write([]byte(e.GetDestinationEndpoint()))
+	_, err := w.Write([]byte(e.GetDestinationEndpoint()))
+	if err != nil {
+		panic(err)
+	}
 	if headers := e.GetHeaders(); headers != nil {
 		for _, header := range headers.Headers {
-			w.Write([]byte(header.Key + header.Value))
+			_, err := w.Write([]byte(header.Key + header.Value))
+			if err != nil {
+				panic(err)
+			}
 		}
 	}
 	if cert := e.GetCertificate(); cert != nil {
-		w.Write(cert.Cert)
-		w.Write(cert.PrivateKey)
-		w.Write(cert.CaCert)
+		_, err := w.Write(cert.Cert)
+		if err != nil {
+			panic(err)
+		}
+		_, err = w.Write(cert.PrivateKey)
+		if err != nil {
+			panic(err)
+		}
+		_, err = w.Write(cert.CaCert)
+		if err != nil {
+			panic(err)
+		}
 	}
 	if tlsSettings := e.GetTls(); tlsSettings != nil {
-		w.Write([]byte(tlsSettings.CaPemContents))
+		_, err := w.Write([]byte(tlsSettings.CaPemContents))
+		if err != nil {
+			panic(err)
+		}
 	}
 }

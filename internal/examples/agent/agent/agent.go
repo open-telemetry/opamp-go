@@ -129,6 +129,7 @@ func (agent *Agent) connect(tlsConfig *tls.Config) error {
 			},
 			OnMessage:                 agent.onMessage,
 			OnOpampConnectionSettings: agent.onOpampConnectionSettings,
+			OnConnectionSettings:      agent.onConnectionSettings,
 		},
 		RemoteConfigStatus: agent.remoteConfigStatus,
 		Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
@@ -461,21 +462,6 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 		}
 	}
 
-	if msg.OwnMetricsConnSettings != nil {
-		connectionSettingsStatus := &protobufs.ConnectionSettingsStatus{
-			LastConnectionSettingsHash: msg.OfferedConnectionsHash,
-			Status:                     protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED,
-		}
-		if err := agent.initMeter(msg.OwnMetricsConnSettings); err != nil {
-			connectionSettingsStatus.Status = protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED
-			connectionSettingsStatus.ErrorMessage = err.Error()
-		}
-		// the OnMessageCallback runs after the OpAMPConnectionSettings callback; if it results in a failed state we should send the update.
-		if err := agent.opampClient.SetConnectionSettingsStatus(connectionSettingsStatus, true); err != nil {
-			agent.logger.Errorf(ctx, "Failed to update server with connection settings status change %v: %v", connectionSettingsStatus, err)
-		}
-	}
-
 	if msg.AgentIdentification != nil {
 		uid, err := uuid.FromBytes(msg.AgentIdentification.NewInstanceUid)
 		if err != nil {
@@ -644,4 +630,10 @@ func (agent *Agent) getCertFromSettings(certificate *protobufs.TLSCertificate) (
 	}
 
 	return &cert, nil
+}
+
+func (agent *Agent) onConnectionSettings(ctx context.Context, settings *protobufs.ConnectionSettingsOffers) error {
+	agent.logger.Debugf(context.Background(), "Received connection settings offers from server, hash=%x.", settings.Hash)
+	// TODO handle traces, logs, and other connection settings
+	return agent.initMeter(settings.OwnMetrics)
 }

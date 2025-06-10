@@ -8,6 +8,7 @@ import (
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"google.golang.org/protobuf/proto"
 )
 
 // receivedProcessor handles the processing of messages received from the Server.
@@ -182,6 +183,8 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 
 	r.rcvOpampConnectionSettings(ctx, msg.ConnectionSettings)
 
+	r.rcvConnectionSettings(ctx, msg.ConnectionSettings)
+
 	if scheduled {
 		r.sender.ScheduleSend()
 	}
@@ -274,7 +277,7 @@ func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, sett
 			oldStatus := r.clientSyncedState.ConnectionSettingsStatus()
 
 			if !updateStoredConnectionSettingsStatus(oldStatus, connectionStatus) {
-				r.logger.Debugf(ctx, "Client skipping connection status state update from %v to %v", oldStatus, connectionStatus)
+				r.logger.Debugf(ctx, "Client skipping connection status state update from %v to %v", oldStatus.GetStatus(), connectionStatus.GetStatus())
 				return
 			}
 
@@ -288,6 +291,70 @@ func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, sett
 		}
 	} else {
 		r.logger.Debugf(ctx, "Ignoring Opamp, agent does not have AcceptsOpAMPConnectionSettings capability")
+	}
+}
+
+func (r *receivedProcessor) rcvConnectionSettings(ctx context.Context, settings *protobufs.ConnectionSettingsOffers) {
+	if settings == nil || (settings.OwnMetrics == nil &&
+		settings.OwnTraces == nil &&
+		settings.OwnLogs == nil &&
+		settings.OtherConnections == nil) {
+		return
+	}
+
+	clone := proto.Clone(settings).(*protobufs.ConnectionSettingsOffers)
+	if !r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics) && clone.OwnMetrics != nil {
+		clone.OwnMetrics = nil
+		r.logger.Debugf(ctx, "Ignoring OwnMetrics, agent does not have ReportsOwnMetrics capability")
+	}
+	if !r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnTraces) && clone.OwnTraces != nil {
+		clone.OwnTraces = nil
+		r.logger.Debugf(ctx, "Ignoring OwnTraces, agent does not have ReportsOwnTraces capability")
+	}
+	if !r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnLogs) && clone.OwnLogs != nil {
+		clone.OwnLogs = nil
+		r.logger.Debugf(ctx, "Ignoring OwnLogs, agent does not have ReportsOwnLogs capability")
+	}
+	if !r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOtherConnectionSettings) && clone.OtherConnections != nil {
+		clone.OtherConnections = nil
+		r.logger.Debugf(ctx, "Ignoring OtherConnections, agent does not have AcceptsOtherConnectionSettings capability")
+	}
+
+	if clone.OwnMetrics != nil || clone.OwnTraces != nil || clone.OwnLogs != nil || clone.OtherConnections != nil {
+		err := r.callbacks.OnConnectionSettings(ctx, settings)
+		if err != nil {
+			r.logger.Errorf(ctx, "Failed to process ConnectionSettings: %v", err)
+		}
+		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) {
+			status := protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED
+			errMsg := ""
+			if err != nil {
+				status = protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED
+				errMsg = err.Error()
+			}
+
+			connectionStatus := &protobufs.ConnectionSettingsStatus{
+				LastConnectionSettingsHash: settings.Hash,
+				Status:                     status,
+				ErrorMessage:               errMsg,
+			}
+			oldStatus := r.clientSyncedState.ConnectionSettingsStatus()
+
+			if !updateStoredConnectionSettingsStatus(oldStatus, connectionStatus) {
+				r.logger.Debugf(ctx, "Client skipping connection status state update from %v to %v", oldStatus.GetStatus(), connectionStatus.GetStatus())
+				return
+			}
+
+			if err := r.clientSyncedState.SetConnectionSettingsStatus(connectionStatus); err != nil {
+				r.logger.Errorf(ctx, "Unable to persist connection settings status %s state: %v", status.String(), err)
+			}
+			r.sender.NextMessage().Update(func(sendMsg *protobufs.AgentToServer) {
+				sendMsg.ConnectionSettingsStatus = connectionStatus
+			})
+			r.sender.ScheduleSend()
+		}
+	} else {
+		r.logger.Debugf(ctx, "Ignoring ConnectionSettings, agent does not have corresponding capability")
 	}
 }
 
