@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -163,7 +162,7 @@ func (c *ClientCommon) PrepareStart(
 	}
 
 	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus != 0 && settings.LastConnectionSettingsStatus != nil {
-		c.SetConnectionSettingsStatus(settings.LastConnectionSettingsStatus, false) // will be sent as part of the initial message
+		c.ClientSyncedState.SetConnectionSettingsStatus(settings.LastConnectionSettingsStatus)
 	}
 
 	return nil
@@ -514,38 +513,4 @@ func (c *ClientCommon) SetAvailableComponents(components *protobufs.AvailableCom
 	}
 
 	return nil
-}
-
-func (c *ClientCommon) SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus, scheduleSend bool) error {
-	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus == 0 {
-		return errReportsConnectionSettingsStatusNotSet
-	}
-
-	oldStatus := c.ClientSyncedState.ConnectionSettingsStatus()
-
-	if updateStoredConnectionSettingsStatus(oldStatus, status) {
-		if err := c.ClientSyncedState.SetConnectionSettingsStatus(status); err != nil {
-			return err
-		}
-		c.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
-			msg.ConnectionSettingsStatus = c.ClientSyncedState.ConnectionSettingsStatus()
-		})
-		if scheduleSend {
-			c.sender.ScheduleSend()
-		}
-	}
-	return nil
-}
-
-// updateStoredConnectionSettingsStatus returns a bool of if status should replace oldStatus.
-// It's true if:
-// - no oldStatus
-// - hash changes
-// - status changes from APPLYING or UNSET
-// - status changes to FAILED
-func updateStoredConnectionSettingsStatus(oldStatus, status *protobufs.ConnectionSettingsStatus) bool {
-	return oldStatus == nil || !bytes.Equal(oldStatus.LastConnectionSettingsHash, status.LastConnectionSettingsHash) ||
-		oldStatus.Status == protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLYING ||
-		oldStatus.Status == protobufs.RemoteConfigStatuses_RemoteConfigStatuses_UNSET ||
-		status.Status == protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED
 }

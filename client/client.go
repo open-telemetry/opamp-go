@@ -152,10 +152,4 @@ type OpAMPClient interface {
 	// This method is subject to agent status compression - if components is not
 	// different from the cached agent state, this method is a no-op.
 	SetAvailableComponents(components *protobufs.AvailableComponents) error
-
-	// SetConnectionSettingsStatus sets the current ConnectionSettingsStatus.
-	// All attributes may be unset within the ConnectionSettingsStatus message.
-	// May be called anytime after Start(), including from OnMessage handler.
-	// ConnectionSettingsStatus must not be nil.
-	SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus, scheduleSend bool) error
 }

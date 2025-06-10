@@ -125,11 +125,6 @@ func (c *httpClient) SetAvailableComponents(components *protobufs.AvailableCompo
 	return c.common.SetAvailableComponents(components)
 }
 
-// SetConnectionSettingsStatus implements OpAMPClient.SetConnectionStatus
-func (c *httpClient) SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus, scheduleSend bool) error {
-	return c.common.SetConnectionSettingsStatus(status, scheduleSend)
-}
-
 func (c *httpClient) runUntilStopped(ctx context.Context) {
 	// Start the HTTP sender. This will make request/responses with retries for
 	// failures and will wait with configured polling interval if there is nothing
