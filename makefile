@@ -18,6 +18,7 @@ TOOLS_BIN_NAMES := $(addprefix $(TOOLS_BIN_DIR)/, $(notdir $(shell echo $(TOOLS_
 
 GOFUMPT      := $(TOOLS_BIN_DIR)/gofumpt
 GOIMPORTS    := $(TOOLS_BIN_DIR)/goimports
+GOVULNCHECK  := $(TOOLS_BIN_DIR)/govulncheck
 GOACC	     := $(TOOLS_BIN_DIR)/go-acc
 
 # Find all .proto files.
@@ -101,3 +102,6 @@ fmt: $(GOIMPORTS) $(GOFUMPT)
 	gofmt -w -s ./
 	$(GOIMPORTS) -w  ./
 	$(GOFUMPT) -l -w .
+
+vuln: $(GOVULNCHECK)
+	govulncheck ./...

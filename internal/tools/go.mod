@@ -7,6 +7,7 @@ toolchain go1.24.1
 require (
 	github.com/ory/go-acc v0.2.8
 	golang.org/x/tools v0.33.0
+	golang.org/x/vuln v1.1.4
 	mvdan.cc/gofumpt v0.8.0
 )
 
@@ -32,6 +33,7 @@ require (
 	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/sync v0.14.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/telemetry v0.0.0-20240522233618-39ace7a40ae7 // indirect
 	golang.org/x/text v0.3.2 // indirect
 	gopkg.in/ini.v1 v1.57.0 // indirect
 	gopkg.in/yaml.v2 v2.3.0 // indirect
