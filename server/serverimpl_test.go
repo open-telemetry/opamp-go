@@ -273,7 +273,7 @@ func TestDisconnectClientWSConnection(t *testing.T) {
 	assert.True(t, atomic.LoadInt32(&connectionCloseCalled) == 0)
 
 	// Close connection from client side
-	clientConn := wsConnection{wsConn: conn, connMutex: &sync.Mutex{}, closed: &atomic.Bool{}}
+	clientConn := newWSConnection(conn)
 	err = clientConn.Disconnect()
 	assert.NoError(t, err)
 
