@@ -18,25 +18,29 @@ type wsConnection struct {
 	// The websocket library does not allow multiple concurrent write operations,
 	// so ensure that we only have a single operation in progress at a time.
 	// For more: https://pkg.go.dev/github.com/gorilla/websocket#hdr-Concurrency
-	connMutex *sync.Mutex
+	connMutex sync.Mutex
 	wsConn    *websocket.Conn
-	closed    *atomic.Bool
+	closed    atomic.Bool
 }
 
 var _ types.Connection = (*wsConnection)(nil)
 
-func (c wsConnection) Connection() net.Conn {
+func newWSConnection(wsConn *websocket.Conn) types.Connection {
+	return &wsConnection{wsConn: wsConn, connMutex: sync.Mutex{}, closed: atomic.Bool{}}
+}
+
+func (c *wsConnection) Connection() net.Conn {
 	return c.wsConn.UnderlyingConn()
 }
 
-func (c wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent) error {
+func (c *wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent) error {
 	c.connMutex.Lock()
 	defer c.connMutex.Unlock()
 
 	return internal.WriteWSMessage(c.wsConn, message)
 }
 
-func (c wsConnection) Disconnect() error {
+func (c *wsConnection) Disconnect() error {
 	if !c.closed.CompareAndSwap(false, true) {
 		return nil
 	}
