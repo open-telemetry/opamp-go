@@ -38,26 +38,30 @@ This repository is work-in-progress of an OpAMP implementation in Go.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Approvers ([@open-telemetry/opamp-go-approvers](https://github.com/orgs/open-telemetry/teams/opamp-go-approvers)):
+### Maintainers
+
+- [Andy Keller](https://github.com/andykellr), Bindplane
+- [Tigran Najaryan](https://github.com/tigrannajaryan), Splunk
+
+For more information about the maintainer role, see the [community repository](https://github.com/open-telemetry/community/blob/main/community-membership.md#maintainer).
+
+### Approvers
 
 - [Anthony Mirabella](https://github.com/Aneurysm9), AWS
 - [Evan Bradley](https://github.com/evan-bradley), Dynatrace
 
-Emeritus Approvers
+For more information about the approver role, see the [community repository](https://github.com/open-telemetry/community/blob/main/community-membership.md#approver).
+
+### Emeritus Approvers
 
 - [Alex Boten](https://github.com/codeboten), Lightstep
 - [Przemek Maciolek](https://github.com/pmm-sumo), Sumo Logic
 - [Srikanth Chekuri](https://github.com/srikanthccv), signoz.io
 
-Maintainers ([@open-telemetry/opamp-go-maintainers](https://github.com/orgs/open-telemetry/teams/opamp-go-maintainers)):
+For more information about the emeritus role, see the [community repository](https://github.com/open-telemetry/community/blob/main/guides/contributor/membership.md#emeritus-maintainerapprovertriager).
 
-- [Andy Keller](https://github.com/andykellr), Bindplane
-- [Tigran Najaryan](https://github.com/tigrannajaryan), Splunk
-
-Learn more about roles in the [community repository](https://github.com/open-telemetry/community/blob/main/community-membership.md).
-
-Thanks to all the people who already contributed!
+### Thanks to all of our contributors!
 
 <a href="https://github.com/open-telemetry/opamp-go/graphs/contributors">
-  <img src="https://contributors-img.web.app/image?repo=open-telemetry/opamp-go" />
+  <img alt="Repo contributors" src="https://contrib.rocks/image?repo=open-telemetry/opamp-go" />
 </a>
