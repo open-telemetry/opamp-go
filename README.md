@@ -43,14 +43,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 - [Andy Keller](https://github.com/andykellr), Bindplane
 - [Tigran Najaryan](https://github.com/tigrannajaryan), Splunk
 
-For more information about the maintainer role, see the [community repository](https://github.com/open-telemetry/community/blob/main/community-membership.md#maintainer).
+For more information about the maintainer role, see the [community repository](https://github.com/open-telemetry/community/blob/main/guides/contributor/membership.md#maintainer).
 
 ### Approvers
 
 - [Anthony Mirabella](https://github.com/Aneurysm9), AWS
 - [Evan Bradley](https://github.com/evan-bradley), Dynatrace
 
-For more information about the approver role, see the [community repository](https://github.com/open-telemetry/community/blob/main/community-membership.md#approver).
+For more information about the approver role, see the [community repository](https://github.com/open-telemetry/community/blob/main/guides/contributor/membership.md#approver).
 
 ### Emeritus Approvers
 
