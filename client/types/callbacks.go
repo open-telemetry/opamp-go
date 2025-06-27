@@ -130,6 +130,11 @@ type Callbacks struct {
 	//
 	// The responses in the via parameter are passed with their bodies closed.
 	CheckRedirect func(req *http.Request, viaReq []*http.Request, via []*http.Response) error
+
+	// DownloadHTTPClient is called to create an HTTP client that is used to download files by the package syncer.
+	// If the callback is not set, a default HTTP client will be created with the default transport settings.
+	// The callback must return a non-nil HTTP client or an error.
+	DownloadHTTPClient func(ctx context.Context, file *protobufs.DownloadableFile) (*http.Client, error)
 }
 
 func (c *Callbacks) SetDefaults() {
@@ -157,4 +162,20 @@ func (c *Callbacks) SetDefaults() {
 	if c.SaveRemoteConfigStatus == nil {
 		c.SaveRemoteConfigStatus = func(ctx context.Context, status *protobufs.RemoteConfigStatus) {}
 	}
+	if c.DownloadHTTPClient == nil {
+		defaultHttpClient := newHttpClient()
+		c.DownloadHTTPClient = func(ctx context.Context, file *protobufs.DownloadableFile) (*http.Client, error) {
+			return defaultHttpClient, nil
+		}
+	}
+}
+
+func newHttpClient() *http.Client {
+	client := &http.Client{}
+	// Clone the default transport to avoid being affected by global state changes.
+	if tr, ok := http.DefaultTransport.(*http.Transport); ok {
+		tr = tr.Clone()
+		client.Transport = tr
+	}
+	return client
 }

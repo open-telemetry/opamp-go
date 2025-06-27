@@ -235,13 +235,13 @@ func TestWSPackageUpdatesInParallel(t *testing.T) {
 			<-blockSyncCh
 		}
 	}
-	callbacks := types.Callbacks{
-		OnMessage: func(ctx context.Context, msg *types.MessageData) {
-			err := msg.PackageSyncer.Sync(ctx)
-			assert.NoError(t, err)
-			messages.Add(1)
-			doneCh = append(doneCh, msg.PackageSyncer.Done())
-		},
+	callbacks := types.Callbacks{}
+	callbacks.SetDefaults()
+	callbacks.OnMessage = func(ctx context.Context, msg *types.MessageData) {
+		err := msg.PackageSyncer.Sync(ctx)
+		assert.NoError(t, err)
+		messages.Add(1)
+		doneCh = append(doneCh, msg.PackageSyncer.Done())
 	}
 	clientSyncedState := &ClientSyncedState{}
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
