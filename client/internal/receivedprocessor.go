@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"sync"
 	"time"
@@ -35,12 +36,16 @@ type receivedProcessor struct {
 	// Download reporter interval value
 	// a negative number indicates that the default should be used instead.
 	downloadReporterInt time.Duration
+
+	// tlsConfig is the TLS configuration used to connect to the opamp server.
+	tlsConfig *tls.Config
 }
 
 func newReceivedProcessor(
 	logger types.Logger,
 	callbacks types.Callbacks,
 	sender Sender,
+	tlsConfig *tls.Config,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
@@ -51,6 +56,7 @@ func newReceivedProcessor(
 		logger:                logger,
 		callbacks:             callbacks,
 		sender:                sender,
+		tlsConfig:             tlsConfig,
 		clientSyncedState:     clientSyncedState,
 		packagesStateProvider: packagesStateProvider,
 		capabilities:          capabilities,
@@ -132,6 +138,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 				r.logger,
 				msgData.PackagesAvailable,
 				r.sender,
+				r.tlsConfig,
 				r.clientSyncedState,
 				r.packagesStateProvider,
 				r.packageSyncMutex,

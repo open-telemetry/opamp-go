@@ -58,6 +58,7 @@ type HTTPSender struct {
 	url                string
 	logger             types.Logger
 	client             *http.Client
+	tlsConfig          *tls.Config
 	callbacks          types.Callbacks
 	pollingIntervalMs  int64
 	compressionEnabled bool
@@ -101,7 +102,9 @@ func (h *HTTPSender) Run(
 ) {
 	h.url = url
 	h.callbacks = callbacks
-	h.receiveProcessor = newReceivedProcessor(h.logger, callbacks, h, clientSyncedState, packagesStateProvider, capabilities, packageSyncMutex, reporterInterval)
+	h.receiveProcessor = newReceivedProcessor(
+		h.logger, callbacks, h, h.tlsConfig, clientSyncedState, packagesStateProvider, capabilities, packageSyncMutex, reporterInterval,
+	)
 
 	// we need to detect if the redirect was ever set, if not, we want default behaviour
 	if callbacks.CheckRedirect != nil {
@@ -330,6 +333,7 @@ func (h *HTTPSender) EnableCompression() {
 
 func (h *HTTPSender) AddTLSConfig(config *tls.Config) {
 	if config != nil {
+		h.tlsConfig = config
 		h.client.Transport = &http.Transport{
 			TLSClientConfig: config,
 		}

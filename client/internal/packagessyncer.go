@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ type packagesSyncer struct {
 	clientSyncedState *ClientSyncedState
 	localState        types.PackagesStateProvider
 	sender            Sender
+	httpClient        *http.Client
 	reporterInterval  time.Duration
 
 	statuses *protobufs.PackageStatuses
@@ -34,15 +36,28 @@ func NewPackagesSyncer(
 	logger types.Logger,
 	available *protobufs.PackagesAvailable,
 	sender Sender,
+	tlsConfig *tls.Config,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	mux *sync.Mutex,
 	reporterInterval time.Duration,
 ) *packagesSyncer {
+	httpClient := &http.Client{
+		Timeout: http.DefaultClient.Timeout,
+	}
+	if tr, ok := http.DefaultTransport.(*http.Transport); ok {
+		tr = tr.Clone()
+		if tlsConfig != nil {
+			tr.TLSClientConfig = tlsConfig
+		}
+		httpClient.Transport = tr
+	}
+
 	return &packagesSyncer{
 		logger:            logger,
 		available:         available,
 		sender:            sender,
+		httpClient:        httpClient,
 		clientSyncedState: clientSyncedState,
 		localState:        packagesStateProvider,
 		doneCh:            make(chan struct{}),
@@ -295,7 +310,7 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 		}
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("cannot download file from %s: %v", file.DownloadUrl, err)
 	}

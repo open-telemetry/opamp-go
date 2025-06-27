@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"net/http"
 	"net/url"
@@ -37,6 +38,9 @@ type wsClient struct {
 	dialer    websocket.Dialer
 	conn      *websocket.Conn
 	connMutex sync.RWMutex
+
+	// TLS configuration to use when connecting to OpAMP Server.
+	tlsConfig *tls.Config
 
 	// The sender is responsible for sending portion of the OpAMP protocol.
 	sender *internal.WSSender
@@ -88,6 +92,7 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 	c.dialer.EnableCompression = settings.EnableCompression
 
 	if settings.TLSConfig != nil {
+		c.tlsConfig = settings.TLSConfig
 		c.url.Scheme = "wss"
 	}
 	c.dialer.TLSClientConfig = settings.TLSConfig
@@ -360,6 +365,7 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		c.common.Callbacks,
 		c.conn,
 		c.sender,
+		c.tlsConfig,
 		&c.common.ClientSyncedState,
 		c.common.PackagesStateProvider,
 		c.common.Capabilities,

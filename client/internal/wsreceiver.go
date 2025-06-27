@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ func NewWSReceiver(
 	callbacks types.Callbacks,
 	conn *websocket.Conn,
 	sender *WSSender,
+	tlsConfig *tls.Config,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	capabilities protobufs.AgentCapabilities,
@@ -42,7 +44,7 @@ func NewWSReceiver(
 		logger:    logger,
 		sender:    sender,
 		callbacks: callbacks,
-		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider, capabilities, packageSyncMutex, reporterInterval),
+		processor: newReceivedProcessor(logger, callbacks, sender, tlsConfig, clientSyncedState, packagesStateProvider, capabilities, packageSyncMutex, reporterInterval),
 		stopped:   make(chan struct{}),
 	}
 
