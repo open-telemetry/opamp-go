@@ -12,12 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/open-telemetry/opamp-go/client/types"
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/testhelpers"
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
@@ -247,14 +246,15 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 
 	var messages atomic.Int32
 	var mux sync.Mutex
-	sender.callbacks = types.Callbacks{
-		OnMessage: func(ctx context.Context, msg *types.MessageData) {
-			err := msg.PackageSyncer.Sync(ctx)
-			assert.NoError(t, err)
-			messages.Add(1)
-			doneCh = append(doneCh, msg.PackageSyncer.Done())
-		},
+	callbacks := types.Callbacks{}
+	callbacks.SetDefaults()
+	callbacks.OnMessage = func(ctx context.Context, msg *types.MessageData) {
+		err := msg.PackageSyncer.Sync(ctx)
+		assert.NoError(t, err)
+		messages.Add(1)
+		doneCh = append(doneCh, msg.PackageSyncer.Done())
 	}
+	sender.callbacks = callbacks
 
 	clientSyncedState := &ClientSyncedState{}
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
@@ -319,14 +319,16 @@ func TestPackageUpdatesWithError(t *testing.T) {
 	localPackageState := types.PackagesStateProvider(nil)
 	var messages atomic.Int32
 	var mux sync.Mutex
-	sender.callbacks = types.Callbacks{
-		OnMessage: func(ctx context.Context, msg *types.MessageData) {
-			// Make sure the call to Sync will return an error due to a nil PackageStateProvider
-			err := msg.PackageSyncer.Sync(ctx)
-			assert.Error(t, err)
-			messages.Add(1)
-		},
+
+	callbacks := types.Callbacks{}
+	callbacks.SetDefaults()
+	callbacks.OnMessage = func(ctx context.Context, msg *types.MessageData) {
+		// Make sure the call to Sync will return an error due to a nil PackageStateProvider
+		err := msg.PackageSyncer.Sync(ctx)
+		assert.Error(t, err)
+		messages.Add(1)
 	}
+	sender.callbacks = callbacks
 
 	clientSyncedState := &ClientSyncedState{}
 
