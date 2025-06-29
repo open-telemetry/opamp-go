@@ -205,11 +205,13 @@ func (c *wsClient) handleRedirect(ctx context.Context, resp *http.Response) erro
 	}
 
 	// rewrite the scheme for the sake of tolerance
-	if redirect.Scheme == "http" {
+	switch redirect.Scheme {
+	case "http":
 		redirect.Scheme = "ws"
-	} else if redirect.Scheme == "https" {
+	case "https":
 		redirect.Scheme = "wss"
 	}
+
 	c.common.Logger.Debugf(ctx, "%d redirect to %s", resp.StatusCode, redirect)
 
 	// Set the URL to the redirect, so that it connects to it on the

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
+
 	"github.com/stretchr/testify/require"
 )
 

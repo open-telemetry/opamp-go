@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/open-telemetry/opamp-go/internal"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/types"
+	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -45,7 +45,7 @@ func bodyReader(buf []byte) func() io.ReadCloser {
 
 func (r *requestWrapper) rewind(ctx context.Context) {
 	r.Body = r.bodyReader()
-	r.Request = r.Request.WithContext(ctx)
+	r.Request = r.WithContext(ctx)
 }
 
 // HTTPSender allows scheduling messages to send. Once run, it will loop through

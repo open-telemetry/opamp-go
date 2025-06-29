@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
+
 	"google.golang.org/protobuf/proto"
 )
 

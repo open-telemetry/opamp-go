@@ -5,6 +5,7 @@ import (
 	"time"
 
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
+
 	"github.com/stretchr/testify/assert"
 )
 

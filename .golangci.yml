@@ -1,0 +1,86 @@
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+  settings:
+    gofmt:
+      # simplify code: gofmt with `-s` option, true by default
+      simplify: true
+
+    goimports:
+      # put imports beginning with prefix after 3rd-party packages;
+      # it's a comma-separated list of prefixes
+      local-prefixes:
+        - github.com/open-telemetry/opamp-go
+
+issues:
+  # Maximum issues count per one linter.
+  max-issues-per-linter: 0
+  # Maximum count of issues with the same text.
+  max-same-issues: 0
+
+linters:
+  default: none
+  enable:
+#    - copyloopvar
+#    - depguard
+#    - errcheck
+#    - errorlint
+#    - gocritic
+#    - gosec
+#    - govet
+#    - misspell
+#    - nolintlint
+#    - perfsprint
+#    - revive
+    - staticcheck
+#    - testifylint
+#    - thelper
+#    - unconvert
+#    - unparam
+#    - unused
+#    - usestdlibvars
+#    - usetesting
+#    - whitespace
+
+  exclusions:
+    paths:
+      - protobufs/
+
+# output configuration options
+output:
+  # The formats used to render issues.
+  formats:
+    # Prints issues in a text format with colors, line number, and linter name.
+    text:
+      # Output path can be either `stdout`, `stderr` or path to the file to write to.
+      path: stdout
+      # print linter name in the end of issue text, default is true
+      print-linter-name: true
+      # print lines of code with issue, default is true
+      print-issued-lines: true
+
+  # Show statistics per linter.
+  show-stats: false
+
+# options for analysis running
+run:
+  # Allow multiple parallel golangci-lint instances running.
+  # If false (default) - golangci-lint acquires file lock on start.
+  allow-parallel-runners: true
+
+  # default concurrency is a available CPU number
+  concurrency: 4
+
+  modules-download-mode: readonly
+
+  issues-exit-code: 1
+
+  # include test files or not, default is true
+  tests: true 
+
+  # timeout for analysis, e.g. 30s, 5m, default is 1m
+  timeout: 10m
+
+version: "2"
