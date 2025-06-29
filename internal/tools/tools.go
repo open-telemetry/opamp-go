@@ -25,5 +25,6 @@ package tools
 import (
 	_ "github.com/ory/go-acc"
 	_ "golang.org/x/tools/cmd/goimports"
+	_ "golang.org/x/vuln/cmd/govulncheck"
 	_ "mvdan.cc/gofumpt"
 )
