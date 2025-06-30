@@ -22,7 +22,7 @@ const (
 	defaultShutdownTimeout = 5 * time.Second
 )
 
-var _ OpAMPClient = &wsClient{}
+var _ OpAMPClient = (*wsClient)(nil)
 
 // wsClient is an OpAMP Client implementation for WebSocket transport.
 // See specification: https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#websocket-transport
