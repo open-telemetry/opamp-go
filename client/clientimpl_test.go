@@ -1287,6 +1287,12 @@ type packageTestCase struct {
 	expectedFileContent map[string][]byte
 	expectedSignature   map[string][]byte
 	expectedError       string
+
+	// expectedTemporaryStatuses is a slice used by a test case to check if a non-final package status occurs.
+	// When a PackageStatuses message is added to the slice only the Packages name and Status will be checked
+	// If they are successfully observed then the corresponding entry in observedTemporaryStatuses will be marked as true
+	expectedTemporaryStatuses []*protobufs.PackageStatuses
+	observedTemporaryStatuses []bool
 }
 
 const packageUpdateErrorMsg = "cannot update packages"
@@ -1296,6 +1302,7 @@ func assertPackageStatus(t *testing.T,
 	msg *protobufs.AgentToServer,
 ) (*protobufs.ServerToAgent, bool) {
 	expectedStatusReceived := false
+	testCase.observedTemporaryStatuses = make([]bool, len(testCase.expectedTemporaryStatuses))
 
 	status := msg.PackageStatuses
 	if status == nil {
@@ -1333,6 +1340,19 @@ func assertPackageStatus(t *testing.T,
 		if pkgStatus.Status == pkgExpected.Status {
 			expectedStatusReceived = true
 			assert.Len(t, status.Packages, len(testCase.available.Packages))
+		}
+	}
+
+	for i, tempStatus := range testCase.expectedTemporaryStatuses {
+		for name, pack := range tempStatus.Packages {
+			obsPackage, ok := status.Packages[name]
+			if !ok {
+				// name does not match
+				continue
+			}
+			if pack.Status == obsPackage.Status {
+				testCase.observedTemporaryStatuses[i] = true
+			}
 		}
 	}
 
@@ -1412,6 +1432,10 @@ func verifyUpdatePackages(t *testing.T, testCase packageTestCase) {
 				actualSignature := localPackageState.GetSignature()[pkgName]
 				expectedSignature := testCase.expectedSignature[pkgName]
 				assert.EqualValues(t, expectedSignature, actualSignature)
+			}
+
+			for i, ok := range testCase.observedTemporaryStatuses {
+				assert.Truef(t, ok, "expected to observe temporary status %#v", testCase.expectedTemporaryStatuses[i])
 			}
 		}
 
@@ -1545,6 +1569,18 @@ func TestUpdatePackages(t *testing.T) {
 	errorOnCallback.expectedError = packageUpdateErrorMsg
 	errorOnCallback.errorOnCallback = true
 	tests = append(tests, errorOnCallback)
+
+	// Check that the downloading status is sent
+	downloading := createPackageTestCase("download status set", downloadSrv)
+	downloading.expectedTemporaryStatuses = append(downloading.expectedTemporaryStatuses, &protobufs.PackageStatuses{
+		Packages: map[string]*protobufs.PackageStatus{
+			"package1": {
+				Name:   "package1",
+				Status: protobufs.PackageStatusEnum_PackageStatusEnum_Downloading,
+			},
+		},
+	})
+	tests = append(tests, downloading)
 
 	// A case where we send optional headers
 	withHeaders := createPackageTestCase("with optional HTTP headers", downloadSrv)

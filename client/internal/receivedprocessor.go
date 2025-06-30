@@ -28,6 +28,10 @@ type receivedProcessor struct {
 
 	// packageSyncMutex protects against multiple package syncing operations at the same time.
 	packageSyncMutex *sync.Mutex
+
+	// Download reporter interval value
+	// a negative number indicates that the default should be used instead.
+	downloadReporterInt time.Duration
 }
 
 func newReceivedProcessor(
@@ -37,6 +41,7 @@ func newReceivedProcessor(
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	packageSyncMutex *sync.Mutex,
+	downloadReporterInt time.Duration,
 ) receivedProcessor {
 	return receivedProcessor{
 		logger:                logger,
@@ -45,6 +50,7 @@ func newReceivedProcessor(
 		clientSyncedState:     clientSyncedState,
 		packagesStateProvider: packagesStateProvider,
 		packageSyncMutex:      packageSyncMutex,
+		downloadReporterInt:   downloadReporterInt,
 	}
 }
 
@@ -117,14 +123,21 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 	if msg.PackagesAvailable != nil {
 		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages) {
 			msgData.PackagesAvailable = msg.PackagesAvailable
-			msgData.PackageSyncer = NewPackagesSyncer(
+			pkgSyncer, err := NewPackagesSyncer(
 				r.logger,
 				msgData.PackagesAvailable,
 				r.sender,
 				r.clientSyncedState,
 				r.packagesStateProvider,
 				r.packageSyncMutex,
+				r.downloadReporterInt,
+				r.callbacks.DownloadHTTPClient,
 			)
+			if err != nil {
+				r.logger.Errorf(ctx, "failed to create package syncer: %v", err)
+			} else {
+				msgData.PackageSyncer = pkgSyncer
+			}
 		} else {
 			r.logger.Debugf(ctx, "Ignoring PackagesAvailable, agent does not have AcceptsPackages capability")
 		}

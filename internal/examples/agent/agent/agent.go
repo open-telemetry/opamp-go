@@ -13,6 +13,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/knadh/koanf"
@@ -66,6 +67,8 @@ type Agent struct {
 	// certificate is used.
 	opampClientCert *tls.Certificate
 
+	tlsConfig *tls.Config
+
 	certRequested       bool
 	clientPrivateKeyPEM []byte
 }
@@ -83,7 +86,16 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 		agent.instanceId, agentType, agentVersion)
 
 	agent.loadLocalConfig()
-	if err := agent.connect(); err != nil {
+	tlsConfig, err := internal.CreateClientTLSConfig(
+		agent.opampClientCert,
+		"../../certs/certs/ca.cert.pem",
+	)
+	if err != nil {
+		agent.logger.Errorf(context.Background(), "Cannot load client TLS config: %v", err)
+		return nil
+	}
+	agent.tlsConfig = tlsConfig
+	if err := agent.connect(agent.tlsConfig); err != nil {
 		agent.logger.Errorf(context.Background(), "Cannot connect OpAMP client: %v", err)
 		return nil
 	}
@@ -91,20 +103,13 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 	return agent
 }
 
-func (agent *Agent) connect() error {
+func (agent *Agent) connect(tlsConfig *tls.Config) error {
 	agent.opampClient = client.NewWebSocket(agent.logger)
 
-	tlsConfig, err := internal.CreateClientTLSConfig(
-		agent.opampClientCert,
-		"../../certs/certs/ca.cert.pem",
-	)
-	if err != nil {
-		return err
-	}
-
+	agent.tlsConfig = tlsConfig
 	settings := types.StartSettings{
 		OpAMPServerURL: "wss://127.0.0.1:4320/v1/opamp",
-		TLSConfig:      tlsConfig,
+		TLSConfig:      agent.tlsConfig,
 		InstanceUid:    types.InstanceUid(agent.instanceId),
 		Callbacks: types.Callbacks{
 			OnConnect: func(ctx context.Context) {
@@ -133,7 +138,7 @@ func (agent *Agent) connect() error {
 			protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings,
 	}
 
-	err = agent.opampClient.SetAgentDescription(agent.agentDescription)
+	err := agent.opampClient.SetAgentDescription(agent.agentDescription)
 	if err != nil {
 		return err
 	}
@@ -485,42 +490,103 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	agent.requestClientCertificate()
 }
 
-func (agent *Agent) tryChangeOpAMPCert(ctx context.Context, cert *tls.Certificate) {
-	agent.logger.Debugf(ctx, "Reconnecting to verify offered client certificate.\n")
-
+func (agent *Agent) tryChangeOpAMP(ctx context.Context, cert *tls.Certificate, tlsConfig *tls.Config) {
+	agent.logger.Debugf(ctx, "Reconnecting to verify new OpAMP settings.\n")
 	agent.disconnect(ctx)
 
-	agent.opampClientCert = cert
-	if err := agent.connect(); err != nil {
-		agent.logger.Errorf(ctx, "Cannot connect using offered certificate: %s. Ignoring the offer\n", err)
-		agent.opampClientCert = nil
-
-		if err := agent.connect(); err != nil {
-			agent.logger.Errorf(ctx, "Unable to reconnect after restoring client certificate: %v\n", err)
-		}
+	oldCfg := agent.tlsConfig
+	if tlsConfig == nil {
+		tlsConfig = oldCfg.Clone()
+	}
+	if cert != nil {
+		agent.logger.Debugf(ctx, "Using new certificate\n")
+		tlsConfig.Certificates = []tls.Certificate{*cert}
 	}
 
-	agent.logger.Debugf(ctx, "Successfully connected to server. Accepting new client certificate.\n")
+	if err := agent.connect(tlsConfig); err != nil {
+		agent.logger.Errorf(ctx, "Cannot connect after using new tls config: %s. Ignoring the offer\n", err)
+		if err := agent.connect(oldCfg); err != nil {
+			agent.logger.Errorf(ctx, "Unable to reconnect after restoring tls config: %s\n", err)
+		}
+		return
+	}
 
-	// TODO: we can also persist the successfully accepted certificate and use it when the
+	agent.logger.Debugf(ctx, "Successfully connected to server. Accepting new tls config.\n")
+	// TODO: we can also persist the successfully accepted settigns and use it when the
 	// agent connects to the server after the restart.
 }
 
 func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *protobufs.OpAMPConnectionSettings) error {
-	if settings == nil || settings.Certificate == nil {
-		agent.logger.Debugf(ctx, "Received nil certificate offer, ignoring.\n")
+	if settings == nil {
+		agent.logger.Debugf(ctx, "Received nil settings, ignoring.\n")
 		return nil
 	}
 
-	cert, err := agent.getCertFromSettings(settings.Certificate)
-	if err != nil {
-		return err
+	var cert *tls.Certificate
+	var err error
+	if settings.Certificate != nil {
+		cert, err = agent.getCertFromSettings(settings.Certificate)
+		if err != nil {
+			return err
+		}
 	}
 
+	var tlsConfig *tls.Config
+	if settings.Tls != nil {
+		tlsMin, err := getTLSVersionNumber(settings.Tls.MinVersion)
+		if err != nil {
+			return fmt.Errorf("unable to convert settings.tls.min_version: %w", err)
+		}
+		tlsMax, err := getTLSVersionNumber(settings.Tls.MaxVersion)
+		if err != nil {
+			return fmt.Errorf("unable to convert settings.tls.max_version: %w", err)
+		}
+
+		tlsConfig = &tls.Config{
+			InsecureSkipVerify: settings.Tls.InsecureSkipVerify,
+			MinVersion:         tlsMin,
+			MaxVersion:         tlsMax,
+			RootCAs:            x509.NewCertPool(),
+			// TODO support cipher_suites values
+		}
+
+		if settings.Tls.IncludeSystemCaCertsPool {
+			tlsConfig.RootCAs, err = x509.SystemCertPool()
+			if err != nil {
+				return fmt.Errorf("unable to use system cert pool: %w", err)
+			}
+		}
+
+		if settings.Tls.CaPemContents != "" {
+			ok := tlsConfig.RootCAs.AppendCertsFromPEM([]byte(settings.Tls.CaPemContents))
+			if !ok {
+				return fmt.Errorf("unable to add PEM CA")
+			}
+			agent.logger.Debugf(ctx, "CA in offered settings.\n")
+		}
+	}
 	// TODO: also use settings.DestinationEndpoint and settings.Headers for future connections.
-	go agent.tryChangeOpAMPCert(ctx, cert)
+	go agent.tryChangeOpAMP(ctx, cert, tlsConfig)
 
 	return nil
+}
+
+func getTLSVersionNumber(input string) (uint16, error) {
+	switch strings.ToUpper(input) {
+	case "1.0", "TLSV1", "TLSV1.0":
+		return tls.VersionTLS10, nil
+	case "1.1", "TLSV1.1":
+		return tls.VersionTLS11, nil
+	case "1.2", "TLSV1.2":
+		return tls.VersionTLS12, nil
+	case "1.3", "TLSV1.3":
+		return tls.VersionTLS13, nil
+	case "":
+		// Do nothing if no value is set
+		return 0, nil
+	default:
+		return 0, fmt.Errorf("unsupported value: %s", input)
+	}
 }
 
 func (agent *Agent) getCertFromSettings(certificate *protobufs.TLSCertificate) (*tls.Certificate, error) {

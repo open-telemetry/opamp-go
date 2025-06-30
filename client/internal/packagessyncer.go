@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strconv"
 	"sync"
+	"time"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -19,10 +22,12 @@ type packagesSyncer struct {
 	clientSyncedState *ClientSyncedState
 	localState        types.PackagesStateProvider
 	sender            Sender
+	reporterInterval  time.Duration
 
-	statuses *protobufs.PackageStatuses
-	mux      *sync.Mutex
-	doneCh   chan struct{}
+	httpClientFactory func(context.Context, *protobufs.DownloadableFile) (*http.Client, error)
+	statuses          *protobufs.PackageStatuses
+	mux               *sync.Mutex
+	doneCh            chan struct{}
 }
 
 // NewPackagesSyncer creates a new packages syncer.
@@ -33,7 +38,12 @@ func NewPackagesSyncer(
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	mux *sync.Mutex,
-) *packagesSyncer {
+	reporterInterval time.Duration,
+	httpClientFactory func(context.Context, *protobufs.DownloadableFile) (*http.Client, error),
+) (*packagesSyncer, error) {
+	if httpClientFactory == nil {
+		return nil, fmt.Errorf("httpClientFactory must not be nil")
+	}
 	return &packagesSyncer{
 		logger:            logger,
 		available:         available,
@@ -42,7 +52,9 @@ func NewPackagesSyncer(
 		localState:        packagesStateProvider,
 		doneCh:            make(chan struct{}),
 		mux:               mux,
-	}
+		reporterInterval:  reporterInterval,
+		httpClientFactory: httpClientFactory,
+	}, nil
 }
 
 // Sync performs the package syncing process.
@@ -272,6 +284,10 @@ func (s *packagesSyncer) shouldDownloadFile(ctx context.Context,
 
 // downloadFile downloads the file from the server.
 func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file *protobufs.DownloadableFile) error {
+	status := s.statuses.Packages[pkgName]
+	status.Status = protobufs.PackageStatusEnum_PackageStatusEnum_Downloading
+	_ = s.reportStatuses(ctx, true)
+
 	s.logger.Debugf(ctx, "Downloading package %s file from %s", pkgName, file.DownloadUrl)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", file.DownloadUrl, nil)
@@ -285,7 +301,12 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 		}
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	client, err := s.httpClientFactory(ctx, file)
+	if err != nil {
+		return fmt.Errorf("failed to create an HTTP Client to download file from %s: %v", file.DownloadUrl, err)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("cannot download file from %s: %v", file.DownloadUrl, err)
 	}
@@ -295,11 +316,32 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 		return fmt.Errorf("cannot download file from %s, HTTP response=%v", file.DownloadUrl, resp.StatusCode)
 	}
 
-	err = s.localState.UpdateContent(ctx, pkgName, resp.Body, file.ContentHash, file.Signature)
+	// Package length is required to be able to report download percent.
+	packageLength := -1
+	if contentLength := resp.Header.Get("Content-Length"); contentLength != "" {
+		if length, err := strconv.Atoi(contentLength); err == nil {
+			packageLength = length
+		}
+	}
+	// start the download reporter
+	detailsReporter := newDownloadReporter(s.reporterInterval, packageLength)
+	detailsReporter.report(ctx, s.updateDownloadDetails(pkgName))
+	defer detailsReporter.stop()
+
+	tr := io.TeeReader(resp.Body, detailsReporter)
+	err = s.localState.UpdateContent(ctx, pkgName, tr, file.ContentHash, file.Signature)
 	if err != nil {
 		return fmt.Errorf("failed to install/update the package %s downloaded from %s: %v", pkgName, file.DownloadUrl, err)
 	}
 	return nil
+}
+
+func (s *packagesSyncer) updateDownloadDetails(pkgName string) func(context.Context, protobufs.PackageDownloadDetails) error {
+	return func(ctx context.Context, details protobufs.PackageDownloadDetails) error {
+		status := s.statuses.Packages[pkgName]
+		status.DownloadDetails = &details
+		return s.reportStatuses(ctx, true)
+	}
 }
 
 // deleteUnneededLocalPackages deletes local packages that are not
