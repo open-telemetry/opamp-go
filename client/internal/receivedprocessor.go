@@ -28,9 +28,6 @@ type receivedProcessor struct {
 
 	// packageSyncMutex protects against multiple package syncing operations at the same time.
 	packageSyncMutex *sync.Mutex
-
-	// Agent's capabilities defined at Start() time.
-	capabilities protobufs.AgentCapabilities
 }
 
 func newReceivedProcessor(
@@ -39,7 +36,6 @@ func newReceivedProcessor(
 	sender Sender,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
-	capabilities protobufs.AgentCapabilities,
 	packageSyncMutex *sync.Mutex,
 ) receivedProcessor {
 	return receivedProcessor{
@@ -48,7 +44,6 @@ func newReceivedProcessor(
 		sender:                sender,
 		clientSyncedState:     clientSyncedState,
 		packagesStateProvider: packagesStateProvider,
-		capabilities:          capabilities,
 		packageSyncMutex:      packageSyncMutex,
 	}
 }
@@ -172,7 +167,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 }
 
 func (r *receivedProcessor) hasCapability(capability protobufs.AgentCapabilities) bool {
-	return r.capabilities&capability != 0
+	return r.clientSyncedState.Capabilities()&capability != 0
 }
 
 func (r *receivedProcessor) rcvFlags(
@@ -191,6 +186,7 @@ func (r *receivedProcessor) rcvFlags(
 
 		r.sender.NextMessage().Update(
 			func(msg *protobufs.AgentToServer) {
+				msg.Capabilities = uint64(r.clientSyncedState.Capabilities())
 				msg.AgentDescription = r.clientSyncedState.AgentDescription()
 				msg.Health = r.clientSyncedState.Health()
 				msg.RemoteConfigStatus = r.clientSyncedState.RemoteConfigStatus()

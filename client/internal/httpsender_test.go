@@ -202,7 +202,8 @@ func TestRequestInstanceUidFlagReset(t *testing.T) {
 	clientSyncedState := &ClientSyncedState{}
 	clientSyncedState.SetFlags(protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid)
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_Unspecified
-	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, nil, capabilities, new(sync.Mutex))
+	clientSyncedState.SetCapabilities(&capabilities)
+	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, nil, new(sync.Mutex))
 
 	// If we process a message with a nil AgentIdentification, or an incorrect NewInstanceUid.
 	sender.receiveProcessor.ProcessReceivedMessage(ctx,
@@ -258,7 +259,8 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 
 	clientSyncedState := &ClientSyncedState{}
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
-	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, capabilities, &mux)
+	clientSyncedState.SetCapabilities(&capabilities)
+	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, &mux)
 
 	sender.receiveProcessor.ProcessReceivedMessage(ctx,
 		&protobufs.ServerToAgent{
@@ -329,9 +331,10 @@ func TestPackageUpdatesWithError(t *testing.T) {
 	}
 
 	clientSyncedState := &ClientSyncedState{}
-
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
-	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, capabilities, &mux)
+	clientSyncedState.SetCapabilities(&capabilities)
+
+	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, &mux)
 
 	// Send two messages in parallel.
 	sender.receiveProcessor.ProcessReceivedMessage(ctx,

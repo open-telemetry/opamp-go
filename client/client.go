@@ -156,7 +156,7 @@ type OpAMPClient interface {
 	// SetCapabilities updates the set of capabilities that the client supports.
 	// These capabilities will be communicated to the server in the next message.
 	//
-	// This method can be called at any time after Start(), including from within
+	// This method can be called at any time before or after Start(), including from within
 	// an OnMessage handler, to dynamically update the set of supported capabilities.
 	// The updated capabilities will be sent to the server in the next outgoing message.
 	//

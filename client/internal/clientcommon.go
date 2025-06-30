@@ -114,7 +114,8 @@ func (c *ClientCommon) PrepareStart(
 		if err := c.ClientSyncedState.SetCapabilities(&capabilities); err != nil {
 			return err
 		}
-		// Eventually we will error here.
+		// Error here.
+		// TODO: https://github.com/open-telemetry/opamp-go/issues/407
 		// return ErrCapabilitiesNotSet
 	}
 
@@ -541,12 +542,3 @@ func (c *ClientCommon) SetCapabilities(capabilities *protobufs.AgentCapabilities
 	c.sender.ScheduleSend()
 	return nil
 }
-
-// QUESTION: DO we want this?
-// SetPackagesStateProvider allows the confgiguration of the packages state provider after start.
-// func (c *ClientCommon) SetPackagesStateProvider(packagesStateProvider types.PackagesStateProvider) error {
-// 	c.PackageSyncMutex.Lock()
-// 	defer c.PackageSyncMutex.Unlock()
-// 	c.PackagesStateProvider = packagesStateProvider
-// 	return c.validateCapabilities(c.ClientSyncedState.Capabilities())
-// }

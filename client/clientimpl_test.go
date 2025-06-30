@@ -131,7 +131,6 @@ func prepareClient(t *testing.T, settings *types.StartSettings, c OpAMPClient) {
 	prepareSettings(t, settings, c)
 	err := c.SetAgentDescription(createAgentDescr())
 	assert.NoError(t, err)
-	// We ignore the error here.
 	if settings.Capabilities != 0 {
 		c.SetCapabilities(&settings.Capabilities)
 	} else {
@@ -242,7 +241,6 @@ func TestStartNoCapabilities(t *testing.T) {
 		settings := createNoServerSettings()
 		prepareSettings(t, &settings, client)
 		err := client.Start(context.Background(), settings)
-		// assert.EqualValues(t, internal.ErrCapabilitiesNotSet, err)
 		assert.NoError(t, err, "no error should be found until the client rejects empty capabilities")
 	})
 }
@@ -2570,14 +2568,6 @@ func TestValidateCapabilities(t *testing.T) {
 			},
 			expectedError: internal.ErrPackagesStateProviderNotSet,
 		},
-		// {
-		// 	name:         "AcceptsPackages capability with PackagesStateProvider",
-		// 	capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages,
-		// 	setupFunc: func(t *testing.T, client OpAMPClient) {
-		// 		client.SetPackageStatuses(statuses *protobufs.PackageStatuses)
-		// 	},
-		// 	expectedError: nil,
-		// },
 		{
 			name:         "ReportsPackageStatuses capability without PackagesStateProvider",
 			capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
@@ -2586,14 +2576,6 @@ func TestValidateCapabilities(t *testing.T) {
 			},
 			expectedError: internal.ErrPackagesStateProviderNotSet,
 		},
-		// {
-		// 	name:         "ReportsPackageStatuses capability with PackagesStateProvider",
-		// 	capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
-		// 	setupFunc: func(t *testing.T, client OpAMPClient) {
-		// 		client.(*ClientCommon).PackagesStateProvider = internal.NewInMemPackagesStore()
-		// 	},
-		// 	expectedError: nil,
-		// },
 		{
 			name:         "AcceptsPackages and ReportsPackageStatuses capabilities without PackagesStateProvider",
 			capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages | protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
@@ -2602,14 +2584,6 @@ func TestValidateCapabilities(t *testing.T) {
 			},
 			expectedError: internal.ErrPackagesStateProviderNotSet,
 		},
-		// {
-		// 	name:         "AcceptsPackages and ReportsPackageStatuses capabilities with PackagesStateProvider",
-		// 	capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages | protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses,
-		// 	setupFunc: func(t *testing.T, client OpAMPClient) {
-		// 		client.(*ClientCommon).PackagesStateProvider = internal.NewInMemPackagesStore()
-		// 	},
-		// 	expectedError: nil,
-		// },
 		{
 			name:         "No capabilities set",
 			capabilities: protobufs.AgentCapabilities_AgentCapabilities_Unspecified,

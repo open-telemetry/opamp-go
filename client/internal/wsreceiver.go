@@ -32,7 +32,6 @@ func NewWSReceiver(
 	sender *WSSender,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
-	capabilities protobufs.AgentCapabilities,
 	packageSyncMutex *sync.Mutex,
 ) *wsReceiver {
 	w := &wsReceiver{
@@ -40,7 +39,7 @@ func NewWSReceiver(
 		logger:    logger,
 		sender:    sender,
 		callbacks: callbacks,
-		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider, capabilities, packageSyncMutex),
+		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider, packageSyncMutex),
 		stopped:   make(chan struct{}),
 	}
 
