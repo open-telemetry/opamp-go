@@ -245,6 +245,30 @@ func TestStartNoCapabilities(t *testing.T) {
 	})
 }
 
+func TestSetCapabilitiesErrorsBeforeStart(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		capabilities := coreCapabilities | protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents
+		setCapabilityErr := client.SetCapabilities(&capabilities)
+		assert.Error(t, setCapabilityErr)
+		assert.Contains(t, setCapabilityErr.Error(), "AvailableComponents is nil")
+	})
+}
+
+func TestSetCapabilitiesErrorsDuringStart(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		capabilities := coreCapabilities | protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents
+		settings := types.StartSettings{
+			Capabilities: capabilities,
+		}
+		prepareClient(t, &settings, client)
+
+		// Client --->
+		startErr := client.Start(context.Background(), settings)
+		assert.Error(t, startErr)
+		assert.Contains(t, startErr.Error(), "AvailableComponents is nil")
+	})
+}
+
 func TestSetInvalidAgentDescription(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		settings := createNoServerSettings()
