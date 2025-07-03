@@ -18,11 +18,11 @@ type MessageData struct {
 
 	// Connection settings are offered by the Server. These fields should be processed
 	// as described in the ConnectionSettingsOffers message.
-	OfferedConnectionsHash []byte
-	OwnMetricsConnSettings *protobufs.TelemetryConnectionSettings
-	OwnTracesConnSettings  *protobufs.TelemetryConnectionSettings
-	OwnLogsConnSettings    *protobufs.TelemetryConnectionSettings
-	OtherConnSettings      map[string]*protobufs.OtherConnectionSettings
+	OfferedConnectionsSettingsHash []byte
+	OwnMetricsConnSettings         *protobufs.TelemetryConnectionSettings
+	OwnTracesConnSettings          *protobufs.TelemetryConnectionSettings
+	OwnLogsConnSettings            *protobufs.TelemetryConnectionSettings
+	OtherConnSettings              map[string]*protobufs.OtherConnectionSettings
 
 	// PackagesAvailable offered by the Server. The Agent must process the offer.
 	// The typical way to process is to call PackageSyncer.Sync() function, which will

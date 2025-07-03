@@ -635,5 +635,8 @@ func (agent *Agent) getCertFromSettings(certificate *protobufs.TLSCertificate) (
 func (agent *Agent) onConnectionSettings(ctx context.Context, settings *protobufs.ConnectionSettingsOffers) error {
 	agent.logger.Debugf(context.Background(), "Received connection settings offers from server, hash=%x.", settings.Hash)
 	// TODO handle traces, logs, and other connection settings
-	return agent.initMeter(settings.OwnMetrics)
+	if settings.OwnMetrics != nil {
+		return agent.initMeter(settings.OwnMetrics)
+	}
+	return nil
 }

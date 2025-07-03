@@ -94,11 +94,22 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 	}
 
 	if msg.ConnectionSettings != nil {
-		msgData.OfferedConnectionsHash = msg.ConnectionSettings.Hash
+		msgData.OfferedConnectionsSettingsHash = msg.ConnectionSettings.Hash
 		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) {
 			connectionStatus := &protobufs.ConnectionSettingsStatus{
 				LastConnectionSettingsHash: msg.ConnectionSettings.Hash,
-				Status:                     protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLYING,
+				Status:                     protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
+				ErrorMessage:               "client does not support accepting connection settings",
+			}
+			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnTraces) ||
+				r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics) ||
+				r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnLogs) ||
+				r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings) ||
+				r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOtherConnectionSettings) {
+				connectionStatus = &protobufs.ConnectionSettingsStatus{
+					LastConnectionSettingsHash: msg.ConnectionSettings.Hash,
+					Status:                     protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLYING,
+				}
 			}
 			if err := r.clientSyncedState.SetConnectionSettingsStatus(connectionStatus); err != nil {
 				r.logger.Errorf(ctx, "Unable to persist connection settings status applying state: %v", err)
