@@ -144,7 +144,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 	if msg.PackagesAvailable != nil {
 		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages) {
 			msgData.PackagesAvailable = msg.PackagesAvailable
-			msgData.PackageSyncer = NewPackagesSyncer(
+			pkgSyncer, err := NewPackagesSyncer(
 				r.logger,
 				msgData.PackagesAvailable,
 				r.sender,
@@ -152,7 +152,13 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 				r.packagesStateProvider,
 				r.packageSyncMutex,
 				r.downloadReporterInt,
+				r.callbacks.DownloadHTTPClient,
 			)
+			if err != nil {
+				r.logger.Errorf(ctx, "failed to create package syncer: %v", err)
+			} else {
+				msgData.PackageSyncer = pkgSyncer
+			}
 		} else {
 			r.logger.Debugf(ctx, "Ignoring PackagesAvailable, agent does not have AcceptsPackages capability")
 		}

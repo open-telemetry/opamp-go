@@ -24,9 +24,10 @@ type packagesSyncer struct {
 	sender            Sender
 	reporterInterval  time.Duration
 
-	statuses *protobufs.PackageStatuses
-	mux      *sync.Mutex
-	doneCh   chan struct{}
+	httpClientFactory func(context.Context, *protobufs.DownloadableFile) (*http.Client, error)
+	statuses          *protobufs.PackageStatuses
+	mux               *sync.Mutex
+	doneCh            chan struct{}
 }
 
 // NewPackagesSyncer creates a new packages syncer.
@@ -38,7 +39,11 @@ func NewPackagesSyncer(
 	packagesStateProvider types.PackagesStateProvider,
 	mux *sync.Mutex,
 	reporterInterval time.Duration,
-) *packagesSyncer {
+	httpClientFactory func(context.Context, *protobufs.DownloadableFile) (*http.Client, error),
+) (*packagesSyncer, error) {
+	if httpClientFactory == nil {
+		return nil, fmt.Errorf("httpClientFactory must not be nil")
+	}
 	return &packagesSyncer{
 		logger:            logger,
 		available:         available,
@@ -48,7 +53,8 @@ func NewPackagesSyncer(
 		doneCh:            make(chan struct{}),
 		mux:               mux,
 		reporterInterval:  reporterInterval,
-	}
+		httpClientFactory: httpClientFactory,
+	}, nil
 }
 
 // Sync performs the package syncing process.
@@ -295,7 +301,12 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 		}
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	client, err := s.httpClientFactory(ctx, file)
+	if err != nil {
+		return fmt.Errorf("failed to create an HTTP Client to download file from %s: %v", file.DownloadUrl, err)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("cannot download file from %s: %v", file.DownloadUrl, err)
 	}
