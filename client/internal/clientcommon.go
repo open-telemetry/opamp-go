@@ -23,9 +23,10 @@ var (
 	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 	ErrAvailableComponentsMissing   = errors.New("AvailableComponents is nil")
 
-	errAlreadyStarted               = errors.New("already started")
-	errCannotStopNotStarted         = errors.New("cannot stop because not started")
-	errReportsPackageStatusesNotSet = errors.New("ReportsPackageStatuses capability is not set")
+	errAlreadyStarted                        = errors.New("already started")
+	errCannotStopNotStarted                  = errors.New("cannot stop because not started")
+	errReportsPackageStatusesNotSet          = errors.New("ReportsPackageStatuses capability is not set")
+	errReportsConnectionSettingsStatusNotSet = errors.New("ReportsConnectionSettingsStatus capability is not set")
 )
 
 // ClientCommon contains the OpAMP logic that is common between WebSocket and
@@ -160,6 +161,10 @@ func (c *ClientCommon) PrepareStart(
 		c.DownloadReporterInterval = *settings.DownloadReporterInterval
 	}
 
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus != 0 && settings.LastConnectionSettingsStatus != nil {
+		c.ClientSyncedState.SetConnectionSettingsStatus(settings.LastConnectionSettingsStatus)
+	}
+
 	return nil
 }
 
@@ -237,6 +242,11 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 		}
 	}
 
+	var connectionSettingsStatus *protobufs.ConnectionSettingsStatus
+	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus != 0 {
+		connectionSettingsStatus = c.ClientSyncedState.ConnectionSettingsStatus()
+	}
+
 	c.sender.NextMessage().Update(
 		func(msg *protobufs.AgentToServer) {
 			msg.AgentDescription = c.ClientSyncedState.AgentDescription()
@@ -247,6 +257,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()
 			msg.Flags = c.ClientSyncedState.Flags()
 			msg.AvailableComponents = availableComponents
+			msg.ConnectionSettingsStatus = connectionSettingsStatus
 		},
 	)
 	return nil

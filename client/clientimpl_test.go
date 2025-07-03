@@ -820,15 +820,16 @@ func TestServerOfferConnectionSettings(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{
 			Callbacks: types.Callbacks{
-				OnMessage: func(ctx context.Context, msg *types.MessageData) {
-					assert.True(t, proto.Equal(metricsSettings, msg.OwnMetricsConnSettings))
-					assert.True(t, proto.Equal(tracesSettings, msg.OwnTracesConnSettings))
-					assert.True(t, proto.Equal(logsSettings, msg.OwnLogsConnSettings))
+				OnConnectionSettings: func(ctx context.Context, msg *protobufs.ConnectionSettingsOffers) error {
+					assert.True(t, proto.Equal(metricsSettings, msg.OwnMetrics))
+					assert.True(t, proto.Equal(tracesSettings, msg.OwnTraces))
+					assert.True(t, proto.Equal(logsSettings, msg.OwnLogs))
 					atomic.AddInt64(&gotOwnSettings, 1)
 
-					assert.Len(t, msg.OtherConnSettings, 1)
-					assert.True(t, proto.Equal(otherSettings, msg.OtherConnSettings["other"]))
+					assert.Len(t, msg.OtherConnections, 1)
+					assert.True(t, proto.Equal(otherSettings, msg.OtherConnections["other"]))
 					atomic.AddInt64(&gotOtherSettings, 1)
+					return nil
 				},
 
 				OnOpampConnectionSettings: func(

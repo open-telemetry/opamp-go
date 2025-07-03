@@ -425,6 +425,7 @@ func (agent *Agent) calcConnectionSettings(response *protobufs.ServerToAgent) {
 		OwnLogs:          nil,
 		OtherConnections: nil,
 	}
+	response.ConnectionSettings.Hash = toHash(response.ConnectionSettings)
 }
 
 func (agent *Agent) SendToAgent(msg *protobufs.ServerToAgent) {
@@ -501,4 +502,5 @@ func (agent *Agent) processConnectionSettingsRequest(
 	response.ConnectionSettings.Opamp = &protobufs.OpAMPConnectionSettings{
 		Certificate: certificate,
 	}
+	response.ConnectionSettings.Hash = toHash(response.ConnectionSettings)
 }
