@@ -119,7 +119,7 @@ func (c *ClientCommon) PrepareStart(
 		if err := c.ClientSyncedState.SetCapabilities(&capabilities); err != nil {
 			return err
 		}
-		// Error here.
+		// We allow this to succeed for now, but later this will become an error.
 		// TODO: https://github.com/open-telemetry/opamp-go/issues/407
 		// return ErrCapabilitiesNotSet
 	}
