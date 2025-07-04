@@ -4,6 +4,8 @@ on:
     types: [opened, ready_for_review, synchronize, reopened, labeled, unlabeled]
     branches:
       - main
+permissions:
+  contents: read
 jobs:
   setup-environment:
     runs-on: ubuntu-latest
