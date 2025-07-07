@@ -117,7 +117,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 			r.sender.NextMessage().Update(func(sendMsg *protobufs.AgentToServer) {
 				sendMsg.ConnectionSettingsStatus = connectionStatus
 			})
-			r.sender.ScheduleSend() // TODO: this might be noisy
+			scheduled = true // send connection setting status, if OnOpampConnectionSettings or OnConnectionSettings run synchronously, the status may be replaced.
 		}
 		if msg.ConnectionSettings.OwnMetrics != nil {
 			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics) {
