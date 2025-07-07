@@ -24,10 +24,9 @@ var (
 	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 	ErrAvailableComponentsMissing   = errors.New("AvailableComponents is nil")
 
-	errAlreadyStarted                        = errors.New("already started")
-	errCannotStopNotStarted                  = errors.New("cannot stop because not started")
-	errReportsPackageStatusesNotSet          = errors.New("ReportsPackageStatuses capability is not set")
-	errReportsConnectionSettingsStatusNotSet = errors.New("ReportsConnectionSettingsStatus capability is not set")
+	errAlreadyStarted               = errors.New("already started")
+	errCannotStopNotStarted         = errors.New("cannot stop because not started")
+	errReportsPackageStatusesNotSet = errors.New("ReportsPackageStatuses capability is not set")
 )
 
 // ClientCommon contains the OpAMP logic that is common between WebSocket and
