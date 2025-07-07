@@ -187,7 +187,7 @@ func (c *ClientCommon) PrepareStart(
 		c.DownloadReporterInterval = *settings.DownloadReporterInterval
 	}
 
-	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus != 0 && settings.LastConnectionSettingsStatus != nil {
+	if c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) && settings.LastConnectionSettingsStatus != nil {
 		c.ClientSyncedState.SetConnectionSettingsStatus(settings.LastConnectionSettingsStatus)
 	}
 
@@ -269,7 +269,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 	}
 
 	var connectionSettingsStatus *protobufs.ConnectionSettingsStatus
-	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus != 0 {
+	if c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) {
 		connectionSettingsStatus = c.ClientSyncedState.ConnectionSettingsStatus()
 	}
 
