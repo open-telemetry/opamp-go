@@ -269,6 +269,40 @@ func TestSetCapabilitiesErrorsDuringStart(t *testing.T) {
 	})
 }
 
+func TestClientWithLastConnectionStatus(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		gotSettings := new(atomic.Bool)
+		srv := internal.StartMockServer(t)
+		defer srv.Close()
+		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			t.Log("Got message")
+			if msg.ConnectionSettingsStatus != nil {
+				gotSettings.Store(true)
+			}
+			return &protobufs.ServerToAgent{
+				InstanceUid: msg.InstanceUid,
+			}
+		}
+
+		capabilities := coreCapabilities | protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus
+		settings := types.StartSettings{
+			Capabilities:   capabilities,
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			LastConnectionSettingsStatus: &protobufs.ConnectionSettingsStatus{
+				LastConnectionSettingsHash: []byte(`testHash`),
+				Status:                     protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED,
+			},
+		}
+		prepareClient(t, &settings, client)
+		err := client.Start(context.Background(), settings)
+		assert.NoError(t, err)
+		eventually(t, func() bool { return gotSettings.Load() })
+
+		err = client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
 func TestSetInvalidAgentDescription(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		settings := createNoServerSettings()
