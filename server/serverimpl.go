@@ -262,28 +262,12 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 	connectionCallbacks.OnConnected(reqCtx, agentConn)
 
 	sentCustomCapabilities := false
-
-	type webSocketMessage struct {
-		mt       int
-		msgBytes []byte
-		err      error
-	}
-	msgCh := make(chan webSocketMessage)
+	msgCh := runReadLoop(s.serverCtx, wsConn)
 
 	// Loop until fail to read from the WebSocket connection.
 	for {
 		msgContext := s.serverCtx
 		request := protobufs.AgentToServer{}
-
-		go func() {
-			// Block until the next message can be read.
-			mt, msgBytes, err := wsConn.ReadMessage()
-			msgCh <- webSocketMessage{
-				mt:       mt,
-				msgBytes: msgBytes,
-				err:      err,
-			}
-		}()
 
 		var mt int
 		var msgBytes []byte
@@ -294,8 +278,12 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 		case <-s.serverCtx.Done():
 			s.logger.Debugf(msgContext, "Server is shutting down.: %v", s.serverCtx.Err())
 			return
-		case msg := <-msgCh:
-			mt, msgBytes, err = msg.mt, msg.msgBytes, msg.err
+		case msg, ok := <-msgCh:
+			if !ok {
+				// Channel is closed, reader goroutine has exited
+				return
+			}
+			mt, msgBytes, err = msg.msgType, msg.msgBytes, msg.err
 		}
 		isBreak, err := func() (bool, error) {
 			if err != nil {
@@ -352,6 +340,39 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			break
 		}
 	}
+}
+
+type webSocketMessage struct {
+	msgType  int
+	msgBytes []byte
+	err      error
+}
+
+func runReadLoop(ctx context.Context, wsConn *websocket.Conn) chan webSocketMessage {
+	msgCh := make(chan webSocketMessage, 1)
+
+	// Start a single goroutine to read messages
+	go func() {
+		defer close(msgCh)
+		for {
+			mt, msgBytes, err := wsConn.ReadMessage()
+			select {
+			case msgCh <- webSocketMessage{
+				msgType:  mt,
+				msgBytes: msgBytes,
+				err:      err,
+			}:
+			case <-ctx.Done():
+				return
+			}
+
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	return msgCh
 }
 
 func decompressGzip(data []byte) ([]byte, error) {
