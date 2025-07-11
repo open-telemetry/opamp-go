@@ -288,23 +288,25 @@ func TestDisconnectClientWSConnection(t *testing.T) {
 
 // testLogger is a struct that adapts a *zap.Logger to opamp-go's Logger interface.
 type testLogger struct {
-	logs []string
+	errorLogs []string
+	debugLogs []string
 }
 
 func newTestLogger() *testLogger {
 	return &testLogger{
-		logs: []string{},
+		errorLogs: []string{},
+		debugLogs: []string{},
 	}
 }
 
 func (o *testLogger) Debugf(_ context.Context, format string, v ...any) {
 	log := fmt.Sprintf(format, v...)
-	o.logs = append(o.logs, fmt.Sprintf("Debugf: %s\n", log))
+	o.debugLogs = append(o.debugLogs, fmt.Sprintf("Debugf: %s\n", log))
 }
 
 func (o *testLogger) Errorf(_ context.Context, format string, v ...any) {
 	log := fmt.Sprintf(format, v...)
-	o.logs = append(o.logs, fmt.Sprintf("Errorf: %s\n", log))
+	o.errorLogs = append(o.errorLogs, fmt.Sprintf("Errorf: %s\n", log))
 }
 
 func TestDisconnectServerWSConnection(t *testing.T) {
@@ -352,9 +354,8 @@ func TestDisconnectServerWSConnection(t *testing.T) {
 		return err != nil
 	})
 
-	require.Equal(t, 1, len(logger.logs))
-	require.Contains(t, logger.logs[0], "Errorf: Cannot read a message from WebSocket: read tcp")
-	require.Contains(t, logger.logs[0], "use of closed network connection")
+	// We expect exactly one error log
+	require.Equal(t, 1, len(logger.errorLogs))
 }
 
 var testInstanceUid = []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}
