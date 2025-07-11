@@ -26,7 +26,7 @@ type wsConnection struct {
 var _ types.Connection = (*wsConnection)(nil)
 
 func newWSConnection(wsConn *websocket.Conn) types.Connection {
-	return &wsConnection{wsConn: wsConn, connMutex: sync.Mutex{}, closed: atomic.Bool{}}
+	return &wsConnection{wsConn: wsConn}
 }
 
 func (c *wsConnection) Connection() net.Conn {
