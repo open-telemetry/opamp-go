@@ -35,15 +35,20 @@ jobs:
       - name: Install Tools
         if: steps.module-cache.outputs.cache-hit != 'true'
         run: make install-tools
+      - uses: actions/create-github-app-token@df432ceedc7162793a195dd1713ff69aefc7379e # v2.0.6
+        id: otelbot-token
+        with:
+          app-id: ${{ vars.OTELBOT_APP_ID }}
+          private-key: ${{ secrets.OTELBOT_PRIVATE_KEY }}
       - name: go mod tidy, make all
         run: |
           make tidy && make all
-          git config user.name opentelemetrybot
-          git config user.email 107717825+opentelemetrybot@users.noreply.github.com
+          git config user.name otelbot
+          git config user.email 197425009+otelbot@users.noreply.github.com
           echo "git diff --exit-code || (git add . && git commit -m \"go mod tidy, make all\" && git push)"
           git diff --exit-code || (git add . && git commit -m "go mod tidy, make all" && git push)
         env:
-          GITHUB_TOKEN: ${{ secrets.OPENTELEMETRYBOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.otelbot-token.outputs.token }}
       - uses: actions-ecosystem/action-remove-labels@v1
         with:
           labels: renovatebot
