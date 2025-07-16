@@ -290,7 +290,7 @@ func TestClientWithLastConnectionStatus(t *testing.T) {
 			OpAMPServerURL: "ws://" + srv.Endpoint,
 			LastConnectionSettingsStatus: &protobufs.ConnectionSettingsStatus{
 				LastConnectionSettingsHash: []byte(`testHash`),
-				Status:                     protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED,
+				Status:                     protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLIED,
 			},
 		}
 		prepareClient(t, &settings, client)

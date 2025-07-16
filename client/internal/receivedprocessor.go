@@ -93,7 +93,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) {
 			connectionStatus := &protobufs.ConnectionSettingsStatus{
 				LastConnectionSettingsHash: msg.ConnectionSettings.Hash,
-				Status:                     protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
+				Status:                     protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED,
 				ErrorMessage:               "client does not support accepting connection settings",
 			}
 			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnTraces) ||
@@ -103,7 +103,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 				r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOtherConnectionSettings) {
 				connectionStatus = &protobufs.ConnectionSettingsStatus{
 					LastConnectionSettingsHash: msg.ConnectionSettings.Hash,
-					Status:                     protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLYING,
+					Status:                     protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLYING,
 				}
 			}
 			if err := r.clientSyncedState.SetConnectionSettingsStatus(connectionStatus); err != nil {
@@ -276,10 +276,10 @@ func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, sett
 			r.logger.Errorf(ctx, "Failed to process OpAMPConnectionSettings: %v", err)
 		}
 		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) {
-			status := protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED
+			status := protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLIED
 			errMsg := ""
 			if err != nil {
-				status = protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED
+				status = protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED
 				errMsg = err.Error()
 			}
 
@@ -340,10 +340,10 @@ func (r *receivedProcessor) rcvConnectionSettings(ctx context.Context, settings 
 			r.logger.Errorf(ctx, "Failed to process ConnectionSettings: %v", err)
 		}
 		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) {
-			status := protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED
+			status := protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLIED
 			errMsg := ""
 			if err != nil {
-				status = protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED
+				status = protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED
 				errMsg = err.Error()
 			}
 
@@ -411,7 +411,7 @@ func (r *receivedProcessor) rcvCommand(ctx context.Context, command *protobufs.S
 // - status changes to FAILED
 func updateStoredConnectionSettingsStatus(oldStatus, status *protobufs.ConnectionSettingsStatus) bool {
 	return oldStatus == nil || !bytes.Equal(oldStatus.LastConnectionSettingsHash, status.LastConnectionSettingsHash) ||
-		oldStatus.Status == protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLYING ||
-		oldStatus.Status == protobufs.RemoteConfigStatuses_RemoteConfigStatuses_UNSET ||
-		status.Status == protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED
+		oldStatus.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLYING ||
+		oldStatus.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_UNSET ||
+		status.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED
 }

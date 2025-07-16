@@ -23,10 +23,10 @@ func TestClientSyncedStateConnectionSettingsStatus(t *testing.T) {
 
 	// state can be stored
 	err = state.SetConnectionSettingsStatus(&protobufs.ConnectionSettingsStatus{
-		Status: protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED,
+		Status: protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLIED,
 	})
 	assert.NoError(t, err)
 	status = state.ConnectionSettingsStatus()
 	assert.NotNil(t, status)
-	assert.Equal(t, protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED, status.Status)
+	assert.Equal(t, protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLIED, status.Status)
 }
