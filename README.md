@@ -54,9 +54,9 @@ For more information about the approver role, see the [community repository](htt
 
 ### Emeritus Approvers
 
-- [Alex Boten](https://github.com/codeboten), Lightstep
-- [Przemek Maciolek](https://github.com/pmm-sumo), Sumo Logic
-- [Srikanth Chekuri](https://github.com/srikanthccv), signoz.io
+- [Alex Boten](https://github.com/codeboten)
+- [Przemek Maciolek](https://github.com/pmm-sumo)
+- [Srikanth Chekuri](https://github.com/srikanthccv)
 
 For more information about the emeritus role, see the [community repository](https://github.com/open-telemetry/community/blob/main/guides/contributor/membership.md#emeritus-maintainerapprovertriager).
 
