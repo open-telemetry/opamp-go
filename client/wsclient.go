@@ -441,6 +441,12 @@ func (c *wsClient) useProxy(proxy string, headers http.Header, cfg *tls.Config) 
 	if proxyURL.Hostname() == "" {
 		return url.InvalidHostError(proxy)
 	}
+
+	// Clear previous settings
+	c.dialer.Proxy = nil
+	c.dialer.NetDialContext = nil
+	c.dialer.NetDialTLSContext = nil
+
 	switch strings.ToLower(proxyURL.Scheme) {
 	case "http":
 		// FIXME: dialer.NetDialContext is currently used as a work around instead of setting dialer.Proxy as gorilla/websockets does not have 1st class support for setting proxy connect headers
