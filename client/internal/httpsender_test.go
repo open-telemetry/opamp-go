@@ -13,12 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/open-telemetry/opamp-go/client/types"
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/testhelpers"
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
@@ -203,7 +202,8 @@ func TestRequestInstanceUidFlagReset(t *testing.T) {
 	clientSyncedState := &ClientSyncedState{}
 	clientSyncedState.SetFlags(protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid)
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_Unspecified
-	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, nil, capabilities, new(sync.Mutex), time.Second)
+	clientSyncedState.SetCapabilities(&capabilities)
+	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, nil, new(sync.Mutex), time.Second)
 
 	// If we process a message with a nil AgentIdentification, or an incorrect NewInstanceUid.
 	sender.receiveProcessor.ProcessReceivedMessage(ctx,
@@ -248,18 +248,20 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 
 	var messages atomic.Int32
 	var mux sync.Mutex
-	sender.callbacks = types.Callbacks{
-		OnMessage: func(ctx context.Context, msg *types.MessageData) {
-			err := msg.PackageSyncer.Sync(ctx)
-			assert.NoError(t, err)
-			messages.Add(1)
-			doneCh = append(doneCh, msg.PackageSyncer.Done())
-		},
+	callbacks := types.Callbacks{}
+	callbacks.SetDefaults()
+	callbacks.OnMessage = func(ctx context.Context, msg *types.MessageData) {
+		err := msg.PackageSyncer.Sync(ctx)
+		assert.NoError(t, err)
+		messages.Add(1)
+		doneCh = append(doneCh, msg.PackageSyncer.Done())
 	}
+	sender.callbacks = callbacks
 
 	clientSyncedState := &ClientSyncedState{}
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
-	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, capabilities, &mux, time.Second)
+	clientSyncedState.SetCapabilities(&capabilities)
+	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, &mux, time.Second)
 
 	sender.receiveProcessor.ProcessReceivedMessage(ctx,
 		&protobufs.ServerToAgent{
@@ -320,19 +322,22 @@ func TestPackageUpdatesWithError(t *testing.T) {
 	localPackageState := types.PackagesStateProvider(nil)
 	var messages atomic.Int32
 	var mux sync.Mutex
-	sender.callbacks = types.Callbacks{
-		OnMessage: func(ctx context.Context, msg *types.MessageData) {
-			// Make sure the call to Sync will return an error due to a nil PackageStateProvider
-			err := msg.PackageSyncer.Sync(ctx)
-			assert.Error(t, err)
-			messages.Add(1)
-		},
+
+	callbacks := types.Callbacks{}
+	callbacks.SetDefaults()
+	callbacks.OnMessage = func(ctx context.Context, msg *types.MessageData) {
+		// Make sure the call to Sync will return an error due to a nil PackageStateProvider
+		err := msg.PackageSyncer.Sync(ctx)
+		assert.Error(t, err)
+		messages.Add(1)
 	}
+	sender.callbacks = callbacks
 
 	clientSyncedState := &ClientSyncedState{}
-
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
-	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, capabilities, &mux, time.Second)
+	clientSyncedState.SetCapabilities(&capabilities)
+
+	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, sender.callbacks, sender, clientSyncedState, localPackageState, &mux, time.Second)
 
 	// Send two messages in parallel.
 	sender.receiveProcessor.ProcessReceivedMessage(ctx,

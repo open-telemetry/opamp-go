@@ -42,6 +42,7 @@ type ClientSyncedState struct {
 	customCapabilities  *protobufs.CustomCapabilities
 	availableComponents *protobufs.AvailableComponents
 	flags               protobufs.AgentToServerFlags
+	agentCapabilities   protobufs.AgentCapabilities
 }
 
 func (s *ClientSyncedState) AgentDescription() *protobufs.AgentDescription {
@@ -84,6 +85,12 @@ func (s *ClientSyncedState) Flags() uint64 {
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	return uint64(s.flags)
+}
+
+func (s *ClientSyncedState) Capabilities() protobufs.AgentCapabilities {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	return s.agentCapabilities
 }
 
 // SetAgentDescription sets the AgentDescription in the state.
@@ -204,4 +211,17 @@ func (s *ClientSyncedState) SetFlags(flags protobufs.AgentToServerFlags) {
 	s.mutex.Lock()
 
 	s.flags = flags
+}
+
+// SetCapabilities sets the Capabilities in the state.
+func (s *ClientSyncedState) SetCapabilities(capabilities *protobufs.AgentCapabilities) error {
+	if capabilities == nil {
+		return ErrCapabilitiesNotSet
+	}
+
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	s.agentCapabilities = *capabilities
+
+	return nil
 }

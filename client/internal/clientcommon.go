@@ -20,6 +20,7 @@ var (
 	ErrReportsEffectiveConfigNotSet = errors.New("ReportsEffectiveConfig capability is not set")
 	ErrReportsRemoteConfigNotSet    = errors.New("ReportsRemoteConfig capability is not set")
 	ErrPackagesStateProviderNotSet  = errors.New("PackagesStateProvider must be set")
+	ErrCapabilitiesNotSet           = errors.New("Capabilities is not set")
 	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 	ErrAvailableComponentsMissing   = errors.New("AvailableComponents is nil")
 
@@ -33,9 +34,6 @@ var (
 type ClientCommon struct {
 	Logger    types.Logger
 	Callbacks types.Callbacks
-
-	// Agent's capabilities defined at Start() time.
-	Capabilities protobufs.AgentCapabilities
 
 	// Client state storage. This is needed if the Server asks to report the state.
 	ClientSyncedState ClientSyncedState
@@ -72,30 +70,68 @@ func NewClientCommon(logger types.Logger, sender Sender) ClientCommon {
 	return ClientCommon{Logger: logger, sender: sender, stoppedSignal: make(chan struct{}, 1)}
 }
 
+func (c *ClientCommon) hasCapability(capability protobufs.AgentCapabilities) bool {
+	return c.ClientSyncedState.Capabilities()&capability != 0
+}
+
+func (c *ClientCommon) validateCapabilities(capabilities protobufs.AgentCapabilities) error {
+	if capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsHealth != 0 && c.ClientSyncedState.Health() == nil {
+		return ErrHealthMissing
+	}
+	if capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents != 0 && c.ClientSyncedState.AvailableComponents() == nil {
+		return ErrAvailableComponentsMissing
+	}
+	if c.PackagesStateProvider != nil {
+		if (capabilities&protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages == 0) ||
+			(capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses == 0) {
+			return ErrAcceptsPackagesNotSet
+		}
+	} else {
+		if capabilities&protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages != 0 ||
+			capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses != 0 {
+			return ErrPackagesStateProviderNotSet
+		}
+	}
+	return nil
+}
+
 // PrepareStart prepares the client state for the next Start() call.
 // It returns an error if the client is already started, or if the settings are invalid.
 func (c *ClientCommon) PrepareStart(
-	_ context.Context, settings types.StartSettings,
+	ctx context.Context, settings types.StartSettings,
 ) error {
 	if c.isStarted {
 		return errAlreadyStarted
 	}
-
-	c.Capabilities = settings.Capabilities
-
-	// According to OpAMP spec this capability MUST be set, since all Agents MUST report status.
-	c.Capabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
+	// Deprecated: Use client.SetCapabilities() instead.
+	if settings.Capabilities != 0 {
+		c.Logger.Errorf(ctx, "settings.Capabilities is deprecated, use client.SetCapabilities() instead")
+		capabilities := settings.Capabilities
+		// According to OpAMP spec this capability MUST be set, since all Agents MUST report status.
+		capabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
+		if err := c.ClientSyncedState.SetCapabilities(&capabilities); err != nil {
+			return err
+		}
+	}
+	if c.ClientSyncedState.Capabilities() == 0 {
+		c.Logger.Errorf(ctx, "you must call client.SetCapabilities before start.")
+		capabilities := protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
+		if err := c.ClientSyncedState.SetCapabilities(&capabilities); err != nil {
+			return err
+		}
+		// We allow this to succeed for now, but later this will become an error.
+		// TODO: https://github.com/open-telemetry/opamp-go/issues/407
+		// return ErrCapabilitiesNotSet
+	}
 
 	if c.ClientSyncedState.AgentDescription() == nil {
 		return ErrAgentDescriptionMissing
 	}
 
-	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsHealth != 0 && c.ClientSyncedState.Health() == nil {
-		return ErrHealthMissing
-	}
-
-	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents != 0 && c.ClientSyncedState.AvailableComponents() == nil {
-		return ErrAvailableComponentsMissing
+	// Prepare package statuses.
+	c.PackagesStateProvider = settings.PackagesStateProvider
+	if err := c.validateCapabilities(c.ClientSyncedState.Capabilities()); err != nil {
+		return err
 	}
 
 	// Prepare remote config status.
@@ -110,25 +146,15 @@ func (c *ClientCommon) PrepareStart(
 		return err
 	}
 
-	// Prepare package statuses.
-	c.PackagesStateProvider = settings.PackagesStateProvider
 	var packageStatuses *protobufs.PackageStatuses
-	if settings.PackagesStateProvider != nil {
-		if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages == 0 ||
-			c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses == 0 {
-			return ErrAcceptsPackagesNotSet
-		}
-
+	if c.PackagesStateProvider != nil &&
+		c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages) &&
+		c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses) {
 		// Set package status from the value previously saved in the PackagesStateProvider.
 		var err error
 		packageStatuses, err = settings.PackagesStateProvider.LastReportedStatuses()
 		if err != nil {
 			return err
-		}
-	} else {
-		if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages != 0 ||
-			c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses != 0 {
-			return ErrPackagesStateProviderNotSet
 		}
 	}
 
@@ -144,7 +170,7 @@ func (c *ClientCommon) PrepareStart(
 	c.Callbacks = settings.Callbacks
 	c.Callbacks.SetDefaults()
 
-	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat != 0 && settings.HeartbeatInterval != nil {
+	if c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsHeartbeat) && settings.HeartbeatInterval != nil {
 		if err := c.sender.SetHeartbeatInterval(*settings.HeartbeatInterval); err != nil {
 			return err
 		}
@@ -231,7 +257,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 	// initially, do not send the full component state - just send the hash.
 	// full state is available on request from the server using the corresponding ServerToAgent flag
 	var availableComponents *protobufs.AvailableComponents
-	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents != 0 {
+	if c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents) {
 		availableComponents = &protobufs.AvailableComponents{
 			Hash: c.ClientSyncedState.AvailableComponents().GetHash(),
 		}
@@ -243,7 +269,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.EffectiveConfig = cfg
 			msg.RemoteConfigStatus = c.ClientSyncedState.RemoteConfigStatus()
 			msg.PackageStatuses = c.ClientSyncedState.PackageStatuses()
-			msg.Capabilities = uint64(c.Capabilities)
+			msg.Capabilities = uint64(c.ClientSyncedState.Capabilities())
 			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()
 			msg.Flags = c.ClientSyncedState.Flags()
 			msg.AvailableComponents = availableComponents
@@ -305,7 +331,7 @@ func (c *ClientCommon) SetHealth(health *protobufs.ComponentHealth) error {
 // UpdateEffectiveConfig fetches the current local effective config using
 // GetEffectiveConfig callback and sends it to the Server using provided Sender.
 func (c *ClientCommon) UpdateEffectiveConfig(ctx context.Context) error {
-	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig == 0 {
+	if !c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig) {
 		return ErrReportsEffectiveConfigNotSet
 	}
 
@@ -336,7 +362,7 @@ func (c *ClientCommon) UpdateEffectiveConfig(ctx context.Context) error {
 // It also remembers the new RemoteConfigStatus in the client state so that it can be
 // sent to the Server when the Server asks for it.
 func (c *ClientCommon) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) error {
-	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig == 0 {
+	if !c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig) {
 		return ErrReportsRemoteConfigNotSet
 	}
 
@@ -371,7 +397,7 @@ func (c *ClientCommon) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatu
 // It also remembers the new PackageStatuses in the client state so that it can be
 // sent to the Server when the Server asks for it.
 func (c *ClientCommon) SetPackageStatuses(statuses *protobufs.PackageStatuses) error {
-	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses == 0 {
+	if !c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses) {
 		return errReportsPackageStatusesNotSet
 	}
 
@@ -466,7 +492,7 @@ func (c *ClientCommon) SetAvailableComponents(components *protobufs.AvailableCom
 		return c.ClientSyncedState.SetAvailableComponents(components)
 	}
 
-	if c.Capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents == 0 {
+	if c.ClientSyncedState.Capabilities()&protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents == 0 {
 		return types.ErrReportsAvailableComponentsNotSet
 	}
 
@@ -501,5 +527,29 @@ func (c *ClientCommon) SetAvailableComponents(components *protobufs.AvailableCom
 		c.sender.ScheduleSend()
 	}
 
+	return nil
+}
+
+// SetCapabilities sends a message to the Server with the new capabilities.
+func (c *ClientCommon) SetCapabilities(capabilities *protobufs.AgentCapabilities) error {
+	if capabilities == nil {
+		return nil
+	}
+	// According to OpAMP spec this capability MUST be set, since all Agents MUST report status.
+	*capabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
+	if validateErr := c.validateCapabilities(*capabilities); validateErr != nil {
+		return validateErr
+	}
+	// store the capabilities to send
+	if err := c.ClientSyncedState.SetCapabilities(capabilities); err != nil {
+		return err
+	}
+	// send the new customCapabilities to the Server
+	c.sender.NextMessage().Update(
+		func(msg *protobufs.AgentToServer) {
+			msg.Capabilities = uint64(c.ClientSyncedState.Capabilities())
+		},
+	)
+	c.sender.ScheduleSend()
 	return nil
 }

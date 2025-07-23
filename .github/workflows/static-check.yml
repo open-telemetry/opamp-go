@@ -9,6 +9,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   staticcheck:
     name: staticcheck (project)
@@ -23,9 +26,9 @@ jobs:
       - id: install_go
         uses: WillAbides/setup-go-faster@v1.14.0
         with:
-          go-version: "1.22.x"
-      - uses: dominikh/staticcheck-action@v1.3.1
+          go-version-file: "go.mod"
+      - uses: dominikh/staticcheck-action@v1.4.0
         with:
           install-go: false
-          version: "2023.1.7"
+          version: "2025.1.1"
           working-directory: ${{ matrix.dir }}

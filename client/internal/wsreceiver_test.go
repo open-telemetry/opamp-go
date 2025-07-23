@@ -88,7 +88,8 @@ func TestServerToAgentCommand(t *testing.T) {
 			}
 			sender := WSSender{}
 			capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
-			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, &sender, &clientSyncedState, nil, capabilities, new(sync.Mutex), time.Second)
+			clientSyncedState.SetCapabilities(&capabilities)
+			receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, &sender, &clientSyncedState, nil, new(sync.Mutex), time.Second)
 			receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 				Command: test.command,
 			})
@@ -142,7 +143,8 @@ func TestServerToAgentCommandExclusive(t *testing.T) {
 			},
 		}
 		clientSyncedState := ClientSyncedState{}
-		receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, test.capabilities, new(sync.Mutex), time.Second)
+		clientSyncedState.SetCapabilities(&test.capabilities)
+		receiver := NewWSReceiver(TestLogger{t}, callbacks, nil, nil, &clientSyncedState, nil, new(sync.Mutex), time.Second)
 		receiver.processor.ProcessReceivedMessage(context.Background(), &protobufs.ServerToAgent{
 			Command: &protobufs.ServerToAgentCommand{
 				Type: protobufs.CommandType_CommandType_Restart,
@@ -204,7 +206,8 @@ func TestReceiverLoopStop(t *testing.T) {
 	}
 	sender := WSSender{}
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand
-	receiver := NewWSReceiver(TestLogger{t}, callbacks, conn, &sender, &clientSyncedState, nil, capabilities, new(sync.Mutex), time.Second)
+	clientSyncedState.SetCapabilities(&capabilities)
+	receiver := NewWSReceiver(TestLogger{t}, callbacks, conn, &sender, &clientSyncedState, nil, new(sync.Mutex), time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -235,18 +238,19 @@ func TestWSPackageUpdatesInParallel(t *testing.T) {
 			<-blockSyncCh
 		}
 	}
-	callbacks := types.Callbacks{
-		OnMessage: func(ctx context.Context, msg *types.MessageData) {
-			err := msg.PackageSyncer.Sync(ctx)
-			assert.NoError(t, err)
-			messages.Add(1)
-			doneCh = append(doneCh, msg.PackageSyncer.Done())
-		},
+	callbacks := types.Callbacks{}
+	callbacks.SetDefaults()
+	callbacks.OnMessage = func(ctx context.Context, msg *types.MessageData) {
+		err := msg.PackageSyncer.Sync(ctx)
+		assert.NoError(t, err)
+		messages.Add(1)
+		doneCh = append(doneCh, msg.PackageSyncer.Done())
 	}
 	clientSyncedState := &ClientSyncedState{}
 	capabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
 	sender := NewSender(&internal.NopLogger{})
-	receiver := NewWSReceiver(&internal.NopLogger{}, callbacks, nil, sender, clientSyncedState, localPackageState, capabilities, &mux, time.Second)
+	clientSyncedState.SetCapabilities(&capabilities)
+	receiver := NewWSReceiver(&internal.NopLogger{}, callbacks, nil, sender, clientSyncedState, localPackageState, &mux, time.Second)
 
 	receiver.processor.ProcessReceivedMessage(ctx,
 		&protobufs.ServerToAgent{
