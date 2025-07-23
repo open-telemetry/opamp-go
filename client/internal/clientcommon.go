@@ -186,6 +186,10 @@ func (c *ClientCommon) PrepareStart(
 		c.DownloadReporterInterval = *settings.DownloadReporterInterval
 	}
 
+	if c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) && settings.LastConnectionSettingsStatus != nil {
+		c.ClientSyncedState.SetConnectionSettingsStatus(settings.LastConnectionSettingsStatus)
+	}
+
 	return nil
 }
 
@@ -263,6 +267,11 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 		}
 	}
 
+	var connectionSettingsStatus *protobufs.ConnectionSettingsStatus
+	if c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) {
+		connectionSettingsStatus = c.ClientSyncedState.ConnectionSettingsStatus()
+	}
+
 	c.sender.NextMessage().Update(
 		func(msg *protobufs.AgentToServer) {
 			msg.AgentDescription = c.ClientSyncedState.AgentDescription()
@@ -273,6 +282,7 @@ func (c *ClientCommon) PrepareFirstMessage(ctx context.Context) error {
 			msg.CustomCapabilities = c.ClientSyncedState.CustomCapabilities()
 			msg.Flags = c.ClientSyncedState.Flags()
 			msg.AvailableComponents = availableComponents
+			msg.ConnectionSettingsStatus = connectionSettingsStatus
 		},
 	)
 	return nil

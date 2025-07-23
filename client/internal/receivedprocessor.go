@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sync"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"google.golang.org/protobuf/proto"
 )
 
 // receivedProcessor handles the processing of messages received from the Server.
@@ -87,6 +89,31 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 	}
 
 	if msg.ConnectionSettings != nil {
+		msgData.OfferedConnectionsSettingsHash = msg.ConnectionSettings.Hash
+		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) {
+			connectionStatus := &protobufs.ConnectionSettingsStatus{
+				LastConnectionSettingsHash: msg.ConnectionSettings.Hash,
+				Status:                     protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED,
+				ErrorMessage:               "client does not support accepting connection settings",
+			}
+			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnTraces) ||
+				r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics) ||
+				r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnLogs) ||
+				r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings) ||
+				r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOtherConnectionSettings) {
+				connectionStatus = &protobufs.ConnectionSettingsStatus{
+					LastConnectionSettingsHash: msg.ConnectionSettings.Hash,
+					Status:                     protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLYING,
+				}
+			}
+			if err := r.clientSyncedState.SetConnectionSettingsStatus(connectionStatus); err != nil {
+				r.logger.Errorf(ctx, "Unable to persist connection settings status applying state: %v", err)
+			}
+			r.sender.NextMessage().Update(func(sendMsg *protobufs.AgentToServer) {
+				sendMsg.ConnectionSettingsStatus = connectionStatus
+			})
+			scheduled = true // send connection setting status, if OnOpampConnectionSettings or OnConnectionSettings run synchronously, the status may be replaced.
+		}
 		if msg.ConnectionSettings.OwnMetrics != nil {
 			if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics) {
 				msgData.OwnMetricsConnSettings = msg.ConnectionSettings.OwnMetrics
@@ -169,6 +196,8 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 
 	r.rcvOpampConnectionSettings(ctx, msg.ConnectionSettings)
 
+	r.rcvConnectionSettings(ctx, msg.ConnectionSettings)
+
 	if scheduled {
 		r.sender.ScheduleSend()
 	}
@@ -246,8 +275,100 @@ func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, sett
 		if err != nil {
 			r.logger.Errorf(ctx, "Failed to process OpAMPConnectionSettings: %v", err)
 		}
+		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) {
+			status := protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLIED
+			errMsg := ""
+			if err != nil {
+				status = protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED
+				errMsg = err.Error()
+			}
+
+			connectionStatus := &protobufs.ConnectionSettingsStatus{
+				LastConnectionSettingsHash: settings.Hash,
+				Status:                     status,
+				ErrorMessage:               errMsg,
+			}
+			oldStatus := r.clientSyncedState.ConnectionSettingsStatus()
+
+			if !updateStoredConnectionSettingsStatus(oldStatus, connectionStatus) {
+				r.logger.Debugf(ctx, "Client skipping connection status state update from %v to %v", oldStatus.GetStatus(), connectionStatus.GetStatus())
+				return
+			}
+
+			if err := r.clientSyncedState.SetConnectionSettingsStatus(connectionStatus); err != nil {
+				r.logger.Errorf(ctx, "Unable to persist connection settings status %s state: %v", status.String(), err)
+			}
+			r.sender.NextMessage().Update(func(sendMsg *protobufs.AgentToServer) {
+				sendMsg.ConnectionSettingsStatus = connectionStatus
+			})
+			r.sender.ScheduleSend()
+		}
 	} else {
 		r.logger.Debugf(ctx, "Ignoring Opamp, agent does not have AcceptsOpAMPConnectionSettings capability")
+	}
+}
+
+func (r *receivedProcessor) rcvConnectionSettings(ctx context.Context, settings *protobufs.ConnectionSettingsOffers) {
+	if settings == nil || (settings.OwnMetrics == nil &&
+		settings.OwnTraces == nil &&
+		settings.OwnLogs == nil &&
+		settings.OtherConnections == nil) {
+		return
+	}
+
+	clone := proto.Clone(settings).(*protobufs.ConnectionSettingsOffers)
+	if !r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics) && clone.OwnMetrics != nil {
+		clone.OwnMetrics = nil
+		r.logger.Debugf(ctx, "Ignoring OwnMetrics, agent does not have ReportsOwnMetrics capability")
+	}
+	if !r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnTraces) && clone.OwnTraces != nil {
+		clone.OwnTraces = nil
+		r.logger.Debugf(ctx, "Ignoring OwnTraces, agent does not have ReportsOwnTraces capability")
+	}
+	if !r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnLogs) && clone.OwnLogs != nil {
+		clone.OwnLogs = nil
+		r.logger.Debugf(ctx, "Ignoring OwnLogs, agent does not have ReportsOwnLogs capability")
+	}
+	if !r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOtherConnectionSettings) && clone.OtherConnections != nil {
+		clone.OtherConnections = nil
+		r.logger.Debugf(ctx, "Ignoring OtherConnections, agent does not have AcceptsOtherConnectionSettings capability")
+	}
+
+	if clone.OwnMetrics != nil || clone.OwnTraces != nil || clone.OwnLogs != nil || clone.OtherConnections != nil {
+		err := r.callbacks.OnConnectionSettings(ctx, settings)
+		if err != nil {
+			r.logger.Errorf(ctx, "Failed to process ConnectionSettings: %v", err)
+		}
+		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) {
+			status := protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLIED
+			errMsg := ""
+			if err != nil {
+				status = protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED
+				errMsg = err.Error()
+			}
+
+			connectionStatus := &protobufs.ConnectionSettingsStatus{
+				LastConnectionSettingsHash: settings.Hash,
+				Status:                     status,
+				ErrorMessage:               errMsg,
+			}
+			oldStatus := r.clientSyncedState.ConnectionSettingsStatus()
+
+			if !updateStoredConnectionSettingsStatus(oldStatus, connectionStatus) {
+				r.logger.Debugf(ctx, "Client skipping connection status state update from %v to %v", oldStatus.GetStatus(), connectionStatus.GetStatus())
+				return
+			}
+
+			if err := r.clientSyncedState.SetConnectionSettingsStatus(connectionStatus); err != nil {
+				r.logger.Errorf(ctx, "Unable to persist connection settings status %s state: %v", status.String(), err)
+			}
+			r.sender.NextMessage().Update(func(sendMsg *protobufs.AgentToServer) {
+				sendMsg.ConnectionSettingsStatus = connectionStatus
+			})
+			r.sender.ScheduleSend()
+		}
+	} else {
+		r.logger.Debugf(ctx, "Ignoring ConnectionSettings, agent does not have corresponding capability")
 	}
 }
 
@@ -280,4 +401,17 @@ func (r *receivedProcessor) rcvCommand(ctx context.Context, command *protobufs.S
 	if command != nil {
 		r.callbacks.OnCommand(ctx, command)
 	}
+}
+
+// updateStoredConnectionSettingsStatus returns a bool of if status should replace oldStatus.
+// It's true if:
+// - no oldStatus
+// - hash changes
+// - status changes from APPLYING or UNSET
+// - status changes to FAILED
+func updateStoredConnectionSettingsStatus(oldStatus, status *protobufs.ConnectionSettingsStatus) bool {
+	return oldStatus == nil || !bytes.Equal(oldStatus.LastConnectionSettingsHash, status.LastConnectionSettingsHash) ||
+		oldStatus.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLYING ||
+		oldStatus.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_UNSET ||
+		status.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED
 }
