@@ -263,9 +263,7 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 
 	sentCustomCapabilities := false
 
-	var readWg sync.WaitGroup
-	msgCh := runReadLoop(s.serverCtx, wsConn, &readWg)
-	defer readWg.Wait() // Wait for the read loop to finish before returning from this function.
+	msgCh := runReadLoop(s.serverCtx, wsConn)
 
 	// Loop until fail to read from the WebSocket connection.
 	for {
@@ -351,12 +349,11 @@ type webSocketMessage struct {
 	err      error
 }
 
-func runReadLoop(ctx context.Context, wsConn *websocket.Conn, wg *sync.WaitGroup) chan webSocketMessage {
+func runReadLoop(ctx context.Context, wsConn *websocket.Conn) chan webSocketMessage {
 	msgCh := make(chan webSocketMessage, 1)
 
-	wg.Add(1)
+	// no need to wait for the goroutine. When wsConn is closed, the goroutine will exit
 	go func() {
-		defer wg.Done()
 		defer close(msgCh)
 		for {
 			mt, msgBytes, err := wsConn.ReadMessage()
