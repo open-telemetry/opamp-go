@@ -2,15 +2,19 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/gorilla/websocket"
+	dialer "github.com/michel-laterman/proxy-connect-dialer-go"
 
 	"github.com/open-telemetry/opamp-go/client/internal"
 	"github.com/open-telemetry/opamp-go/client/types"
@@ -83,7 +87,7 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 	}
 
 	if settings.ProxyURL != "" {
-		if err := c.useProxy(settings.ProxyURL, settings.ProxyHeaders); err != nil {
+		if err := c.useProxy(settings.ProxyURL, settings.ProxyHeaders, settings.TLSConfig); err != nil {
 			return err
 		}
 	}
@@ -426,8 +430,7 @@ func (c *wsClient) runUntilStopped(ctx context.Context) {
 // useProxy sets the websocket dialer to use the passed proxy URL.
 // If the proxy has no schema http is used.
 // This method is not thread safe and must be called before c.dialer is used.
-// TODO: Once http://github.com/gorilla/websocket/issues/479 is complete add support for settings.ProxyHeaders
-func (c *wsClient) useProxy(proxy string, _ http.Header) error {
+func (c *wsClient) useProxy(proxy string, headers http.Header, cfg *tls.Config) error {
 	proxyURL, err := url.Parse(proxy)
 	if err != nil || proxyURL.Scheme == "" || proxyURL.Host == "" { // error or bad URL - try to use http as scheme to resolve
 		proxyURL, err = url.Parse("http://" + proxy)
@@ -438,6 +441,25 @@ func (c *wsClient) useProxy(proxy string, _ http.Header) error {
 	if proxyURL.Hostname() == "" {
 		return url.InvalidHostError(proxy)
 	}
-	c.dialer.Proxy = http.ProxyURL(proxyURL)
+	switch strings.ToLower(proxyURL.Scheme) {
+	case "http":
+		// FIXME: dialer.NetDialContext is currently used as a work around instead of setting dialer.Proxy as gorilla/websockets does not have 1st class support for setting proxy connect headers
+		// Once http://github.com/gorilla/websocket/issues/479 is complete, we should use dialer.Proxy, and dialer.ProxyConnectHeader
+		dialer, err := dialer.NewProxyConnectDialer(proxyURL, &net.Dialer{}, dialer.WithProxyConnectHeaders(headers))
+		if err != nil {
+			return err
+		}
+		c.dialer.NetDialContext = dialer.DialContext
+	case "https":
+		dialer, err := dialer.NewProxyConnectDialer(proxyURL, &net.Dialer{}, dialer.WithTLS(cfg), dialer.WithProxyConnectHeaders(headers))
+		if err != nil {
+			return err
+		}
+		c.dialer.NetDialTLSContext = dialer.DialContext
+	case "socks5":
+		c.dialer.Proxy = http.ProxyURL(proxyURL)
+	default:
+		c.dialer.Proxy = http.ProxyURL(proxyURL)
+	}
 	return nil
 }

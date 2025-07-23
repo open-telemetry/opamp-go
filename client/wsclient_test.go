@@ -829,6 +829,10 @@ func TestWSClientUseProxy(t *testing.T) {
 		url:  "http://proxy.internal:8080",
 		err:  nil,
 	}, {
+		name: "https proxy",
+		url:  "https://proxy.internal:8080",
+		err:  nil,
+	}, {
 		name: "socks5 proxy",
 		url:  "socks5://proxy.internal:8080",
 		err:  nil,
@@ -846,7 +850,7 @@ func TestWSClientUseProxy(t *testing.T) {
 			client := &wsClient{
 				dialer: websocket.Dialer{},
 			}
-			err := client.useProxy(tc.url, nil)
+			err := client.useProxy(tc.url, nil, nil)
 			if tc.err != nil {
 				assert.ErrorAs(t, err, &tc.err)
 			} else {
