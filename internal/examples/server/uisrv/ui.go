@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"sync"
@@ -230,6 +231,19 @@ func opampConnectionSettings(w http.ResponseWriter, r *http.Request) {
 				MaxVersion:    "1.3",
 			},
 		},
+	}
+
+	rawProxyURL := r.Form.Get("proxy_url")
+	if len(rawProxyURL) > 0 {
+		proxyURL, err := url.Parse(rawProxyURL)
+		if err != nil {
+			logger.Printf("Unable to parse %q as URL: %v", rawProxyURL, err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		offers.Opamp.Proxy = &protobufs.ProxyConnectionSettings{
+			Url: proxyURL.String(),
+		}
 	}
 
 	data.AllAgents.OfferAgentConnectionSettings(instanceId, offers)
