@@ -457,17 +457,25 @@ func (c *wsClient) useProxy(proxy string, headers http.Header, cfg *tls.Config) 
 	case "http":
 		// FIXME: dialer.NetDialContext is currently used as a work around instead of setting dialer.Proxy as gorilla/websockets does not have 1st class support for setting proxy connect headers
 		// Once http://github.com/gorilla/websocket/issues/479 is complete, we should use dialer.Proxy, and dialer.ProxyConnectHeader
-		dialer, err := dialer.NewProxyConnectDialer(proxyURL, &net.Dialer{}, dialer.WithProxyConnectHeaders(headers))
-		if err != nil {
-			return err
+		if len(headers) > 0 {
+			dialer, err := dialer.NewProxyConnectDialer(proxyURL, &net.Dialer{}, dialer.WithProxyConnectHeaders(headers))
+			if err != nil {
+				return err
+			}
+			c.dialer.NetDialContext = dialer.DialContext
+			return nil
 		}
-		c.dialer.NetDialContext = dialer.DialContext
+		c.dialer.Proxy = http.ProxyURL(proxyURL) // No connect headers, use a regular proxy
 	case "https":
-		dialer, err := dialer.NewProxyConnectDialer(proxyURL, &net.Dialer{}, dialer.WithTLS(cfg), dialer.WithProxyConnectHeaders(headers))
-		if err != nil {
-			return err
+		if len(headers) > 0 {
+			dialer, err := dialer.NewProxyConnectDialer(proxyURL, &net.Dialer{}, dialer.WithTLS(cfg), dialer.WithProxyConnectHeaders(headers))
+			if err != nil {
+				return err
+			}
+			c.dialer.NetDialTLSContext = dialer.DialContext
+			return nil
 		}
-		c.dialer.NetDialTLSContext = dialer.DialContext
+		c.dialer.Proxy = http.ProxyURL(proxyURL) // No connect headers, use a regular proxy
 	case "socks5":
 		c.dialer.Proxy = http.ProxyURL(proxyURL)
 	default:
