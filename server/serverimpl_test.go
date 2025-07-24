@@ -74,7 +74,7 @@ func TestServerStartStopWithCancel(t *testing.T) {
 }
 
 func TestServerStartStopCloseNoLeakGoroutine(t *testing.T) {
-	goleak.VerifyNone(t)
+	defer goleak.VerifyNone(t)
 	startSettings := &StartSettings{}
 	srv := startServer(t, startSettings)
 
