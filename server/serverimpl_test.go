@@ -30,7 +30,6 @@ import (
 
 func startServer(t *testing.T, settings *StartSettings) *server {
 	return startServerWithLogger(t, settings, &sharedinternal.NopLogger{})
-
 }
 
 func startServerWithLogger(t *testing.T, settings *StartSettings, logger clienttypes.Logger) *server {
