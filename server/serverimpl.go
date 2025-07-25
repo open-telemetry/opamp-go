@@ -225,12 +225,12 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Conn, connectionCallbacks *serverTypes.ConnectionCallbacks) {
-	agentConn := wsConnection{wsConn: wsConn, connMutex: &sync.Mutex{}}
+	agentConn := newWSConnection(wsConn)
 
 	defer func() {
 		// Close the connection when all is done.
 		defer func() {
-			err := wsConn.Close()
+			err := agentConn.Disconnect()
 			if err != nil {
 				s.logger.Errorf(context.Background(), "error closing the WebSocket connection: %v", err)
 			}
