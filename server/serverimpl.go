@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -243,7 +244,10 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 
 	sentCustomCapabilities := false
 
+	start := time.Now()
+
 	// Loop until fail to read from the WebSocket connection.
+messageLoop:
 	for {
 		msgContext := context.Background()
 		request := protobufs.AgentToServer{}
@@ -296,9 +300,19 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			}
 			sentCustomCapabilities = true
 		}
-		err = agentConn.Send(msgContext, response)
-		if err != nil {
-			s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
+		// force nop after 30 seconds -- break loop after another 30 seconds
+		switch {
+		case time.Since(start) < 1*time.Minute:
+			err = agentConn.Send(msgContext, response)
+			if err != nil {
+				s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
+			}
+		case time.Since(start) < 3*time.Minute:
+			s.logger.Debugf(msgContext, "nop situation - no send")
+			// nop situation -- do nothing
+		case time.Since(start) < 4*time.Minute:
+			// break loop; force reconnect
+			break messageLoop
 		}
 	}
 }
