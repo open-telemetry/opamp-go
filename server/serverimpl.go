@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -226,7 +225,7 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Conn, connectionCallbacks *serverTypes.ConnectionCallbacks) {
-	agentConn := wsConnection{wsConn: wsConn, connMutex: &sync.Mutex{}}
+	agentConn := wsConnection{wsConn: wsConn, connMutex: &sync.Mutex{}, sendErrorCallback: connectionCallbacks.OnSendMessageError}
 
 	defer func() {
 		// Close the connection when all is done.
@@ -244,10 +243,7 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 
 	sentCustomCapabilities := false
 
-	start := time.Now()
-
 	// Loop until fail to read from the WebSocket connection.
-messageLoop:
 	for {
 		msgContext := context.Background()
 		request := protobufs.AgentToServer{}
@@ -300,20 +296,28 @@ messageLoop:
 			}
 			sentCustomCapabilities = true
 		}
-		// force nop after 30 seconds -- break loop after another 30 seconds
-		switch {
-		case time.Since(start) < 1*time.Minute:
-			err = agentConn.Send(msgContext, response)
-			if err != nil {
-				s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
-			}
-		case time.Since(start) < 3*time.Minute:
-			s.logger.Debugf(msgContext, "nop situation - no send")
-			// nop situation -- do nothing
-		case time.Since(start) < 4*time.Minute:
-			// break loop; force reconnect
-			break messageLoop
+
+		err = agentConn.Send(msgContext, response)
+		if err != nil {
+			// If we can read but not write to connection, we should break the loop to force a reconnect
+			s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
+			break
 		}
+
+		// force nop after 30 seconds -- break loop after another 30 seconds
+		// switch {
+		// case time.Since(start) < 1*time.Minute:
+		// 	err = agentConn.Send(msgContext, response)
+		// 	if err != nil {
+		// 		s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
+		// 	}
+		// case time.Since(start) < 3*time.Minute:
+		// 	s.logger.Debugf(msgContext, "nop situation - no send")
+		// 	// nop situation -- do nothing
+		// case time.Since(start) < 4*time.Minute:
+		// 	// break loop; force reconnect
+		// 	break messageLoop
+		// }
 	}
 }
 
