@@ -232,7 +232,11 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 		defer func() {
 			err := wsConn.Close()
 			if err != nil {
-				s.logger.Errorf(context.Background(), "error closing the WebSocket connection: %v", err)
+				if errors.Is(err, websocket.ErrCloseSent) {
+					s.logger.Debugf(context.Background(), "error closing the WebSocket connection - websocket already closed: %v", err)
+				} else {
+					s.logger.Errorf(context.Background(), "error closing the WebSocket connection: %v", err)
+				}
 			}
 		}()
 
@@ -303,21 +307,6 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
 			break
 		}
-
-		// force nop after 30 seconds -- break loop after another 30 seconds
-		// switch {
-		// case time.Since(start) < 1*time.Minute:
-		// 	err = agentConn.Send(msgContext, response)
-		// 	if err != nil {
-		// 		s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
-		// 	}
-		// case time.Since(start) < 3*time.Minute:
-		// 	s.logger.Debugf(msgContext, "nop situation - no send")
-		// 	// nop situation -- do nothing
-		// case time.Since(start) < 4*time.Minute:
-		// 	// break loop; force reconnect
-		// 	break messageLoop
-		// }
 	}
 }
 
