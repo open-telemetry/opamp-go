@@ -225,7 +225,7 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Conn, connectionCallbacks *serverTypes.ConnectionCallbacks) {
-	agentConn := wsConnection{wsConn: wsConn, connMutex: &sync.Mutex{}, sendErrorCallback: connectionCallbacks.OnSendMessageError}
+	agentConn := wsConnection{wsConn: wsConn, connMutex: &sync.Mutex{}}
 
 	defer func() {
 		// Close the connection when all is done.
@@ -305,6 +305,7 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 		if err != nil {
 			// If we can read but not write to connection, we should break the loop to force a reconnect
 			s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
+			connectionCallbacks.OnSendMessageError(response, err)
 			break
 		}
 	}

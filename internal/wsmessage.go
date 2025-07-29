@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/rand"
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -38,6 +39,11 @@ func DecodeWSMessage(bytes []byte, msg proto.Message) error {
 }
 
 func WriteWSMessage(conn *websocket.Conn, msg proto.Message) error {
+	// randomly fail to send 50% of the time
+	if rand.Intn(100) < 50 {
+		return fmt.Errorf("random failure")
+	}
+
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("marshal message: %w", err)
