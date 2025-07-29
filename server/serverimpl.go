@@ -55,7 +55,7 @@ type server struct {
 	// To gracefully stop the server.
 	serverCtx    context.Context
 	serverCancel context.CancelFunc
-	connWg       *sync.WaitGroup
+	connWg       sync.WaitGroup
 }
 
 var _ OpAMPServer = (*server)(nil)
@@ -132,7 +132,6 @@ func (s *server) Start(settings StartSettings) error {
 	httpServerServeWg := sync.WaitGroup{}
 	httpServerServeWg.Add(1)
 	s.httpServerServeWg = &httpServerServeWg
-	s.connWg = &sync.WaitGroup{}
 	s.serverCtx, s.serverCancel = context.WithCancel(context.Background())
 
 	listenAddr := s.httpServer.Addr
