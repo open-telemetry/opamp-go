@@ -201,6 +201,7 @@ func TestServerStartRejectConnection(t *testing.T) {
 }
 
 func eventually(t *testing.T, f func() bool) {
+	t.Helper()
 	assert.Eventually(t, f, 5*time.Second, 10*time.Millisecond)
 }
 
