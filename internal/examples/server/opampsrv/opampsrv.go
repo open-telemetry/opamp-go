@@ -109,6 +109,10 @@ func (srv *Server) onMessage(ctx context.Context, conn types.Connection, msg *pr
 	// Process the status report and continue building the response.
 	agent.UpdateStatus(msg, response)
 
+	if msg.ConnectionSettingsStatus != nil {
+		srv.logger.Debugf(ctx, "Connection settings for instance %x %s (err=%s) hash=%x", instanceId, msg.ConnectionSettingsStatus.Status.String(), msg.ConnectionSettingsStatus.ErrorMessage, msg.ConnectionSettingsStatus.LastConnectionSettingsHash)
+	}
+
 	// Send the response back to the Agent.
 	return response
 }
