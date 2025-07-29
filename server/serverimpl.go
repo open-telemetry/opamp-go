@@ -241,6 +241,7 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 
 func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Conn, connectionCallbacks *serverTypes.ConnectionCallbacks) {
 	agentConn := wsConnection{wsConn: wsConn, connMutex: &sync.Mutex{}}
+	var readLoopWg sync.WaitGroup
 
 	defer func() {
 		// Close the connection when all is done.
@@ -249,6 +250,7 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			if err != nil {
 				s.logger.Errorf(context.Background(), "error closing the WebSocket connection: %v", err)
 			}
+			readLoopWg.Wait()
 		}()
 
 		connectionCallbacks.OnConnectionClose(agentConn)
@@ -257,8 +259,14 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 	connectionCallbacks.OnConnected(reqCtx, agentConn)
 
 	sentCustomCapabilities := false
+	serverCtx := s.serverCtx
+	if serverCtx == nil {
+		// if serverCtx is nil, use background context
+		// this is Attach() case without Start() call
+		serverCtx = context.Background()
+	}
 
-	msgCh := runReadLoop(s.serverCtx, wsConn)
+	msgCh := runReadLoop(serverCtx, wsConn, &readLoopWg)
 
 	// Loop until fail to read from the WebSocket connection.
 	for {
@@ -271,7 +279,7 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 
 		// Wait for the message to be read or for the server to shut down.
 		select {
-		case <-s.serverCtx.Done():
+		case <-serverCtx.Done():
 			s.logger.Debugf(msgContext, "Server is shutting down.: %v", s.serverCtx.Err())
 			return
 		case msg, ok := <-msgCh:
@@ -340,11 +348,13 @@ type webSocketMessage struct {
 	err      error
 }
 
-func runReadLoop(ctx context.Context, wsConn *websocket.Conn) chan webSocketMessage {
+func runReadLoop(ctx context.Context, wsConn *websocket.Conn, wg *sync.WaitGroup) chan webSocketMessage {
 	msgCh := make(chan webSocketMessage, 1)
 
+	wg.Add(1)
 	// no need to wait for the goroutine. When wsConn is closed, the goroutine will exit
 	go func() {
+		defer wg.Done()
 		defer close(msgCh)
 		for {
 			mt, msgBytes, err := wsConn.ReadMessage()
