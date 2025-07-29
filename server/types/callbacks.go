@@ -68,8 +68,8 @@ type ConnectionCallbacks struct {
 	// OnReadMessageError is called when an error occurs while reading or deserializing a message.
 	OnReadMessageError func(conn Connection, mt int, msgByte []byte, err error)
 
-	// OnSendMessageError is called when an error occurs while sending a message.
-	OnSendMessageError func(conn Connection, message *protobufs.ServerToAgent, err error)
+	// OnMessageResponseError is called when an error occurs while sending the response message from the OnMessage loop.
+	OnMessageResponseError func(conn Connection, message *protobufs.ServerToAgent, err error)
 }
 
 func defaultOnConnected(ctx context.Context, conn Connection) {}
@@ -106,7 +106,7 @@ func (c *ConnectionCallbacks) SetDefaults() {
 		c.OnReadMessageError = defaultOnReadMessageError
 	}
 
-	if c.OnSendMessageError == nil {
-		c.OnSendMessageError = defaultOnSendMessageError
+	if c.OnMessageResponseError == nil {
+		c.OnMessageResponseError = defaultOnSendMessageError
 	}
 }

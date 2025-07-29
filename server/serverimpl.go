@@ -305,7 +305,7 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 		if err != nil {
 			// If we can read but not write to connection, we should break the loop to force a reconnect
 			s.logger.Errorf(msgContext, "Cannot send message to WebSocket: %v", err)
-			connectionCallbacks.OnSendMessageError(agentConn, response, err)
+			connectionCallbacks.OnMessageResponseError(agentConn, response, err)
 			break
 		}
 	}
