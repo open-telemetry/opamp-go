@@ -18,8 +18,10 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"google.golang.org/protobuf/proto"
 
+	clienttypes "github.com/open-telemetry/opamp-go/client/types"
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/testhelpers"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -27,10 +29,14 @@ import (
 )
 
 func startServer(t *testing.T, settings *StartSettings) *server {
-	srv := New(&sharedinternal.NopLogger{})
+	return startServerWithLogger(t, settings, &sharedinternal.NopLogger{})
+}
+
+func startServerWithLogger(t *testing.T, settings *StartSettings, logger clienttypes.Logger) *server {
+	srv := New(logger)
 	require.NotNil(t, srv)
 	if settings.ListenEndpoint == "" {
-		// Find an avaiable port to listne on.
+		// Find an avaiable port to listen on.
 		settings.ListenEndpoint = testhelpers.GetAvailableLocalAddress()
 	}
 	if settings.ListenPath == "" {
@@ -241,7 +247,7 @@ func TestDisconnectHttpConnection(t *testing.T) {
 	assert.Equal(t, ErrInvalidHTTPConnection, err)
 }
 
-func TestDisconnectWSConnection(t *testing.T) {
+func TestDisconnectClientWSConnection(t *testing.T) {
 	connectionCloseCalled := int32(0)
 	callback := types.Callbacks{
 		OnConnecting: func(request *http.Request) types.ConnectionResponse {
@@ -265,9 +271,9 @@ func TestDisconnectWSConnection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, atomic.LoadInt32(&connectionCloseCalled) == 0)
 
-	// Close connection from server side
-	srvConn := wsConnection{wsConn: conn}
-	err = srvConn.Disconnect()
+	// Close connection from client side
+	clientConn := newWSConnection(conn)
+	err = clientConn.Disconnect()
 	assert.NoError(t, err)
 
 	// Verify connection disconnected from server side
@@ -277,6 +283,78 @@ func TestDisconnectWSConnection(t *testing.T) {
 		_, _, err := conn.ReadMessage()
 		return err != nil
 	})
+}
+
+// testLogger is a struct that adapts a *zap.Logger to opamp-go's Logger interface.
+type testLogger struct {
+	errorLogs []string
+	debugLogs []string
+}
+
+func newTestLogger() *testLogger {
+	return &testLogger{
+		errorLogs: []string{},
+		debugLogs: []string{},
+	}
+}
+
+func (o *testLogger) Debugf(_ context.Context, format string, v ...any) {
+	log := fmt.Sprintf(format, v...)
+	o.debugLogs = append(o.debugLogs, fmt.Sprintf("Debugf: %s\n", log))
+}
+
+func (o *testLogger) Errorf(_ context.Context, format string, v ...any) {
+	log := fmt.Sprintf(format, v...)
+	o.errorLogs = append(o.errorLogs, fmt.Sprintf("Errorf: %s\n", log))
+}
+
+func TestDisconnectServerWSConnection(t *testing.T) {
+	connectionCloseCalled := int32(0)
+	var serverConn types.Connection
+	connReady := make(chan struct{}) // Channel to signal when serverConn is assigned
+	callback := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnConnected: func(ctx context.Context, conn types.Connection) {
+					serverConn = conn
+					close(connReady)
+				},
+				OnConnectionClose: func(conn types.Connection) {
+					atomic.StoreInt32(&connectionCloseCalled, 1)
+				},
+			}}
+		},
+	}
+
+	// Start a Server.
+	logger := newTestLogger()
+	settings := &StartSettings{Settings: Settings{Callbacks: callback}}
+	srv := startServerWithLogger(t, settings, logger)
+	defer srv.Stop(context.Background())
+
+	// Connect to the Server.
+	conn, _, err := dialClient(settings)
+
+	// Verify that the connection is successful.
+	assert.NoError(t, err)
+	assert.True(t, atomic.LoadInt32(&connectionCloseCalled) == 0)
+
+	// Wait for serverConn to be assigned
+	<-connReady
+
+	// Close connection from server side
+	serverConn.Disconnect()
+
+	// Verify connection disconnected from server side
+	eventually(t, func() bool { return atomic.LoadInt32(&connectionCloseCalled) == 1 })
+	// Waiting for wsConnection to fail ReadMessage() over a Disconnected communication
+	eventually(t, func() bool {
+		_, _, err := conn.ReadMessage()
+		return err != nil
+	})
+
+	// We expect exactly one error log
+	require.Equal(t, 1, len(logger.errorLogs))
 }
 
 var testInstanceUid = []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}
