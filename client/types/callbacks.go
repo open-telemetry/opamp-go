@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/open-telemetry/opamp-go/client/internal/utils"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -163,19 +164,9 @@ func (c *Callbacks) SetDefaults() {
 		c.SaveRemoteConfigStatus = func(ctx context.Context, status *protobufs.RemoteConfigStatus) {}
 	}
 	if c.DownloadHTTPClient == nil {
-		defaultHttpClient := newHttpClient()
+		defaultHttpClient := utils.NewHttpClient()
 		c.DownloadHTTPClient = func(ctx context.Context, file *protobufs.DownloadableFile) (*http.Client, error) {
 			return defaultHttpClient, nil
 		}
 	}
-}
-
-func newHttpClient() *http.Client {
-	client := &http.Client{}
-	// Clone the default transport to avoid being affected by global state changes.
-	if tr, ok := http.DefaultTransport.(*http.Transport); ok {
-		tr = tr.Clone()
-		client.Transport = tr
-	}
-	return client
 }
