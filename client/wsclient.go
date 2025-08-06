@@ -476,9 +476,7 @@ func (c *wsClient) useProxy(proxy string, headers http.Header, cfg *tls.Config) 
 			return nil
 		}
 		c.dialer.Proxy = http.ProxyURL(proxyURL) // No connect headers, use a regular proxy
-	case "socks5":
-		c.dialer.Proxy = http.ProxyURL(proxyURL)
-	default:
+	default: // catches socks5
 		c.dialer.Proxy = http.ProxyURL(proxyURL)
 	}
 	return nil
