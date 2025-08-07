@@ -15,10 +15,11 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/open-telemetry/opamp-go/internal"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/open-telemetry/opamp-go/client/internal/utils"
 	"github.com/open-telemetry/opamp-go/client/types"
+	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -76,7 +77,7 @@ func NewHTTPSender(logger types.Logger) *HTTPSender {
 	h := &HTTPSender{
 		SenderCommon:      NewSenderCommon(),
 		logger:            logger,
-		client:            &http.Client{},
+		client:            utils.NewHttpClient(),
 		pollingIntervalMs: defaultPollingIntervalMs,
 	}
 	// initialize the headers with no additional headers
