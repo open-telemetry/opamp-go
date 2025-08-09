@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -821,29 +824,43 @@ func TestWSSenderReportsAvailableComponents(t *testing.T) {
 
 func TestWSClientUseProxy(t *testing.T) {
 	tests := []struct {
-		name string
-		url  string
-		err  error
+		name    string
+		headers http.Header
+		url     string
+		err     error
 	}{{
-		name: "http proxy",
-		url:  "http://proxy.internal:8080",
-		err:  nil,
+		name:    "http proxy",
+		headers: nil,
+		url:     "http://proxy.internal:8080",
+		err:     nil,
 	}, {
-		name: "https proxy",
-		url:  "https://proxy.internal:8080",
-		err:  nil,
+		name:    "https proxy",
+		headers: nil,
+		url:     "https://proxy.internal:8080",
+		err:     nil,
 	}, {
 		name: "socks5 proxy",
 		url:  "socks5://proxy.internal:8080",
 		err:  nil,
 	}, {
-		name: "no schema",
-		url:  "proxy.internal:8080",
-		err:  nil,
+		name:    "no schema",
+		headers: nil,
+		url:     "proxy.internal:8080",
+		err:     nil,
 	}, {
 		name: "empty url",
 		url:  "",
 		err:  url.InvalidHostError(""),
+	}, {
+		name:    "http proxy with headers",
+		headers: http.Header{"test-key": []string{"test-val"}},
+		url:     "http://proxy.internal:8080",
+		err:     nil,
+	}, {
+		name:    "https proxy with headers",
+		headers: http.Header{"test-key": []string{"test-val"}},
+		url:     "https://proxy.internal:8080",
+		err:     nil,
 	}}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -858,4 +875,82 @@ func TestWSClientUseProxy(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWSClientUseHTTPProxy(t *testing.T) {
+	var connected atomic.Bool
+	// HTTPS Connect proxy, no auth required
+	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		t.Logf("Request: %+v", req)
+		if req.Method != http.MethodConnect {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		connected.Store(true)
+
+		targetConn, err := net.DialTimeout("tcp", req.Host, 10*time.Second)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer targetConn.Close()
+
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		clientConn, _, err := hijacker.Hijack()
+		if err != nil {
+			t.Logf("Hijack error: %v", err)
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		clientConn.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n"))
+		defer clientConn.Close()
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_, err := io.Copy(targetConn, clientConn)
+			assert.NoError(t, err, "proxy encountered an error copying to destination")
+		}()
+		go func() {
+			defer wg.Done()
+			_, err := io.Copy(clientConn, targetConn)
+			assert.NoError(t, err, "proxy encountered an error copying to client")
+		}()
+		wg.Wait()
+	}))
+	t.Cleanup(proxyServer.Close)
+	t.Logf("Proxy server: %s", proxyServer.URL)
+
+	var serverConnected atomic.Bool
+	srv := internal.StartMockServer(t)
+	t.Cleanup(srv.Close)
+	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+		serverConnected.Store(true)
+		return nil
+	}
+	t.Logf("Server endpoint: %s", srv.Endpoint)
+
+	settings := types.StartSettings{
+		OpAMPServerURL: "http://" + srv.Endpoint,
+		ProxyURL:       proxyServer.URL,
+		ProxyHeaders:   http.Header{"test-key": []string{"test-val"}},
+	}
+	client := NewWebSocket(nil)
+	startClient(t, settings, client)
+
+	assert.Eventually(t, func() bool {
+		return connected.Load()
+	}, 3*time.Second, 10*time.Millisecond, "WS client did not connect to proxy")
+
+	assert.Eventually(t, func() bool {
+		return serverConnected.Load()
+	}, 3*time.Second, 10*time.Millisecond, "WS client did not connect to server")
+
+	err := client.Stop(context.Background())
+	assert.NoError(t, err)
 }
