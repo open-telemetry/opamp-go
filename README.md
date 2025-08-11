@@ -47,16 +47,16 @@ For more information about the maintainer role, see the [community repository](h
 
 ### Approvers
 
-- [Anthony Mirabella](https://github.com/Aneurysm9), AWS
 - [Evan Bradley](https://github.com/evan-bradley), Dynatrace
 
 For more information about the approver role, see the [community repository](https://github.com/open-telemetry/community/blob/main/guides/contributor/membership.md#approver).
 
 ### Emeritus Approvers
 
-- [Alex Boten](https://github.com/codeboten), Lightstep
-- [Przemek Maciolek](https://github.com/pmm-sumo), Sumo Logic
-- [Srikanth Chekuri](https://github.com/srikanthccv), signoz.io
+- [Alex Boten](https://github.com/codeboten)
+- [Anthony Mirabella](https://github.com/Aneurysm9)
+- [Przemek Maciolek](https://github.com/pmm-sumo)
+- [Srikanth Chekuri](https://github.com/srikanthccv)
 
 For more information about the emeritus role, see the [community repository](https://github.com/open-telemetry/community/blob/main/guides/contributor/membership.md#emeritus-maintainerapprovertriager).
 
