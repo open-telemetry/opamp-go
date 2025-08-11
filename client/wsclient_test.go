@@ -861,6 +861,10 @@ func TestWSClientUseProxy(t *testing.T) {
 		headers: http.Header{"test-key": []string{"test-val"}},
 		url:     "https://proxy.internal:8080",
 		err:     nil,
+	}, {
+		name: "invalid url",
+		url:  "this is not valid",
+		err:  url.InvalidHostError("this is not valid"),
 	}}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

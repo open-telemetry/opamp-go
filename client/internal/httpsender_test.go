@@ -379,6 +379,10 @@ func TestHTTPSenderSetProxy(t *testing.T) {
 		name: "empty url",
 		url:  "",
 		err:  url.InvalidHostError(""),
+	}, {
+		name: "invalid url",
+		url:  "this is not valid",
+		err:  url.InvalidHostError("this is not valid"),
 	}}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
