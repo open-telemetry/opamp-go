@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ func Test_DownloadReporter_Report(t *testing.T) {
 		interval:      time.Millisecond,
 		packageLength: 2,
 		done:          make(chan struct{}),
+		wg:            sync.WaitGroup{},
 	}
 	defer reporter.stop()
 
