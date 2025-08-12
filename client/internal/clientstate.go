@@ -11,6 +11,7 @@ import (
 var (
 	errRemoteConfigStatusMissing        = errors.New("RemoteConfigStatus is not set")
 	errLastRemoteConfigHashNil          = errors.New("LastRemoteConfigHash is nil")
+	errConnectionSettingsStatusMissing  = errors.New("ConnectionSettingsStatus is not set")
 	errPackageStatusesMissing           = errors.New("PackageStatuses is not set")
 	errServerProvidedAllPackagesHashNil = errors.New("ServerProvidedAllPackagesHash is nil")
 	errCustomCapabilitiesMissing        = errors.New("CustomCapabilities is not set")
@@ -35,14 +36,15 @@ var (
 type ClientSyncedState struct {
 	mutex sync.Mutex
 
-	agentDescription    *protobufs.AgentDescription
-	health              *protobufs.ComponentHealth
-	remoteConfigStatus  *protobufs.RemoteConfigStatus
-	packageStatuses     *protobufs.PackageStatuses
-	customCapabilities  *protobufs.CustomCapabilities
-	availableComponents *protobufs.AvailableComponents
-	flags               protobufs.AgentToServerFlags
-	agentCapabilities   protobufs.AgentCapabilities
+	agentDescription         *protobufs.AgentDescription
+	health                   *protobufs.ComponentHealth
+	remoteConfigStatus       *protobufs.RemoteConfigStatus
+	connectionSettingsStatus *protobufs.ConnectionSettingsStatus
+	packageStatuses          *protobufs.PackageStatuses
+	customCapabilities       *protobufs.CustomCapabilities
+	availableComponents      *protobufs.AvailableComponents
+	flags                    protobufs.AgentToServerFlags
+	agentCapabilities        protobufs.AgentCapabilities
 }
 
 func (s *ClientSyncedState) AgentDescription() *protobufs.AgentDescription {
@@ -61,6 +63,12 @@ func (s *ClientSyncedState) RemoteConfigStatus() *protobufs.RemoteConfigStatus {
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	return s.remoteConfigStatus
+}
+
+func (s *ClientSyncedState) ConnectionSettingsStatus() *protobufs.ConnectionSettingsStatus {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	return s.connectionSettingsStatus
 }
 
 func (s *ClientSyncedState) PackageStatuses() *protobufs.PackageStatuses {
@@ -139,6 +147,20 @@ func (s *ClientSyncedState) SetRemoteConfigStatus(status *protobufs.RemoteConfig
 	s.mutex.Lock()
 	s.remoteConfigStatus = clone
 
+	return nil
+}
+
+// SetConnectionSettingsStatus will update the connection settings status.
+func (s *ClientSyncedState) SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus) error {
+	if status == nil {
+		return errConnectionSettingsStatusMissing
+	}
+
+	clone := proto.Clone(status).(*protobufs.ConnectionSettingsStatus)
+
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	s.connectionSettingsStatus = clone
 	return nil
 }
 
