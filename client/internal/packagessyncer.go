@@ -325,8 +325,16 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 	}
 	// start the download reporter
 	detailsReporter := newDownloadReporter(s.reporterInterval, packageLength)
-	detailsReporter.report(ctx, s.updateDownloadDetails(pkgName))
-	defer detailsReporter.stop()
+	reportWG := sync.WaitGroup{}
+	reportWG.Add(1)
+	go func() {
+		detailsReporter.report(ctx, s.updateDownloadDetails(pkgName))
+		reportWG.Done()
+	}()
+	defer func() {
+		detailsReporter.stop()
+		reportWG.Wait()
+	}()
 
 	tr := io.TeeReader(resp.Body, detailsReporter)
 	err = s.localState.UpdateContent(ctx, pkgName, tr, file.ContentHash, file.Signature)

@@ -41,30 +41,28 @@ func (p *downloadReporter) Write(b []byte) (int, error) {
 
 // report periodically calls the passed function to with the download percent and rate to update the status of a package.
 func (p *downloadReporter) report(ctx context.Context, updateFn func(context.Context, protobufs.PackageDownloadDetails) error) {
-	go func() {
-		ticker := time.NewTicker(p.interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-p.done:
-				return
-			case <-ticker.C:
-				downloadTime := time.Since(p.start)
-				downloaded := float64(p.downloaded.Load())
-				bps := downloaded / float64(downloadTime/time.Second)
-				var downloadPercent float64
-				if p.packageLength > 0 {
-					downloadPercent = downloaded / p.packageLength * 100
-				}
-				_ = updateFn(ctx, protobufs.PackageDownloadDetails{
-					DownloadPercent:        downloadPercent,
-					DownloadBytesPerSecond: bps,
-				})
+	ticker := time.NewTicker(p.interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-p.done:
+			return
+		case <-ticker.C:
+			downloadTime := time.Since(p.start)
+			downloaded := float64(p.downloaded.Load())
+			bps := downloaded / float64(downloadTime/time.Second)
+			var downloadPercent float64
+			if p.packageLength > 0 {
+				downloadPercent = downloaded / p.packageLength * 100
 			}
+			_ = updateFn(ctx, protobufs.PackageDownloadDetails{
+				DownloadPercent:        downloadPercent,
+				DownloadBytesPerSecond: bps,
+			})
 		}
-	}()
+	}
 }
 
 // stop the downloadReporter report goroutine
