@@ -393,6 +393,64 @@ func TestServerReceiveSendErrorMessage(t *testing.T) {
 	assert.NotNil(t, errInfo.err)
 }
 
+func TestServerOnMessageResponseError(t *testing.T) {
+	var conn *websocket.Conn
+	var rcvMsg atomic.Value
+	var onMessageResponseErrorCalled atomic.Bool
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					// Remember received message.
+					rcvMsg.Store(message)
+
+					// Create a response.
+					response := protobufs.ServerToAgent{
+						InstanceUid:  message.InstanceUid,
+						Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
+					}
+
+					// Close connection to trigger OnMessageResponseError.
+					conn.Disconnect()
+					return &response
+				},
+				OnMessageResponseError: func(conn types.Connection, response *protobufs.ServerToAgent, err error) {
+					onMessageResponseErrorCalled.Store(true)
+				},
+			}}
+		},
+	}
+
+	settings := &StartSettings{Settings: Settings{
+		Callbacks:          callbacks,
+		CustomCapabilities: []string{"local.test.capability"},
+	}}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	// Connect using a WebSocket client.
+	conn, _, _ = dialClient(settings)
+	require.NotNil(t, conn)
+	defer conn.Close()
+
+	// Send a message to the Server.
+	sendMsg := protobufs.AgentToServer{
+		InstanceUid: testInstanceUid,
+	}
+	bytes, err := proto.Marshal(&sendMsg)
+	require.NoError(t, err)
+	err = conn.WriteMessage(websocket.BinaryMessage, bytes)
+	require.NoError(t, err)
+
+	// Wait until Server receives the message.
+	eventually(t, func() bool { return rcvMsg.Load() != nil })
+	assert.True(t, proto.Equal(rcvMsg.Load().(proto.Message), &sendMsg))
+
+	// Wait until OnMessageResponseError is called and verify it was called.
+	eventually(t, func() bool { return onMessageResponseErrorCalled.Load() })
+	assert.True(t, onMessageResponseErrorCalled.Load())
+}
+
 func TestServerReceiveSendMessageWithCompression(t *testing.T) {
 	// Use highly compressible config body.
 	uncompressedCfg := []byte(strings.Repeat("test", 10000))
