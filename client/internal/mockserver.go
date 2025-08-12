@@ -63,7 +63,7 @@ func newMockServer(t *testing.T) (*MockServer, *http.ServeMux) {
 				return
 			}
 
-			srv.handleWebSocket(t, w, r)
+			srv.handleWebSocket(w, r)
 		},
 	)
 
@@ -137,7 +137,7 @@ func (m *MockServer) EnableCompression() {
 	m.enableCompression = true
 }
 
-func (m *MockServer) handleWebSocket(t *testing.T, w http.ResponseWriter, r *http.Request) {
+func (m *MockServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	upgrader := websocket.Upgrader{
 		EnableCompression: m.enableCompression,
 	}
@@ -155,7 +155,7 @@ func (m *MockServer) handleWebSocket(t *testing.T, w http.ResponseWriter, r *htt
 		if messageType, msgBytes, err = conn.ReadMessage(); err != nil {
 			return
 		}
-		assert.EqualValues(t, websocket.BinaryMessage, messageType)
+		assert.EqualValues(m.t, websocket.BinaryMessage, messageType)
 
 		if len(msgBytes) > 0 && msgBytes[0] == 0 {
 			// New message format. The Protobuf message is preceded by a zero byte header.
