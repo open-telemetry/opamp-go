@@ -305,6 +305,7 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 	if err != nil {
 		return fmt.Errorf("failed to create an HTTP Client to download file from %s: %v", file.DownloadUrl, err)
 	}
+	defer client.CloseIdleConnections()
 
 	resp, err := client.Do(req)
 	if err != nil {
