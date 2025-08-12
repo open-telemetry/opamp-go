@@ -3,6 +3,7 @@ package internal
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -39,12 +40,12 @@ func DecodeWSMessage(bytes []byte, msg proto.Message) error {
 func WriteWSMessage(conn *websocket.Conn, msg proto.Message) error {
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal message: %w", err)
 	}
 
 	writer, err := conn.NextWriter(websocket.BinaryMessage)
 	if err != nil {
-		return err
+		return fmt.Errorf("next writer: %w", err)
 	}
 
 	// Encode header as a varint.
@@ -56,15 +57,19 @@ func WriteWSMessage(conn *websocket.Conn, msg proto.Message) error {
 	_, err = writer.Write(hdrBuf)
 	if err != nil {
 		writer.Close()
-		return err
+		return fmt.Errorf("write header: %w", err)
 	}
 
 	// Write the encoded data.
 	_, err = writer.Write(data)
 	if err != nil {
 		writer.Close()
-		return err
+		return fmt.Errorf("write data: %w", err)
 	}
 
-	return writer.Close()
+	err = writer.Close()
+	if err != nil {
+		return fmt.Errorf("close writer: %w", err)
+	}
+	return nil
 }
