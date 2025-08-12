@@ -129,13 +129,15 @@ func (agent *Agent) connect(tlsConfig *tls.Config) error {
 			},
 			OnMessage:                 agent.onMessage,
 			OnOpampConnectionSettings: agent.onOpampConnectionSettings,
+			OnConnectionSettings:      agent.onConnectionSettings,
 		},
 		RemoteConfigStatus: agent.remoteConfigStatus,
 		Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
-			protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings,
+			protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings |
+			protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus,
 	}
 
 	err := agent.opampClient.SetAgentDescription(agent.agentDescription)
@@ -249,11 +251,11 @@ func (agent *Agent) composeEffectiveConfig() *protobufs.EffectiveConfig {
 	}
 }
 
-func (agent *Agent) initMeter(settings *protobufs.TelemetryConnectionSettings) {
+func (agent *Agent) initMeter(settings *protobufs.TelemetryConnectionSettings) error {
 	reporter, err := NewMetricReporter(agent.logger, settings, agent.agentType, agent.agentVersion, agent.instanceId)
 	if err != nil {
 		agent.logger.Errorf(context.Background(), "Cannot collect metrics: %v", err)
-		return
+		return err
 	}
 
 	prevReporter := agent.metricReporter
@@ -264,7 +266,7 @@ func (agent *Agent) initMeter(settings *protobufs.TelemetryConnectionSettings) {
 		prevReporter.Shutdown()
 	}
 
-	return
+	return nil
 }
 
 type agentConfigFileItem struct {
@@ -460,10 +462,6 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 		}
 	}
 
-	if msg.OwnMetricsConnSettings != nil {
-		agent.initMeter(msg.OwnMetricsConnSettings)
-	}
-
 	if msg.AgentIdentification != nil {
 		uid, err := uuid.FromBytes(msg.AgentIdentification.NewInstanceUid)
 		if err != nil {
@@ -632,4 +630,13 @@ func (agent *Agent) getCertFromSettings(certificate *protobufs.TLSCertificate) (
 	}
 
 	return &cert, nil
+}
+
+func (agent *Agent) onConnectionSettings(ctx context.Context, settings *protobufs.ConnectionSettingsOffers) error {
+	agent.logger.Debugf(context.Background(), "Received connection settings offers from server, hash=%x.", settings.Hash)
+	// TODO handle traces, logs, and other connection settings
+	if settings.OwnMetrics != nil {
+		return agent.initMeter(settings.OwnMetrics)
+	}
+	return nil
 }

@@ -269,6 +269,40 @@ func TestSetCapabilitiesErrorsDuringStart(t *testing.T) {
 	})
 }
 
+func TestClientWithLastConnectionStatus(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		gotSettings := new(atomic.Bool)
+		srv := internal.StartMockServer(t)
+		defer srv.Close()
+		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			t.Log("Got message")
+			if msg.ConnectionSettingsStatus != nil {
+				gotSettings.Store(true)
+			}
+			return &protobufs.ServerToAgent{
+				InstanceUid: msg.InstanceUid,
+			}
+		}
+
+		capabilities := coreCapabilities | protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus
+		settings := types.StartSettings{
+			Capabilities:   capabilities,
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			LastConnectionSettingsStatus: &protobufs.ConnectionSettingsStatus{
+				LastConnectionSettingsHash: []byte(`testHash`),
+				Status:                     protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLIED,
+			},
+		}
+		prepareClient(t, &settings, client)
+		err := client.Start(context.Background(), settings)
+		assert.NoError(t, err)
+		eventually(t, func() bool { return gotSettings.Load() })
+
+		err = client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
 func TestSetInvalidAgentDescription(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		settings := createNoServerSettings()
@@ -865,15 +899,16 @@ func TestServerOfferConnectionSettings(t *testing.T) {
 		// Start a client.
 		settings := types.StartSettings{
 			Callbacks: types.Callbacks{
-				OnMessage: func(ctx context.Context, msg *types.MessageData) {
-					assert.True(t, proto.Equal(metricsSettings, msg.OwnMetricsConnSettings))
-					assert.True(t, proto.Equal(tracesSettings, msg.OwnTracesConnSettings))
-					assert.True(t, proto.Equal(logsSettings, msg.OwnLogsConnSettings))
+				OnConnectionSettings: func(ctx context.Context, msg *protobufs.ConnectionSettingsOffers) error {
+					assert.True(t, proto.Equal(metricsSettings, msg.OwnMetrics))
+					assert.True(t, proto.Equal(tracesSettings, msg.OwnTraces))
+					assert.True(t, proto.Equal(logsSettings, msg.OwnLogs))
 					atomic.AddInt64(&gotOwnSettings, 1)
 
-					assert.Len(t, msg.OtherConnSettings, 1)
-					assert.True(t, proto.Equal(otherSettings, msg.OtherConnSettings["other"]))
+					assert.Len(t, msg.OtherConnections, 1)
+					assert.True(t, proto.Equal(otherSettings, msg.OtherConnections["other"]))
 					atomic.AddInt64(&gotOtherSettings, 1)
+					return nil
 				},
 
 				OnOpampConnectionSettings: func(
