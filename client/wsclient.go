@@ -83,10 +83,7 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 	}
 
 	// Prepare connection settings.
-	c.dialer = websocket.Dialer{
-		Proxy:            http.ProxyFromEnvironment,
-		HandshakeTimeout: 45 * time.Second,
-	}
+	c.dialer = *websocket.DefaultDialer
 
 	if settings.ProxyURL != "" {
 		if err := c.useProxy(settings.ProxyURL, settings.ProxyHeaders, settings.TLSConfig); err != nil {
