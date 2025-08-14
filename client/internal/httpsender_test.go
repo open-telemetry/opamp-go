@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -355,4 +356,148 @@ func TestPackageUpdatesWithError(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond, "both messages must have been processed successfully")
 
 	cancel()
+}
+
+func TestHTTPSenderSetProxy(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		err  error
+	}{{
+		name: "http proxy",
+		url:  "http://proxy.internal:8080",
+		err:  nil,
+	}, {
+		name: "socks5 proxy",
+		url:  "socks5://proxy.internal:8080",
+		err:  nil,
+	}, {
+		name: "no schema",
+		url:  "proxy.internal:8080",
+		err:  nil,
+	}, {
+		name: "empty url",
+		url:  "",
+		err:  url.InvalidHostError(""),
+	}, {
+		name: "invalid url",
+		url:  "this is not valid",
+		err:  url.InvalidHostError("this is not valid"),
+	}}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sender := NewHTTPSender(&sharedinternal.NopLogger{})
+			err := sender.SetProxy(tc.url, nil)
+			if tc.err != nil {
+				assert.ErrorAs(t, err, &tc.err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+
+	t.Run("old transport settings are preserved", func(t *testing.T) {
+		sender := &HTTPSender{
+			client: &http.Client{
+				Transport: &http.Transport{
+					MaxResponseHeaderBytes: 1024,
+				},
+			},
+		}
+		err := sender.SetProxy("https://proxy.internal:8080", nil)
+		assert.NoError(t, err)
+		transport, ok := sender.client.Transport.(*http.Transport)
+		if !ok {
+			t.Logf("Transport: %v", sender.client.Transport)
+			t.Fatalf("Unable to coorce as *http.Transport detected type: %T", sender.client.Transport)
+		}
+		assert.NotNil(t, transport.Proxy)
+		assert.Equal(t, int64(1024), transport.MaxResponseHeaderBytes)
+	})
+
+	t.Run("test https proxy", func(t *testing.T) {
+		var connected atomic.Bool
+		// HTTPS Connect proxy, no auth required
+		proxyServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			t.Logf("Request: %+v", req)
+			if req.Method != http.MethodConnect {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			connected.Store(true)
+
+			targetConn, err := net.DialTimeout("tcp", req.Host, 10*time.Second)
+			if err != nil {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			defer targetConn.Close()
+
+			hijacker, ok := w.(http.Hijacker)
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			clientConn, _, err := hijacker.Hijack()
+			if err != nil {
+				t.Logf("Hijack error: %v", err)
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			clientConn.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n"))
+			defer clientConn.Close()
+
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				_, err := io.Copy(targetConn, clientConn)
+				assert.NoError(t, err, "proxy encountered an error copying to destination")
+			}()
+			go func() {
+				defer wg.Done()
+				_, err := io.Copy(clientConn, targetConn)
+				assert.NoError(t, err, "proxy encountered an error copying to client")
+			}()
+			wg.Wait()
+		}))
+		t.Cleanup(proxyServer.Close)
+
+		srv := StartTLSMockServer(t)
+		t.Cleanup(srv.Close)
+		srv.OnRequest = func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}
+
+		sender := NewHTTPSender(&sharedinternal.NopLogger{})
+		sender.client = proxyServer.Client()
+		err := sender.SetProxy(proxyServer.URL, http.Header{"test-header": []string{"test-value"}})
+		assert.NoError(t, err)
+
+		t.Logf("Proxy URL: %s", proxyServer.URL)
+
+		sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+			msg.AgentDescription = &protobufs.AgentDescription{
+				IdentifyingAttributes: []*protobufs.KeyValue{{
+					Key: "service.name",
+					Value: &protobufs.AnyValue{
+						Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
+					},
+				}},
+			}
+		})
+		sender.callbacks = types.Callbacks{
+			OnConnect: func(_ context.Context) {
+			},
+			OnConnectFailed: func(_ context.Context, err error) {
+				t.Logf("sender failed to connect: %v", err)
+			},
+		}
+		sender.url = "https://" + srv.Endpoint
+
+		resp, err := sender.sendRequestWithRetries(context.Background())
+		assert.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.True(t, connected.Load(), "test request did not use proxy")
+	})
 }
