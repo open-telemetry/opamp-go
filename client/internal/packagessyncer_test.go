@@ -62,7 +62,7 @@ func TestPackageSyncerSync(t *testing.T) {
 		name                 string
 		testFileContent      []byte
 		getPackagesAvailable func(serverURL string, testFileContentHash []byte) *protobufs.PackagesAvailable
-		err                  string
+		expectedPackageState func(testFileContentHash []byte) types.PackageState
 	}{
 		{
 			name:            "package available",
@@ -82,6 +82,31 @@ func TestPackageSyncerSync(t *testing.T) {
 						},
 					},
 					AllPackagesHash: testFileContentHash[:],
+				}
+			},
+			expectedPackageState: func(testFileContentHash []byte) types.PackageState {
+				return types.PackageState{
+					Exists:  true,
+					Type:    protobufs.PackageType_PackageType_TopLevel,
+					Hash:    testFileContentHash[:],
+					Version: "1.0.0",
+				}
+			},
+		},
+		{
+			name:            "no packages available",
+			testFileContent: []byte{},
+			getPackagesAvailable: func(serverURL string, testFileContentHash []byte) *protobufs.PackagesAvailable {
+				return &protobufs.PackagesAvailable{
+					Packages: map[string]*protobufs.PackageAvailable{},
+				}
+			},
+			expectedPackageState: func(_ []byte) types.PackageState {
+				return types.PackageState{
+					Exists:  true,
+					Type:    protobufs.PackageType_PackageType_TopLevel,
+					Hash:    []byte{},
+					Version: "0.0.0",
 				}
 			},
 		},
@@ -106,6 +131,7 @@ func TestPackageSyncerSync(t *testing.T) {
 				Version: "0.0.0",
 			})
 
+			// Setup packages syncer
 			s, err := NewPackagesSyncer(
 				&internal.NopLogger{},
 				packagesAvailable,
@@ -130,13 +156,10 @@ func TestPackageSyncerSync(t *testing.T) {
 			// Run the sync operation
 			s.doSync(context.Background())
 
-			// Verify that the package is installed
+			// Verify that the package state is as expected
 			packageState, err := store.PackageState("")
 			require.NoError(t, err)
-			assert.True(t, packageState.Exists)
-			assert.Equal(t, packageState.Type, protobufs.PackageType_PackageType_TopLevel)
-			assert.Equal(t, packageState.Hash, testFileContentHash[:])
-			assert.Equal(t, packageState.Version, "1.0.0")
+			assert.Equal(t, tt.expectedPackageState(testFileContentHash[:]), packageState)
 		})
 	}
 }
