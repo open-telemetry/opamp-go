@@ -73,7 +73,7 @@ type Agent struct {
 	clientPrivateKeyPEM []byte
 }
 
-func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent {
+func NewAgent(logger types.Logger, agentType string, agentVersion string, initialInsecureConnection bool) *Agent {
 	agent := &Agent{
 		effectiveConfig: localConfig,
 		logger:          logger,
@@ -86,15 +86,22 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string) *Agent
 		agent.instanceId, agentType, agentVersion)
 
 	agent.loadLocalConfig()
-	tlsConfig, err := internal.CreateClientTLSConfig(
-		agent.opampClientCert,
-		"../../certs/certs/ca.cert.pem",
-	)
-	if err != nil {
-		agent.logger.Errorf(context.Background(), "Cannot load client TLS config: %v", err)
-		return nil
+
+	if initialInsecureConnection {
+		agent.tlsConfig = &tls.Config{
+			InsecureSkipVerify: true,
+		}
+	} else {
+		tlsConfig, err := internal.CreateClientTLSConfig(
+			agent.opampClientCert,
+			"../../certs/certs/ca.cert.pem",
+		)
+		if err != nil {
+			agent.logger.Errorf(context.Background(), "Cannot load client TLS config: %v", err)
+			return nil
+		}
+		agent.tlsConfig = tlsConfig
 	}
-	agent.tlsConfig = tlsConfig
 	if err := agent.connect(agent.tlsConfig); err != nil {
 		agent.logger.Errorf(context.Background(), "Cannot connect OpAMP client: %v", err)
 		return nil
