@@ -14,7 +14,7 @@ jobs:
     if: ${{ (github.actor == 'renovate[bot]' || contains(github.event.pull_request.labels.*.name, 'renovatebot')) }}
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.head_ref }}
       - name: Setup Go
@@ -40,8 +40,8 @@ jobs:
       - name: go mod tidy, make all
         run: |
           make tidy && make all
-          git config user.name opentelemetrybot
-          git config user.email 107717825+opentelemetrybot@users.noreply.github.com
+          git config user.name otelbot
+          git config user.email 197425009+otelbot@users.noreply.github.com
           echo "git diff --exit-code || (git add . && git commit -m \"go mod tidy, make all\" && git push)"
           git diff --exit-code || (git add . && git commit -m "go mod tidy, make all" && git push)
       - uses: actions-ecosystem/action-remove-labels@v1

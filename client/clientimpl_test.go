@@ -550,15 +550,23 @@ func TestFirstStatusReport(t *testing.T) {
 
 		// Start a Server.
 		srv := internal.StartMockServer(t)
+		var isFirstSrvMessage atomic.Bool
+		isFirstSrvMessage.Store(true)
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-			assert.EqualValues(t, 0, msg.SequenceNum)
-			return &protobufs.ServerToAgent{
-				InstanceUid:  msg.InstanceUid,
-				RemoteConfig: remoteConfig,
+			if isFirstSrvMessage.Load() {
+				isFirstSrvMessage.Store(false)
+				assert.EqualValues(t, 0, msg.SequenceNum)
+				return &protobufs.ServerToAgent{
+					InstanceUid:  msg.InstanceUid,
+					RemoteConfig: remoteConfig,
+				}
 			}
+			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		}
 
 		// Start a client.
+		var isFirstClientMessage atomic.Bool
+		isFirstClientMessage.Store(true)
 		var connected, remoteConfigReceived int64
 		settings := types.StartSettings{
 			Callbacks: types.Callbacks{
@@ -566,10 +574,13 @@ func TestFirstStatusReport(t *testing.T) {
 					atomic.AddInt64(&connected, 1)
 				},
 				OnMessage: func(ctx context.Context, msg *types.MessageData) {
-					// Verify that the client received exactly the remote config that
-					// the Server sent.
-					assert.True(t, proto.Equal(remoteConfig, msg.RemoteConfig))
-					atomic.AddInt64(&remoteConfigReceived, 1)
+					if isFirstClientMessage.Load() {
+						isFirstClientMessage.Store(false)
+						// Verify that the client received exactly the remote config that
+						// the Server sent.
+						assert.True(t, proto.Equal(remoteConfig, msg.RemoteConfig))
+						atomic.AddInt64(&remoteConfigReceived, 1)
+					}
 				},
 			},
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig,

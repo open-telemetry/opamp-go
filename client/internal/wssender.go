@@ -122,6 +122,15 @@ out:
 			s.sendNextMessage(ctx)
 
 		case <-ctx.Done():
+			select {
+			// If there is a pending message, we will try to send it before closing the connection.
+			case <-s.hasPendingMessage:
+				stopCtx, cancel := context.WithTimeout(context.Background(), defaultSendCloseMessageTimeout)
+				defer cancel()
+				s.sendNextMessage(stopCtx)
+			default:
+			}
+
 			if err := s.sendCloseMessage(); err != nil && err != websocket.ErrCloseSent {
 				s.err = err
 			}
