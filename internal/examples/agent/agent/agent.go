@@ -116,7 +116,6 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string, initia
 		}
 		agent.tlsConfig = tlsConfig
 	}
-	agent.tlsConfig = tlsConfig
 	if err := agent.connect(withTLSConfig(agent.tlsConfig)); err != nil {
 		agent.logger.Errorf(context.Background(), "Cannot connect OpAMP client: %v", err)
 		return nil
