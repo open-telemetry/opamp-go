@@ -26,6 +26,12 @@ type StartSettings struct {
 	// Optional TLS config for HTTP connection.
 	TLSConfig *tls.Config
 
+	// Optional Proxy configuration
+	// The ProxyURL may be http(s) or socks5; if no schema is specified http is assumed.
+	ProxyURL string
+	// ProxyHeaders gives the headers an HTTP client will present on a proxy CONNECT request.
+	ProxyHeaders http.Header
+
 	// Agent information.
 	InstanceUid InstanceUid
 

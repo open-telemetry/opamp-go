@@ -1429,6 +1429,9 @@ type OpAMPConnectionSettings struct {
 	// Optional connection specific TLS settings.
 	// Status: [Development]
 	Tls *TLSConnectionSettings `protobuf:"bytes,5,opt,name=tls,proto3" json:"tls,omitempty"`
+	// Optional connection specific proxy settings.
+	// Status: [Development]
+	Proxy *ProxyConnectionSettings `protobuf:"bytes,6,opt,name=proxy,proto3" json:"proxy,omitempty"`
 }
 
 func (x *OpAMPConnectionSettings) Reset() {
@@ -1498,6 +1501,13 @@ func (x *OpAMPConnectionSettings) GetTls() *TLSConnectionSettings {
 	return nil
 }
 
+func (x *OpAMPConnectionSettings) GetProxy() *ProxyConnectionSettings {
+	if x != nil {
+		return x.Proxy
+	}
+	return nil
+}
+
 // The TelemetryConnectionSettings message is a collection of fields which comprise an
 // offer from the Server to the Agent to use the specified settings for a network
 // connection to report own telemetry.
@@ -1527,6 +1537,9 @@ type TelemetryConnectionSettings struct {
 	// Optional connection specific TLS settings.
 	// Status: [Development]
 	Tls *TLSConnectionSettings `protobuf:"bytes,4,opt,name=tls,proto3" json:"tls,omitempty"`
+	// Optional connection specific proxy settings.
+	// Status: [Development]
+	Proxy *ProxyConnectionSettings `protobuf:"bytes,5,opt,name=proxy,proto3" json:"proxy,omitempty"`
 }
 
 func (x *TelemetryConnectionSettings) Reset() {
@@ -1589,6 +1602,13 @@ func (x *TelemetryConnectionSettings) GetTls() *TLSConnectionSettings {
 	return nil
 }
 
+func (x *TelemetryConnectionSettings) GetProxy() *ProxyConnectionSettings {
+	if x != nil {
+		return x.Proxy
+	}
+	return nil
+}
+
 // The OtherConnectionSettings message is a collection of fields which comprise an
 // offer from the Server to the Agent to use the specified settings for a network
 // connection. It is not required that all fields in this message are specified.
@@ -1636,6 +1656,9 @@ type OtherConnectionSettings struct {
 	// Optional connection specific TLS settings.
 	// Status: [Development]
 	Tls *TLSConnectionSettings `protobuf:"bytes,5,opt,name=tls,proto3" json:"tls,omitempty"`
+	// Optional connection specific proxy settings.
+	// Status: [Development]
+	Proxy *ProxyConnectionSettings `protobuf:"bytes,6,opt,name=proxy,proto3" json:"proxy,omitempty"`
 }
 
 func (x *OtherConnectionSettings) Reset() {
@@ -1701,6 +1724,13 @@ func (x *OtherConnectionSettings) GetOtherSettings() map[string]string {
 func (x *OtherConnectionSettings) GetTls() *TLSConnectionSettings {
 	if x != nil {
 		return x.Tls
+	}
+	return nil
+}
+
+func (x *OtherConnectionSettings) GetProxy() *ProxyConnectionSettings {
+	if x != nil {
+		return x.Proxy
 	}
 	return nil
 }
@@ -1801,6 +1831,67 @@ func (x *TLSConnectionSettings) GetCipherSuites() []string {
 	return nil
 }
 
+// Status: [Development]
+type ProxyConnectionSettings struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// A URL, host:port or some other destination specifier.
+	Url string `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	// Optional headers to send to proxies during CONNECT requests.
+	// These headers can be ignored for non-HTTP based proxies.
+	// For example:
+	// key="Authorization", Value="Basic YWxhZGRpbjpvcGVuc2VzYW1l".
+	ConnectHeaders *Headers `protobuf:"bytes,2,opt,name=connect_headers,json=connectHeaders,proto3" json:"connect_headers,omitempty"`
+}
+
+func (x *ProxyConnectionSettings) Reset() {
+	*x = ProxyConnectionSettings{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_opamp_proto_msgTypes[12]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ProxyConnectionSettings) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProxyConnectionSettings) ProtoMessage() {}
+
+func (x *ProxyConnectionSettings) ProtoReflect() protoreflect.Message {
+	mi := &file_opamp_proto_msgTypes[12]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProxyConnectionSettings.ProtoReflect.Descriptor instead.
+func (*ProxyConnectionSettings) Descriptor() ([]byte, []int) {
+	return file_opamp_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ProxyConnectionSettings) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *ProxyConnectionSettings) GetConnectHeaders() *Headers {
+	if x != nil {
+		return x.ConnectHeaders
+	}
+	return nil
+}
+
 // Status: [Beta]
 type Headers struct {
 	state         protoimpl.MessageState
@@ -1813,7 +1904,7 @@ type Headers struct {
 func (x *Headers) Reset() {
 	*x = Headers{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[12]
+		mi := &file_opamp_proto_msgTypes[13]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1826,7 +1917,7 @@ func (x *Headers) String() string {
 func (*Headers) ProtoMessage() {}
 
 func (x *Headers) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[12]
+	mi := &file_opamp_proto_msgTypes[13]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1839,7 +1930,7 @@ func (x *Headers) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Headers.ProtoReflect.Descriptor instead.
 func (*Headers) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{12}
+	return file_opamp_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Headers) GetHeaders() []*Header {
@@ -1862,7 +1953,7 @@ type Header struct {
 func (x *Header) Reset() {
 	*x = Header{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[13]
+		mi := &file_opamp_proto_msgTypes[14]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1875,7 +1966,7 @@ func (x *Header) String() string {
 func (*Header) ProtoMessage() {}
 
 func (x *Header) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[13]
+	mi := &file_opamp_proto_msgTypes[14]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1888,7 +1979,7 @@ func (x *Header) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Header.ProtoReflect.Descriptor instead.
 func (*Header) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{13}
+	return file_opamp_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Header) GetKey() string {
@@ -1927,7 +2018,7 @@ type TLSCertificate struct {
 func (x *TLSCertificate) Reset() {
 	*x = TLSCertificate{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[14]
+		mi := &file_opamp_proto_msgTypes[15]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1940,7 +2031,7 @@ func (x *TLSCertificate) String() string {
 func (*TLSCertificate) ProtoMessage() {}
 
 func (x *TLSCertificate) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[14]
+	mi := &file_opamp_proto_msgTypes[15]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1953,7 +2044,7 @@ func (x *TLSCertificate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TLSCertificate.ProtoReflect.Descriptor instead.
 func (*TLSCertificate) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{14}
+	return file_opamp_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *TLSCertificate) GetCert() []byte {
@@ -2026,7 +2117,7 @@ type ConnectionSettingsOffers struct {
 func (x *ConnectionSettingsOffers) Reset() {
 	*x = ConnectionSettingsOffers{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[15]
+		mi := &file_opamp_proto_msgTypes[16]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2039,7 +2130,7 @@ func (x *ConnectionSettingsOffers) String() string {
 func (*ConnectionSettingsOffers) ProtoMessage() {}
 
 func (x *ConnectionSettingsOffers) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[15]
+	mi := &file_opamp_proto_msgTypes[16]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2052,7 +2143,7 @@ func (x *ConnectionSettingsOffers) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectionSettingsOffers.ProtoReflect.Descriptor instead.
 func (*ConnectionSettingsOffers) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{15}
+	return file_opamp_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ConnectionSettingsOffers) GetHash() []byte {
@@ -2121,7 +2212,7 @@ type PackagesAvailable struct {
 func (x *PackagesAvailable) Reset() {
 	*x = PackagesAvailable{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[16]
+		mi := &file_opamp_proto_msgTypes[17]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2134,7 +2225,7 @@ func (x *PackagesAvailable) String() string {
 func (*PackagesAvailable) ProtoMessage() {}
 
 func (x *PackagesAvailable) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[16]
+	mi := &file_opamp_proto_msgTypes[17]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2147,7 +2238,7 @@ func (x *PackagesAvailable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PackagesAvailable.ProtoReflect.Descriptor instead.
 func (*PackagesAvailable) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{16}
+	return file_opamp_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *PackagesAvailable) GetPackages() map[string]*PackageAvailable {
@@ -2202,7 +2293,7 @@ type PackageAvailable struct {
 func (x *PackageAvailable) Reset() {
 	*x = PackageAvailable{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[17]
+		mi := &file_opamp_proto_msgTypes[18]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2215,7 +2306,7 @@ func (x *PackageAvailable) String() string {
 func (*PackageAvailable) ProtoMessage() {}
 
 func (x *PackageAvailable) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[17]
+	mi := &file_opamp_proto_msgTypes[18]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2228,7 +2319,7 @@ func (x *PackageAvailable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PackageAvailable.ProtoReflect.Descriptor instead.
 func (*PackageAvailable) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{17}
+	return file_opamp_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *PackageAvailable) GetType() PackageType {
@@ -2291,7 +2382,7 @@ type DownloadableFile struct {
 func (x *DownloadableFile) Reset() {
 	*x = DownloadableFile{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[18]
+		mi := &file_opamp_proto_msgTypes[19]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2304,7 +2395,7 @@ func (x *DownloadableFile) String() string {
 func (*DownloadableFile) ProtoMessage() {}
 
 func (x *DownloadableFile) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[18]
+	mi := &file_opamp_proto_msgTypes[19]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2317,7 +2408,7 @@ func (x *DownloadableFile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DownloadableFile.ProtoReflect.Descriptor instead.
 func (*DownloadableFile) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{18}
+	return file_opamp_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *DownloadableFile) GetDownloadUrl() string {
@@ -2364,7 +2455,7 @@ type ServerErrorResponse struct {
 func (x *ServerErrorResponse) Reset() {
 	*x = ServerErrorResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[19]
+		mi := &file_opamp_proto_msgTypes[20]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2377,7 +2468,7 @@ func (x *ServerErrorResponse) String() string {
 func (*ServerErrorResponse) ProtoMessage() {}
 
 func (x *ServerErrorResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[19]
+	mi := &file_opamp_proto_msgTypes[20]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2390,7 +2481,7 @@ func (x *ServerErrorResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerErrorResponse.ProtoReflect.Descriptor instead.
 func (*ServerErrorResponse) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{19}
+	return file_opamp_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ServerErrorResponse) GetType() ServerErrorResponseType {
@@ -2443,7 +2534,7 @@ type RetryInfo struct {
 func (x *RetryInfo) Reset() {
 	*x = RetryInfo{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[20]
+		mi := &file_opamp_proto_msgTypes[21]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2456,7 +2547,7 @@ func (x *RetryInfo) String() string {
 func (*RetryInfo) ProtoMessage() {}
 
 func (x *RetryInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[20]
+	mi := &file_opamp_proto_msgTypes[21]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2469,7 +2560,7 @@ func (x *RetryInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryInfo.ProtoReflect.Descriptor instead.
 func (*RetryInfo) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{20}
+	return file_opamp_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *RetryInfo) GetRetryAfterNanoseconds() uint64 {
@@ -2493,7 +2584,7 @@ type ServerToAgentCommand struct {
 func (x *ServerToAgentCommand) Reset() {
 	*x = ServerToAgentCommand{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[21]
+		mi := &file_opamp_proto_msgTypes[22]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2506,7 +2597,7 @@ func (x *ServerToAgentCommand) String() string {
 func (*ServerToAgentCommand) ProtoMessage() {}
 
 func (x *ServerToAgentCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[21]
+	mi := &file_opamp_proto_msgTypes[22]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2519,7 +2610,7 @@ func (x *ServerToAgentCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerToAgentCommand.ProtoReflect.Descriptor instead.
 func (*ServerToAgentCommand) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{21}
+	return file_opamp_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ServerToAgentCommand) GetType() CommandType {
@@ -2571,7 +2662,7 @@ type AgentDescription struct {
 func (x *AgentDescription) Reset() {
 	*x = AgentDescription{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[22]
+		mi := &file_opamp_proto_msgTypes[23]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2584,7 +2675,7 @@ func (x *AgentDescription) String() string {
 func (*AgentDescription) ProtoMessage() {}
 
 func (x *AgentDescription) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[22]
+	mi := &file_opamp_proto_msgTypes[23]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2597,7 +2688,7 @@ func (x *AgentDescription) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentDescription.ProtoReflect.Descriptor instead.
 func (*AgentDescription) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{22}
+	return file_opamp_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *AgentDescription) GetIdentifyingAttributes() []*KeyValue {
@@ -2644,7 +2735,7 @@ type ComponentHealth struct {
 func (x *ComponentHealth) Reset() {
 	*x = ComponentHealth{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[23]
+		mi := &file_opamp_proto_msgTypes[24]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2657,7 +2748,7 @@ func (x *ComponentHealth) String() string {
 func (*ComponentHealth) ProtoMessage() {}
 
 func (x *ComponentHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[23]
+	mi := &file_opamp_proto_msgTypes[24]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2670,7 +2761,7 @@ func (x *ComponentHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComponentHealth.ProtoReflect.Descriptor instead.
 func (*ComponentHealth) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{23}
+	return file_opamp_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ComponentHealth) GetHealthy() bool {
@@ -2727,7 +2818,7 @@ type EffectiveConfig struct {
 func (x *EffectiveConfig) Reset() {
 	*x = EffectiveConfig{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[24]
+		mi := &file_opamp_proto_msgTypes[25]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2740,7 +2831,7 @@ func (x *EffectiveConfig) String() string {
 func (*EffectiveConfig) ProtoMessage() {}
 
 func (x *EffectiveConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[24]
+	mi := &file_opamp_proto_msgTypes[25]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2753,7 +2844,7 @@ func (x *EffectiveConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EffectiveConfig.ProtoReflect.Descriptor instead.
 func (*EffectiveConfig) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{24}
+	return file_opamp_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *EffectiveConfig) GetConfigMap() *AgentConfigMap {
@@ -2782,7 +2873,7 @@ type RemoteConfigStatus struct {
 func (x *RemoteConfigStatus) Reset() {
 	*x = RemoteConfigStatus{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[25]
+		mi := &file_opamp_proto_msgTypes[26]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2795,7 +2886,7 @@ func (x *RemoteConfigStatus) String() string {
 func (*RemoteConfigStatus) ProtoMessage() {}
 
 func (x *RemoteConfigStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[25]
+	mi := &file_opamp_proto_msgTypes[26]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2808,7 +2899,7 @@ func (x *RemoteConfigStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteConfigStatus.ProtoReflect.Descriptor instead.
 func (*RemoteConfigStatus) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{25}
+	return file_opamp_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *RemoteConfigStatus) GetLastRemoteConfigHash() []byte {
@@ -2852,7 +2943,7 @@ type ConnectionSettingsStatus struct {
 func (x *ConnectionSettingsStatus) Reset() {
 	*x = ConnectionSettingsStatus{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[26]
+		mi := &file_opamp_proto_msgTypes[27]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2865,7 +2956,7 @@ func (x *ConnectionSettingsStatus) String() string {
 func (*ConnectionSettingsStatus) ProtoMessage() {}
 
 func (x *ConnectionSettingsStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[26]
+	mi := &file_opamp_proto_msgTypes[27]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2878,7 +2969,7 @@ func (x *ConnectionSettingsStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectionSettingsStatus.ProtoReflect.Descriptor instead.
 func (*ConnectionSettingsStatus) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{26}
+	return file_opamp_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ConnectionSettingsStatus) GetLastConnectionSettingsHash() []byte {
@@ -2930,7 +3021,7 @@ type PackageStatuses struct {
 func (x *PackageStatuses) Reset() {
 	*x = PackageStatuses{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[27]
+		mi := &file_opamp_proto_msgTypes[28]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2943,7 +3034,7 @@ func (x *PackageStatuses) String() string {
 func (*PackageStatuses) ProtoMessage() {}
 
 func (x *PackageStatuses) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[27]
+	mi := &file_opamp_proto_msgTypes[28]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2956,7 +3047,7 @@ func (x *PackageStatuses) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PackageStatuses.ProtoReflect.Descriptor instead.
 func (*PackageStatuses) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{27}
+	return file_opamp_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *PackageStatuses) GetPackages() map[string]*PackageStatus {
@@ -3038,7 +3129,7 @@ type PackageStatus struct {
 func (x *PackageStatus) Reset() {
 	*x = PackageStatus{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[28]
+		mi := &file_opamp_proto_msgTypes[29]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3051,7 +3142,7 @@ func (x *PackageStatus) String() string {
 func (*PackageStatus) ProtoMessage() {}
 
 func (x *PackageStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[28]
+	mi := &file_opamp_proto_msgTypes[29]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3064,7 +3155,7 @@ func (x *PackageStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PackageStatus.ProtoReflect.Descriptor instead.
 func (*PackageStatus) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{28}
+	return file_opamp_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *PackageStatus) GetName() string {
@@ -3139,7 +3230,7 @@ type PackageDownloadDetails struct {
 func (x *PackageDownloadDetails) Reset() {
 	*x = PackageDownloadDetails{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[29]
+		mi := &file_opamp_proto_msgTypes[30]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3152,7 +3243,7 @@ func (x *PackageDownloadDetails) String() string {
 func (*PackageDownloadDetails) ProtoMessage() {}
 
 func (x *PackageDownloadDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[29]
+	mi := &file_opamp_proto_msgTypes[30]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3165,7 +3256,7 @@ func (x *PackageDownloadDetails) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PackageDownloadDetails.ProtoReflect.Descriptor instead.
 func (*PackageDownloadDetails) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{29}
+	return file_opamp_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *PackageDownloadDetails) GetDownloadPercent() float64 {
@@ -3198,7 +3289,7 @@ type AgentIdentification struct {
 func (x *AgentIdentification) Reset() {
 	*x = AgentIdentification{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[30]
+		mi := &file_opamp_proto_msgTypes[31]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3211,7 +3302,7 @@ func (x *AgentIdentification) String() string {
 func (*AgentIdentification) ProtoMessage() {}
 
 func (x *AgentIdentification) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[30]
+	mi := &file_opamp_proto_msgTypes[31]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3224,7 +3315,7 @@ func (x *AgentIdentification) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentIdentification.ProtoReflect.Descriptor instead.
 func (*AgentIdentification) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{30}
+	return file_opamp_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AgentIdentification) GetNewInstanceUid() []byte {
@@ -3259,7 +3350,7 @@ type AgentRemoteConfig struct {
 func (x *AgentRemoteConfig) Reset() {
 	*x = AgentRemoteConfig{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[31]
+		mi := &file_opamp_proto_msgTypes[32]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3272,7 +3363,7 @@ func (x *AgentRemoteConfig) String() string {
 func (*AgentRemoteConfig) ProtoMessage() {}
 
 func (x *AgentRemoteConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[31]
+	mi := &file_opamp_proto_msgTypes[32]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3285,7 +3376,7 @@ func (x *AgentRemoteConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentRemoteConfig.ProtoReflect.Descriptor instead.
 func (*AgentRemoteConfig) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{31}
+	return file_opamp_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *AgentRemoteConfig) GetConfig() *AgentConfigMap {
@@ -3318,7 +3409,7 @@ type AgentConfigMap struct {
 func (x *AgentConfigMap) Reset() {
 	*x = AgentConfigMap{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[32]
+		mi := &file_opamp_proto_msgTypes[33]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3331,7 +3422,7 @@ func (x *AgentConfigMap) String() string {
 func (*AgentConfigMap) ProtoMessage() {}
 
 func (x *AgentConfigMap) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[32]
+	mi := &file_opamp_proto_msgTypes[33]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3344,7 +3435,7 @@ func (x *AgentConfigMap) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentConfigMap.ProtoReflect.Descriptor instead.
 func (*AgentConfigMap) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{32}
+	return file_opamp_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *AgentConfigMap) GetConfigMap() map[string]*AgentConfigFile {
@@ -3370,7 +3461,7 @@ type AgentConfigFile struct {
 func (x *AgentConfigFile) Reset() {
 	*x = AgentConfigFile{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[33]
+		mi := &file_opamp_proto_msgTypes[34]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3383,7 +3474,7 @@ func (x *AgentConfigFile) String() string {
 func (*AgentConfigFile) ProtoMessage() {}
 
 func (x *AgentConfigFile) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[33]
+	mi := &file_opamp_proto_msgTypes[34]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3396,7 +3487,7 @@ func (x *AgentConfigFile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentConfigFile.ProtoReflect.Descriptor instead.
 func (*AgentConfigFile) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{33}
+	return file_opamp_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *AgentConfigFile) GetBody() []byte {
@@ -3428,7 +3519,7 @@ type CustomCapabilities struct {
 func (x *CustomCapabilities) Reset() {
 	*x = CustomCapabilities{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[34]
+		mi := &file_opamp_proto_msgTypes[35]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3441,7 +3532,7 @@ func (x *CustomCapabilities) String() string {
 func (*CustomCapabilities) ProtoMessage() {}
 
 func (x *CustomCapabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[34]
+	mi := &file_opamp_proto_msgTypes[35]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3454,7 +3545,7 @@ func (x *CustomCapabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CustomCapabilities.ProtoReflect.Descriptor instead.
 func (*CustomCapabilities) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{34}
+	return file_opamp_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *CustomCapabilities) GetCapabilities() []string {
@@ -3487,7 +3578,7 @@ type CustomMessage struct {
 func (x *CustomMessage) Reset() {
 	*x = CustomMessage{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_opamp_proto_msgTypes[35]
+		mi := &file_opamp_proto_msgTypes[36]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3500,7 +3591,7 @@ func (x *CustomMessage) String() string {
 func (*CustomMessage) ProtoMessage() {}
 
 func (x *CustomMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_opamp_proto_msgTypes[35]
+	mi := &file_opamp_proto_msgTypes[36]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3513,7 +3604,7 @@ func (x *CustomMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CustomMessage.ProtoReflect.Descriptor instead.
 func (*CustomMessage) Descriptor() ([]byte, []int) {
-	return file_opamp_proto_rawDescGZIP(), []int{35}
+	return file_opamp_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *CustomMessage) GetCapability() string {
@@ -3698,7 +3789,7 @@ var file_opamp_proto_rawDesc = []byte{
 	0x61, 0x67, 0x65, 0x18, 0x0b, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x6f, 0x70, 0x61, 0x6d,
 	0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x43, 0x75, 0x73, 0x74, 0x6f, 0x6d, 0x4d, 0x65,
 	0x73, 0x73, 0x61, 0x67, 0x65, 0x52, 0x0d, 0x63, 0x75, 0x73, 0x74, 0x6f, 0x6d, 0x4d, 0x65, 0x73,
-	0x73, 0x61, 0x67, 0x65, 0x22, 0xaf, 0x02, 0x0a, 0x17, 0x4f, 0x70, 0x41, 0x4d, 0x50, 0x43, 0x6f,
+	0x73, 0x61, 0x67, 0x65, 0x22, 0xeb, 0x02, 0x0a, 0x17, 0x4f, 0x70, 0x41, 0x4d, 0x50, 0x43, 0x6f,
 	0x6e, 0x6e, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73,
 	0x12, 0x31, 0x0a, 0x14, 0x64, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f,
 	0x65, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x13,
@@ -3717,65 +3808,83 @@ var file_opamp_proto_rawDesc = []byte{
 	0x12, 0x34, 0x0a, 0x03, 0x74, 0x6c, 0x73, 0x18, 0x05, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x22, 0x2e,
 	0x6f, 0x70, 0x61, 0x6d, 0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x4c, 0x53, 0x43,
 	0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67,
-	0x73, 0x52, 0x03, 0x74, 0x6c, 0x73, 0x22, 0xf5, 0x01, 0x0a, 0x1b, 0x54, 0x65, 0x6c, 0x65, 0x6d,
-	0x65, 0x74, 0x72, 0x79, 0x43, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x65,
-	0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x12, 0x31, 0x0a, 0x14, 0x64, 0x65, 0x73, 0x74, 0x69, 0x6e,
-	0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x65, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x18, 0x01,
-	0x20, 0x01, 0x28, 0x09, 0x52, 0x13, 0x64, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f,
-	0x6e, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x12, 0x2e, 0x0a, 0x07, 0x68, 0x65, 0x61,
-	0x64, 0x65, 0x72, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x6f, 0x70, 0x61,
-	0x6d, 0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x73,
-	0x52, 0x07, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x73, 0x12, 0x3d, 0x0a, 0x0b, 0x63, 0x65, 0x72,
-	0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1b,
-	0x2e, 0x6f, 0x70, 0x61, 0x6d, 0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x4c, 0x53,
-	0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x52, 0x0b, 0x63, 0x65, 0x72,
-	0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x12, 0x34, 0x0a, 0x03, 0x74, 0x6c, 0x73, 0x18,
-	0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x22, 0x2e, 0x6f, 0x70, 0x61, 0x6d, 0x70, 0x2e, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x4c, 0x53, 0x43, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x69, 0x6f,
-	0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x52, 0x03, 0x74, 0x6c, 0x73, 0x22, 0x93,
-	0x03, 0x0a, 0x17, 0x4f, 0x74, 0x68, 0x65, 0x72, 0x43, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x69,
-	0x6f, 0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x12, 0x31, 0x0a, 0x14, 0x64, 0x65,
-	0x73, 0x74, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x65, 0x6e, 0x64, 0x70, 0x6f, 0x69,
-	0x6e, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x13, 0x64, 0x65, 0x73, 0x74, 0x69, 0x6e,
-	0x61, 0x74, 0x69, 0x6f, 0x6e, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x12, 0x2e, 0x0a,
-	0x07, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14,
-	0x2e, 0x6f, 0x70, 0x61, 0x6d, 0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x48, 0x65, 0x61,
-	0x64, 0x65, 0x72, 0x73, 0x52, 0x07, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x73, 0x12, 0x3d, 0x0a,
-	0x0b, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x18, 0x03, 0x20, 0x01,
-	0x28, 0x0b, 0x32, 0x1b, 0x2e, 0x6f, 0x70, 0x61, 0x6d, 0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x2e, 0x54, 0x4c, 0x53, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x52,
-	0x0b, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x12, 0x5e, 0x0a, 0x0e,
-	0x6f, 0x74, 0x68, 0x65, 0x72, 0x5f, 0x73, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x18, 0x04,
-	0x20, 0x03, 0x28, 0x0b, 0x32, 0x37, 0x2e, 0x6f, 0x70, 0x61, 0x6d, 0x70, 0x2e, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x2e, 0x4f, 0x74, 0x68, 0x65, 0x72, 0x43, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x69,
-	0x6f, 0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x2e, 0x4f, 0x74, 0x68, 0x65, 0x72,
-	0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x52, 0x0d, 0x6f,
-	0x74, 0x68, 0x65, 0x72, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x12, 0x34, 0x0a, 0x03,
-	0x74, 0x6c, 0x73, 0x18, 0x05, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x22, 0x2e, 0x6f, 0x70, 0x61, 0x6d,
-	0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x4c, 0x53, 0x43, 0x6f, 0x6e, 0x6e, 0x65,
-	0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x52, 0x03, 0x74,
-	0x6c, 0x73, 0x1a, 0x40, 0x0a, 0x12, 0x4f, 0x74, 0x68, 0x65, 0x72, 0x53, 0x65, 0x74, 0x74, 0x69,
-	0x6e, 0x67, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18,
-	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61,
-	0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65,
-	0x3a, 0x02, 0x38, 0x01, 0x22, 0x98, 0x02, 0x0a, 0x15, 0x54, 0x4c, 0x53, 0x43, 0x6f, 0x6e, 0x6e,
-	0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x12, 0x26,
-	0x0a, 0x0f, 0x63, 0x61, 0x5f, 0x70, 0x65, 0x6d, 0x5f, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74,
-	0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0d, 0x63, 0x61, 0x50, 0x65, 0x6d, 0x43, 0x6f,
-	0x6e, 0x74, 0x65, 0x6e, 0x74, 0x73, 0x12, 0x3e, 0x0a, 0x1c, 0x69, 0x6e, 0x63, 0x6c, 0x75, 0x64,
-	0x65, 0x5f, 0x73, 0x79, 0x73, 0x74, 0x65, 0x6d, 0x5f, 0x63, 0x61, 0x5f, 0x63, 0x65, 0x72, 0x74,
-	0x73, 0x5f, 0x70, 0x6f, 0x6f, 0x6c, 0x18, 0x02, 0x20, 0x01, 0x28, 0x08, 0x52, 0x18, 0x69, 0x6e,
-	0x63, 0x6c, 0x75, 0x64, 0x65, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6d, 0x43, 0x61, 0x43, 0x65, 0x72,
-	0x74, 0x73, 0x50, 0x6f, 0x6f, 0x6c, 0x12, 0x30, 0x0a, 0x14, 0x69, 0x6e, 0x73, 0x65, 0x63, 0x75,
-	0x72, 0x65, 0x5f, 0x73, 0x6b, 0x69, 0x70, 0x5f, 0x76, 0x65, 0x72, 0x69, 0x66, 0x79, 0x18, 0x03,
-	0x20, 0x01, 0x28, 0x08, 0x52, 0x12, 0x69, 0x6e, 0x73, 0x65, 0x63, 0x75, 0x72, 0x65, 0x53, 0x6b,
-	0x69, 0x70, 0x56, 0x65, 0x72, 0x69, 0x66, 0x79, 0x12, 0x1f, 0x0a, 0x0b, 0x6d, 0x69, 0x6e, 0x5f,
-	0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a, 0x6d,
-	0x69, 0x6e, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x1f, 0x0a, 0x0b, 0x6d, 0x61, 0x78,
-	0x5f, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a,
-	0x6d, 0x61, 0x78, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x23, 0x0a, 0x0d, 0x63, 0x69,
-	0x70, 0x68, 0x65, 0x72, 0x5f, 0x73, 0x75, 0x69, 0x74, 0x65, 0x73, 0x18, 0x06, 0x20, 0x03, 0x28,
-	0x09, 0x52, 0x0c, 0x63, 0x69, 0x70, 0x68, 0x65, 0x72, 0x53, 0x75, 0x69, 0x74, 0x65, 0x73, 0x22,
+	0x73, 0x52, 0x03, 0x74, 0x6c, 0x73, 0x12, 0x3a, 0x0a, 0x05, 0x70, 0x72, 0x6f, 0x78, 0x79, 0x18,
+	0x06, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x24, 0x2e, 0x6f, 0x70, 0x61, 0x6d, 0x70, 0x2e, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x2e, 0x50, 0x72, 0x6f, 0x78, 0x79, 0x43, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74,
+	0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x52, 0x05, 0x70, 0x72, 0x6f,
+	0x78, 0x79, 0x22, 0xb1, 0x02, 0x0a, 0x1b, 0x54, 0x65, 0x6c, 0x65, 0x6d, 0x65, 0x74, 0x72, 0x79,
+	0x43, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e,
+	0x67, 0x73, 0x12, 0x31, 0x0a, 0x14, 0x64, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f,
+	0x6e, 0x5f, 0x65, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x13, 0x64, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x45, 0x6e, 0x64,
+	0x70, 0x6f, 0x69, 0x6e, 0x74, 0x12, 0x2e, 0x0a, 0x07, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x73,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x6f, 0x70, 0x61, 0x6d, 0x70, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x73, 0x52, 0x07, 0x68, 0x65,
+	0x61, 0x64, 0x65, 0x72, 0x73, 0x12, 0x3d, 0x0a, 0x0b, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69,
+	0x63, 0x61, 0x74, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1b, 0x2e, 0x6f, 0x70, 0x61,
+	0x6d, 0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x4c, 0x53, 0x43, 0x65, 0x72, 0x74,
+	0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x52, 0x0b, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69,
+	0x63, 0x61, 0x74, 0x65, 0x12, 0x34, 0x0a, 0x03, 0x74, 0x6c, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28,
+	0x0b, 0x32, 0x22, 0x2e, 0x6f, 0x70, 0x61, 0x6d, 0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
+	0x54, 0x4c, 0x53, 0x43, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74,
+	0x74, 0x69, 0x6e, 0x67, 0x73, 0x52, 0x03, 0x74, 0x6c, 0x73, 0x12, 0x3a, 0x0a, 0x05, 0x70, 0x72,
+	0x6f, 0x78, 0x79, 0x18, 0x05, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x24, 0x2e, 0x6f, 0x70, 0x61, 0x6d,
+	0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x50, 0x72, 0x6f, 0x78, 0x79, 0x43, 0x6f, 0x6e,
+	0x6e, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x52,
+	0x05, 0x70, 0x72, 0x6f, 0x78, 0x79, 0x22, 0xcf, 0x03, 0x0a, 0x17, 0x4f, 0x74, 0x68, 0x65, 0x72,
+	0x43, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e,
+	0x67, 0x73, 0x12, 0x31, 0x0a, 0x14, 0x64, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f,
+	0x6e, 0x5f, 0x65, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x13, 0x64, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x45, 0x6e, 0x64,
+	0x70, 0x6f, 0x69, 0x6e, 0x74, 0x12, 0x2e, 0x0a, 0x07, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x73,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x6f, 0x70, 0x61, 0x6d, 0x70, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x73, 0x52, 0x07, 0x68, 0x65,
+	0x61, 0x64, 0x65, 0x72, 0x73, 0x12, 0x3d, 0x0a, 0x0b, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69,
+	0x63, 0x61, 0x74, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1b, 0x2e, 0x6f, 0x70, 0x61,
+	0x6d, 0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x4c, 0x53, 0x43, 0x65, 0x72, 0x74,
+	0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x52, 0x0b, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69,
+	0x63, 0x61, 0x74, 0x65, 0x12, 0x5e, 0x0a, 0x0e, 0x6f, 0x74, 0x68, 0x65, 0x72, 0x5f, 0x73, 0x65,
+	0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x18, 0x04, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x37, 0x2e, 0x6f,
+	0x70, 0x61, 0x6d, 0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4f, 0x74, 0x68, 0x65, 0x72,
+	0x43, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e,
+	0x67, 0x73, 0x2e, 0x4f, 0x74, 0x68, 0x65, 0x72, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73,
+	0x45, 0x6e, 0x74, 0x72, 0x79, 0x52, 0x0d, 0x6f, 0x74, 0x68, 0x65, 0x72, 0x53, 0x65, 0x74, 0x74,
+	0x69, 0x6e, 0x67, 0x73, 0x12, 0x34, 0x0a, 0x03, 0x74, 0x6c, 0x73, 0x18, 0x05, 0x20, 0x01, 0x28,
+	0x0b, 0x32, 0x22, 0x2e, 0x6f, 0x70, 0x61, 0x6d, 0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
+	0x54, 0x4c, 0x53, 0x43, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74,
+	0x74, 0x69, 0x6e, 0x67, 0x73, 0x52, 0x03, 0x74, 0x6c, 0x73, 0x12, 0x3a, 0x0a, 0x05, 0x70, 0x72,
+	0x6f, 0x78, 0x79, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x24, 0x2e, 0x6f, 0x70, 0x61, 0x6d,
+	0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x50, 0x72, 0x6f, 0x78, 0x79, 0x43, 0x6f, 0x6e,
+	0x6e, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x52,
+	0x05, 0x70, 0x72, 0x6f, 0x78, 0x79, 0x1a, 0x40, 0x0a, 0x12, 0x4f, 0x74, 0x68, 0x65, 0x72, 0x53,
+	0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x10, 0x0a, 0x03,
+	0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x14,
+	0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x76,
+	0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x22, 0x98, 0x02, 0x0a, 0x15, 0x54, 0x4c, 0x53,
+	0x43, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e,
+	0x67, 0x73, 0x12, 0x26, 0x0a, 0x0f, 0x63, 0x61, 0x5f, 0x70, 0x65, 0x6d, 0x5f, 0x63, 0x6f, 0x6e,
+	0x74, 0x65, 0x6e, 0x74, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0d, 0x63, 0x61, 0x50,
+	0x65, 0x6d, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x73, 0x12, 0x3e, 0x0a, 0x1c, 0x69, 0x6e,
+	0x63, 0x6c, 0x75, 0x64, 0x65, 0x5f, 0x73, 0x79, 0x73, 0x74, 0x65, 0x6d, 0x5f, 0x63, 0x61, 0x5f,
+	0x63, 0x65, 0x72, 0x74, 0x73, 0x5f, 0x70, 0x6f, 0x6f, 0x6c, 0x18, 0x02, 0x20, 0x01, 0x28, 0x08,
+	0x52, 0x18, 0x69, 0x6e, 0x63, 0x6c, 0x75, 0x64, 0x65, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6d, 0x43,
+	0x61, 0x43, 0x65, 0x72, 0x74, 0x73, 0x50, 0x6f, 0x6f, 0x6c, 0x12, 0x30, 0x0a, 0x14, 0x69, 0x6e,
+	0x73, 0x65, 0x63, 0x75, 0x72, 0x65, 0x5f, 0x73, 0x6b, 0x69, 0x70, 0x5f, 0x76, 0x65, 0x72, 0x69,
+	0x66, 0x79, 0x18, 0x03, 0x20, 0x01, 0x28, 0x08, 0x52, 0x12, 0x69, 0x6e, 0x73, 0x65, 0x63, 0x75,
+	0x72, 0x65, 0x53, 0x6b, 0x69, 0x70, 0x56, 0x65, 0x72, 0x69, 0x66, 0x79, 0x12, 0x1f, 0x0a, 0x0b,
+	0x6d, 0x69, 0x6e, 0x5f, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x18, 0x04, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x0a, 0x6d, 0x69, 0x6e, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x1f, 0x0a,
+	0x0b, 0x6d, 0x61, 0x78, 0x5f, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x18, 0x05, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x0a, 0x6d, 0x61, 0x78, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x23,
+	0x0a, 0x0d, 0x63, 0x69, 0x70, 0x68, 0x65, 0x72, 0x5f, 0x73, 0x75, 0x69, 0x74, 0x65, 0x73, 0x18,
+	0x06, 0x20, 0x03, 0x28, 0x09, 0x52, 0x0c, 0x63, 0x69, 0x70, 0x68, 0x65, 0x72, 0x53, 0x75, 0x69,
+	0x74, 0x65, 0x73, 0x22, 0x6a, 0x0a, 0x17, 0x50, 0x72, 0x6f, 0x78, 0x79, 0x43, 0x6f, 0x6e, 0x6e,
+	0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x12, 0x10,
+	0x0a, 0x03, 0x75, 0x72, 0x6c, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x75, 0x72, 0x6c,
+	0x12, 0x3d, 0x0a, 0x0f, 0x63, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x5f, 0x68, 0x65, 0x61, 0x64,
+	0x65, 0x72, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x6f, 0x70, 0x61, 0x6d,
+	0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x73, 0x52,
+	0x0e, 0x63, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x73, 0x22,
 	0x38, 0x0a, 0x07, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x73, 0x12, 0x2d, 0x0a, 0x07, 0x68, 0x65,
 	0x61, 0x64, 0x65, 0x72, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x6f, 0x70,
 	0x61, 0x6d, 0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72,
@@ -4187,7 +4296,7 @@ func file_opamp_proto_rawDescGZIP() []byte {
 }
 
 var file_opamp_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
-var file_opamp_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
+var file_opamp_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
 var file_opamp_proto_goTypes = []interface{}{
 	(AgentToServerFlags)(0),                // 0: opamp.proto.AgentToServerFlags
 	(ServerToAgentFlags)(0),                // 1: opamp.proto.ServerToAgentFlags
@@ -4211,111 +4320,116 @@ var file_opamp_proto_goTypes = []interface{}{
 	(*TelemetryConnectionSettings)(nil),    // 19: opamp.proto.TelemetryConnectionSettings
 	(*OtherConnectionSettings)(nil),        // 20: opamp.proto.OtherConnectionSettings
 	(*TLSConnectionSettings)(nil),          // 21: opamp.proto.TLSConnectionSettings
-	(*Headers)(nil),                        // 22: opamp.proto.Headers
-	(*Header)(nil),                         // 23: opamp.proto.Header
-	(*TLSCertificate)(nil),                 // 24: opamp.proto.TLSCertificate
-	(*ConnectionSettingsOffers)(nil),       // 25: opamp.proto.ConnectionSettingsOffers
-	(*PackagesAvailable)(nil),              // 26: opamp.proto.PackagesAvailable
-	(*PackageAvailable)(nil),               // 27: opamp.proto.PackageAvailable
-	(*DownloadableFile)(nil),               // 28: opamp.proto.DownloadableFile
-	(*ServerErrorResponse)(nil),            // 29: opamp.proto.ServerErrorResponse
-	(*RetryInfo)(nil),                      // 30: opamp.proto.RetryInfo
-	(*ServerToAgentCommand)(nil),           // 31: opamp.proto.ServerToAgentCommand
-	(*AgentDescription)(nil),               // 32: opamp.proto.AgentDescription
-	(*ComponentHealth)(nil),                // 33: opamp.proto.ComponentHealth
-	(*EffectiveConfig)(nil),                // 34: opamp.proto.EffectiveConfig
-	(*RemoteConfigStatus)(nil),             // 35: opamp.proto.RemoteConfigStatus
-	(*ConnectionSettingsStatus)(nil),       // 36: opamp.proto.ConnectionSettingsStatus
-	(*PackageStatuses)(nil),                // 37: opamp.proto.PackageStatuses
-	(*PackageStatus)(nil),                  // 38: opamp.proto.PackageStatus
-	(*PackageDownloadDetails)(nil),         // 39: opamp.proto.PackageDownloadDetails
-	(*AgentIdentification)(nil),            // 40: opamp.proto.AgentIdentification
-	(*AgentRemoteConfig)(nil),              // 41: opamp.proto.AgentRemoteConfig
-	(*AgentConfigMap)(nil),                 // 42: opamp.proto.AgentConfigMap
-	(*AgentConfigFile)(nil),                // 43: opamp.proto.AgentConfigFile
-	(*CustomCapabilities)(nil),             // 44: opamp.proto.CustomCapabilities
-	(*CustomMessage)(nil),                  // 45: opamp.proto.CustomMessage
-	nil,                                    // 46: opamp.proto.AvailableComponents.ComponentsEntry
-	nil,                                    // 47: opamp.proto.ComponentDetails.SubComponentMapEntry
-	nil,                                    // 48: opamp.proto.OtherConnectionSettings.OtherSettingsEntry
-	nil,                                    // 49: opamp.proto.ConnectionSettingsOffers.OtherConnectionsEntry
-	nil,                                    // 50: opamp.proto.PackagesAvailable.PackagesEntry
-	nil,                                    // 51: opamp.proto.ComponentHealth.ComponentHealthMapEntry
-	nil,                                    // 52: opamp.proto.PackageStatuses.PackagesEntry
-	nil,                                    // 53: opamp.proto.AgentConfigMap.ConfigMapEntry
-	(*KeyValue)(nil),                       // 54: opamp.proto.KeyValue
+	(*ProxyConnectionSettings)(nil),        // 22: opamp.proto.ProxyConnectionSettings
+	(*Headers)(nil),                        // 23: opamp.proto.Headers
+	(*Header)(nil),                         // 24: opamp.proto.Header
+	(*TLSCertificate)(nil),                 // 25: opamp.proto.TLSCertificate
+	(*ConnectionSettingsOffers)(nil),       // 26: opamp.proto.ConnectionSettingsOffers
+	(*PackagesAvailable)(nil),              // 27: opamp.proto.PackagesAvailable
+	(*PackageAvailable)(nil),               // 28: opamp.proto.PackageAvailable
+	(*DownloadableFile)(nil),               // 29: opamp.proto.DownloadableFile
+	(*ServerErrorResponse)(nil),            // 30: opamp.proto.ServerErrorResponse
+	(*RetryInfo)(nil),                      // 31: opamp.proto.RetryInfo
+	(*ServerToAgentCommand)(nil),           // 32: opamp.proto.ServerToAgentCommand
+	(*AgentDescription)(nil),               // 33: opamp.proto.AgentDescription
+	(*ComponentHealth)(nil),                // 34: opamp.proto.ComponentHealth
+	(*EffectiveConfig)(nil),                // 35: opamp.proto.EffectiveConfig
+	(*RemoteConfigStatus)(nil),             // 36: opamp.proto.RemoteConfigStatus
+	(*ConnectionSettingsStatus)(nil),       // 37: opamp.proto.ConnectionSettingsStatus
+	(*PackageStatuses)(nil),                // 38: opamp.proto.PackageStatuses
+	(*PackageStatus)(nil),                  // 39: opamp.proto.PackageStatus
+	(*PackageDownloadDetails)(nil),         // 40: opamp.proto.PackageDownloadDetails
+	(*AgentIdentification)(nil),            // 41: opamp.proto.AgentIdentification
+	(*AgentRemoteConfig)(nil),              // 42: opamp.proto.AgentRemoteConfig
+	(*AgentConfigMap)(nil),                 // 43: opamp.proto.AgentConfigMap
+	(*AgentConfigFile)(nil),                // 44: opamp.proto.AgentConfigFile
+	(*CustomCapabilities)(nil),             // 45: opamp.proto.CustomCapabilities
+	(*CustomMessage)(nil),                  // 46: opamp.proto.CustomMessage
+	nil,                                    // 47: opamp.proto.AvailableComponents.ComponentsEntry
+	nil,                                    // 48: opamp.proto.ComponentDetails.SubComponentMapEntry
+	nil,                                    // 49: opamp.proto.OtherConnectionSettings.OtherSettingsEntry
+	nil,                                    // 50: opamp.proto.ConnectionSettingsOffers.OtherConnectionsEntry
+	nil,                                    // 51: opamp.proto.PackagesAvailable.PackagesEntry
+	nil,                                    // 52: opamp.proto.ComponentHealth.ComponentHealthMapEntry
+	nil,                                    // 53: opamp.proto.PackageStatuses.PackagesEntry
+	nil,                                    // 54: opamp.proto.AgentConfigMap.ConfigMapEntry
+	(*KeyValue)(nil),                       // 55: opamp.proto.KeyValue
 }
 var file_opamp_proto_depIdxs = []int32{
-	32, // 0: opamp.proto.AgentToServer.agent_description:type_name -> opamp.proto.AgentDescription
-	33, // 1: opamp.proto.AgentToServer.health:type_name -> opamp.proto.ComponentHealth
-	34, // 2: opamp.proto.AgentToServer.effective_config:type_name -> opamp.proto.EffectiveConfig
-	35, // 3: opamp.proto.AgentToServer.remote_config_status:type_name -> opamp.proto.RemoteConfigStatus
-	37, // 4: opamp.proto.AgentToServer.package_statuses:type_name -> opamp.proto.PackageStatuses
+	33, // 0: opamp.proto.AgentToServer.agent_description:type_name -> opamp.proto.AgentDescription
+	34, // 1: opamp.proto.AgentToServer.health:type_name -> opamp.proto.ComponentHealth
+	35, // 2: opamp.proto.AgentToServer.effective_config:type_name -> opamp.proto.EffectiveConfig
+	36, // 3: opamp.proto.AgentToServer.remote_config_status:type_name -> opamp.proto.RemoteConfigStatus
+	38, // 4: opamp.proto.AgentToServer.package_statuses:type_name -> opamp.proto.PackageStatuses
 	11, // 5: opamp.proto.AgentToServer.agent_disconnect:type_name -> opamp.proto.AgentDisconnect
 	12, // 6: opamp.proto.AgentToServer.connection_settings_request:type_name -> opamp.proto.ConnectionSettingsRequest
-	44, // 7: opamp.proto.AgentToServer.custom_capabilities:type_name -> opamp.proto.CustomCapabilities
-	45, // 8: opamp.proto.AgentToServer.custom_message:type_name -> opamp.proto.CustomMessage
+	45, // 7: opamp.proto.AgentToServer.custom_capabilities:type_name -> opamp.proto.CustomCapabilities
+	46, // 8: opamp.proto.AgentToServer.custom_message:type_name -> opamp.proto.CustomMessage
 	15, // 9: opamp.proto.AgentToServer.available_components:type_name -> opamp.proto.AvailableComponents
-	36, // 10: opamp.proto.AgentToServer.connection_settings_status:type_name -> opamp.proto.ConnectionSettingsStatus
+	37, // 10: opamp.proto.AgentToServer.connection_settings_status:type_name -> opamp.proto.ConnectionSettingsStatus
 	13, // 11: opamp.proto.ConnectionSettingsRequest.opamp:type_name -> opamp.proto.OpAMPConnectionSettingsRequest
 	14, // 12: opamp.proto.OpAMPConnectionSettingsRequest.certificate_request:type_name -> opamp.proto.CertificateRequest
-	46, // 13: opamp.proto.AvailableComponents.components:type_name -> opamp.proto.AvailableComponents.ComponentsEntry
-	54, // 14: opamp.proto.ComponentDetails.metadata:type_name -> opamp.proto.KeyValue
-	47, // 15: opamp.proto.ComponentDetails.sub_component_map:type_name -> opamp.proto.ComponentDetails.SubComponentMapEntry
-	29, // 16: opamp.proto.ServerToAgent.error_response:type_name -> opamp.proto.ServerErrorResponse
-	41, // 17: opamp.proto.ServerToAgent.remote_config:type_name -> opamp.proto.AgentRemoteConfig
-	25, // 18: opamp.proto.ServerToAgent.connection_settings:type_name -> opamp.proto.ConnectionSettingsOffers
-	26, // 19: opamp.proto.ServerToAgent.packages_available:type_name -> opamp.proto.PackagesAvailable
-	40, // 20: opamp.proto.ServerToAgent.agent_identification:type_name -> opamp.proto.AgentIdentification
-	31, // 21: opamp.proto.ServerToAgent.command:type_name -> opamp.proto.ServerToAgentCommand
-	44, // 22: opamp.proto.ServerToAgent.custom_capabilities:type_name -> opamp.proto.CustomCapabilities
-	45, // 23: opamp.proto.ServerToAgent.custom_message:type_name -> opamp.proto.CustomMessage
-	22, // 24: opamp.proto.OpAMPConnectionSettings.headers:type_name -> opamp.proto.Headers
-	24, // 25: opamp.proto.OpAMPConnectionSettings.certificate:type_name -> opamp.proto.TLSCertificate
+	47, // 13: opamp.proto.AvailableComponents.components:type_name -> opamp.proto.AvailableComponents.ComponentsEntry
+	55, // 14: opamp.proto.ComponentDetails.metadata:type_name -> opamp.proto.KeyValue
+	48, // 15: opamp.proto.ComponentDetails.sub_component_map:type_name -> opamp.proto.ComponentDetails.SubComponentMapEntry
+	30, // 16: opamp.proto.ServerToAgent.error_response:type_name -> opamp.proto.ServerErrorResponse
+	42, // 17: opamp.proto.ServerToAgent.remote_config:type_name -> opamp.proto.AgentRemoteConfig
+	26, // 18: opamp.proto.ServerToAgent.connection_settings:type_name -> opamp.proto.ConnectionSettingsOffers
+	27, // 19: opamp.proto.ServerToAgent.packages_available:type_name -> opamp.proto.PackagesAvailable
+	41, // 20: opamp.proto.ServerToAgent.agent_identification:type_name -> opamp.proto.AgentIdentification
+	32, // 21: opamp.proto.ServerToAgent.command:type_name -> opamp.proto.ServerToAgentCommand
+	45, // 22: opamp.proto.ServerToAgent.custom_capabilities:type_name -> opamp.proto.CustomCapabilities
+	46, // 23: opamp.proto.ServerToAgent.custom_message:type_name -> opamp.proto.CustomMessage
+	23, // 24: opamp.proto.OpAMPConnectionSettings.headers:type_name -> opamp.proto.Headers
+	25, // 25: opamp.proto.OpAMPConnectionSettings.certificate:type_name -> opamp.proto.TLSCertificate
 	21, // 26: opamp.proto.OpAMPConnectionSettings.tls:type_name -> opamp.proto.TLSConnectionSettings
-	22, // 27: opamp.proto.TelemetryConnectionSettings.headers:type_name -> opamp.proto.Headers
-	24, // 28: opamp.proto.TelemetryConnectionSettings.certificate:type_name -> opamp.proto.TLSCertificate
-	21, // 29: opamp.proto.TelemetryConnectionSettings.tls:type_name -> opamp.proto.TLSConnectionSettings
-	22, // 30: opamp.proto.OtherConnectionSettings.headers:type_name -> opamp.proto.Headers
-	24, // 31: opamp.proto.OtherConnectionSettings.certificate:type_name -> opamp.proto.TLSCertificate
-	48, // 32: opamp.proto.OtherConnectionSettings.other_settings:type_name -> opamp.proto.OtherConnectionSettings.OtherSettingsEntry
-	21, // 33: opamp.proto.OtherConnectionSettings.tls:type_name -> opamp.proto.TLSConnectionSettings
-	23, // 34: opamp.proto.Headers.headers:type_name -> opamp.proto.Header
-	18, // 35: opamp.proto.ConnectionSettingsOffers.opamp:type_name -> opamp.proto.OpAMPConnectionSettings
-	19, // 36: opamp.proto.ConnectionSettingsOffers.own_metrics:type_name -> opamp.proto.TelemetryConnectionSettings
-	19, // 37: opamp.proto.ConnectionSettingsOffers.own_traces:type_name -> opamp.proto.TelemetryConnectionSettings
-	19, // 38: opamp.proto.ConnectionSettingsOffers.own_logs:type_name -> opamp.proto.TelemetryConnectionSettings
-	49, // 39: opamp.proto.ConnectionSettingsOffers.other_connections:type_name -> opamp.proto.ConnectionSettingsOffers.OtherConnectionsEntry
-	50, // 40: opamp.proto.PackagesAvailable.packages:type_name -> opamp.proto.PackagesAvailable.PackagesEntry
-	3,  // 41: opamp.proto.PackageAvailable.type:type_name -> opamp.proto.PackageType
-	28, // 42: opamp.proto.PackageAvailable.file:type_name -> opamp.proto.DownloadableFile
-	22, // 43: opamp.proto.DownloadableFile.headers:type_name -> opamp.proto.Headers
-	4,  // 44: opamp.proto.ServerErrorResponse.type:type_name -> opamp.proto.ServerErrorResponseType
-	30, // 45: opamp.proto.ServerErrorResponse.retry_info:type_name -> opamp.proto.RetryInfo
-	5,  // 46: opamp.proto.ServerToAgentCommand.type:type_name -> opamp.proto.CommandType
-	54, // 47: opamp.proto.AgentDescription.identifying_attributes:type_name -> opamp.proto.KeyValue
-	54, // 48: opamp.proto.AgentDescription.non_identifying_attributes:type_name -> opamp.proto.KeyValue
-	51, // 49: opamp.proto.ComponentHealth.component_health_map:type_name -> opamp.proto.ComponentHealth.ComponentHealthMapEntry
-	42, // 50: opamp.proto.EffectiveConfig.config_map:type_name -> opamp.proto.AgentConfigMap
-	8,  // 51: opamp.proto.RemoteConfigStatus.status:type_name -> opamp.proto.RemoteConfigStatuses
-	7,  // 52: opamp.proto.ConnectionSettingsStatus.status:type_name -> opamp.proto.ConnectionSettingsStatuses
-	52, // 53: opamp.proto.PackageStatuses.packages:type_name -> opamp.proto.PackageStatuses.PackagesEntry
-	9,  // 54: opamp.proto.PackageStatus.status:type_name -> opamp.proto.PackageStatusEnum
-	39, // 55: opamp.proto.PackageStatus.download_details:type_name -> opamp.proto.PackageDownloadDetails
-	42, // 56: opamp.proto.AgentRemoteConfig.config:type_name -> opamp.proto.AgentConfigMap
-	53, // 57: opamp.proto.AgentConfigMap.config_map:type_name -> opamp.proto.AgentConfigMap.ConfigMapEntry
-	16, // 58: opamp.proto.AvailableComponents.ComponentsEntry.value:type_name -> opamp.proto.ComponentDetails
-	16, // 59: opamp.proto.ComponentDetails.SubComponentMapEntry.value:type_name -> opamp.proto.ComponentDetails
-	20, // 60: opamp.proto.ConnectionSettingsOffers.OtherConnectionsEntry.value:type_name -> opamp.proto.OtherConnectionSettings
-	27, // 61: opamp.proto.PackagesAvailable.PackagesEntry.value:type_name -> opamp.proto.PackageAvailable
-	33, // 62: opamp.proto.ComponentHealth.ComponentHealthMapEntry.value:type_name -> opamp.proto.ComponentHealth
-	38, // 63: opamp.proto.PackageStatuses.PackagesEntry.value:type_name -> opamp.proto.PackageStatus
-	43, // 64: opamp.proto.AgentConfigMap.ConfigMapEntry.value:type_name -> opamp.proto.AgentConfigFile
-	65, // [65:65] is the sub-list for method output_type
-	65, // [65:65] is the sub-list for method input_type
-	65, // [65:65] is the sub-list for extension type_name
-	65, // [65:65] is the sub-list for extension extendee
-	0,  // [0:65] is the sub-list for field type_name
+	22, // 27: opamp.proto.OpAMPConnectionSettings.proxy:type_name -> opamp.proto.ProxyConnectionSettings
+	23, // 28: opamp.proto.TelemetryConnectionSettings.headers:type_name -> opamp.proto.Headers
+	25, // 29: opamp.proto.TelemetryConnectionSettings.certificate:type_name -> opamp.proto.TLSCertificate
+	21, // 30: opamp.proto.TelemetryConnectionSettings.tls:type_name -> opamp.proto.TLSConnectionSettings
+	22, // 31: opamp.proto.TelemetryConnectionSettings.proxy:type_name -> opamp.proto.ProxyConnectionSettings
+	23, // 32: opamp.proto.OtherConnectionSettings.headers:type_name -> opamp.proto.Headers
+	25, // 33: opamp.proto.OtherConnectionSettings.certificate:type_name -> opamp.proto.TLSCertificate
+	49, // 34: opamp.proto.OtherConnectionSettings.other_settings:type_name -> opamp.proto.OtherConnectionSettings.OtherSettingsEntry
+	21, // 35: opamp.proto.OtherConnectionSettings.tls:type_name -> opamp.proto.TLSConnectionSettings
+	22, // 36: opamp.proto.OtherConnectionSettings.proxy:type_name -> opamp.proto.ProxyConnectionSettings
+	23, // 37: opamp.proto.ProxyConnectionSettings.connect_headers:type_name -> opamp.proto.Headers
+	24, // 38: opamp.proto.Headers.headers:type_name -> opamp.proto.Header
+	18, // 39: opamp.proto.ConnectionSettingsOffers.opamp:type_name -> opamp.proto.OpAMPConnectionSettings
+	19, // 40: opamp.proto.ConnectionSettingsOffers.own_metrics:type_name -> opamp.proto.TelemetryConnectionSettings
+	19, // 41: opamp.proto.ConnectionSettingsOffers.own_traces:type_name -> opamp.proto.TelemetryConnectionSettings
+	19, // 42: opamp.proto.ConnectionSettingsOffers.own_logs:type_name -> opamp.proto.TelemetryConnectionSettings
+	50, // 43: opamp.proto.ConnectionSettingsOffers.other_connections:type_name -> opamp.proto.ConnectionSettingsOffers.OtherConnectionsEntry
+	51, // 44: opamp.proto.PackagesAvailable.packages:type_name -> opamp.proto.PackagesAvailable.PackagesEntry
+	3,  // 45: opamp.proto.PackageAvailable.type:type_name -> opamp.proto.PackageType
+	29, // 46: opamp.proto.PackageAvailable.file:type_name -> opamp.proto.DownloadableFile
+	23, // 47: opamp.proto.DownloadableFile.headers:type_name -> opamp.proto.Headers
+	4,  // 48: opamp.proto.ServerErrorResponse.type:type_name -> opamp.proto.ServerErrorResponseType
+	31, // 49: opamp.proto.ServerErrorResponse.retry_info:type_name -> opamp.proto.RetryInfo
+	5,  // 50: opamp.proto.ServerToAgentCommand.type:type_name -> opamp.proto.CommandType
+	55, // 51: opamp.proto.AgentDescription.identifying_attributes:type_name -> opamp.proto.KeyValue
+	55, // 52: opamp.proto.AgentDescription.non_identifying_attributes:type_name -> opamp.proto.KeyValue
+	52, // 53: opamp.proto.ComponentHealth.component_health_map:type_name -> opamp.proto.ComponentHealth.ComponentHealthMapEntry
+	43, // 54: opamp.proto.EffectiveConfig.config_map:type_name -> opamp.proto.AgentConfigMap
+	8,  // 55: opamp.proto.RemoteConfigStatus.status:type_name -> opamp.proto.RemoteConfigStatuses
+	7,  // 56: opamp.proto.ConnectionSettingsStatus.status:type_name -> opamp.proto.ConnectionSettingsStatuses
+	53, // 57: opamp.proto.PackageStatuses.packages:type_name -> opamp.proto.PackageStatuses.PackagesEntry
+	9,  // 58: opamp.proto.PackageStatus.status:type_name -> opamp.proto.PackageStatusEnum
+	40, // 59: opamp.proto.PackageStatus.download_details:type_name -> opamp.proto.PackageDownloadDetails
+	43, // 60: opamp.proto.AgentRemoteConfig.config:type_name -> opamp.proto.AgentConfigMap
+	54, // 61: opamp.proto.AgentConfigMap.config_map:type_name -> opamp.proto.AgentConfigMap.ConfigMapEntry
+	16, // 62: opamp.proto.AvailableComponents.ComponentsEntry.value:type_name -> opamp.proto.ComponentDetails
+	16, // 63: opamp.proto.ComponentDetails.SubComponentMapEntry.value:type_name -> opamp.proto.ComponentDetails
+	20, // 64: opamp.proto.ConnectionSettingsOffers.OtherConnectionsEntry.value:type_name -> opamp.proto.OtherConnectionSettings
+	28, // 65: opamp.proto.PackagesAvailable.PackagesEntry.value:type_name -> opamp.proto.PackageAvailable
+	34, // 66: opamp.proto.ComponentHealth.ComponentHealthMapEntry.value:type_name -> opamp.proto.ComponentHealth
+	39, // 67: opamp.proto.PackageStatuses.PackagesEntry.value:type_name -> opamp.proto.PackageStatus
+	44, // 68: opamp.proto.AgentConfigMap.ConfigMapEntry.value:type_name -> opamp.proto.AgentConfigFile
+	69, // [69:69] is the sub-list for method output_type
+	69, // [69:69] is the sub-list for method input_type
+	69, // [69:69] is the sub-list for extension type_name
+	69, // [69:69] is the sub-list for extension extendee
+	0,  // [0:69] is the sub-list for field type_name
 }
 
 func init() { file_opamp_proto_init() }
@@ -4470,7 +4584,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Headers); i {
+			switch v := v.(*ProxyConnectionSettings); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4482,7 +4596,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Header); i {
+			switch v := v.(*Headers); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4494,7 +4608,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[14].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TLSCertificate); i {
+			switch v := v.(*Header); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4506,7 +4620,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[15].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ConnectionSettingsOffers); i {
+			switch v := v.(*TLSCertificate); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4518,7 +4632,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[16].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*PackagesAvailable); i {
+			switch v := v.(*ConnectionSettingsOffers); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4530,7 +4644,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[17].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*PackageAvailable); i {
+			switch v := v.(*PackagesAvailable); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4542,7 +4656,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[18].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*DownloadableFile); i {
+			switch v := v.(*PackageAvailable); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4554,7 +4668,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ServerErrorResponse); i {
+			switch v := v.(*DownloadableFile); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4566,7 +4680,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[20].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RetryInfo); i {
+			switch v := v.(*ServerErrorResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4578,7 +4692,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[21].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ServerToAgentCommand); i {
+			switch v := v.(*RetryInfo); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4590,7 +4704,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[22].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*AgentDescription); i {
+			switch v := v.(*ServerToAgentCommand); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4602,7 +4716,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[23].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ComponentHealth); i {
+			switch v := v.(*AgentDescription); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4614,7 +4728,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[24].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*EffectiveConfig); i {
+			switch v := v.(*ComponentHealth); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4626,7 +4740,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[25].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RemoteConfigStatus); i {
+			switch v := v.(*EffectiveConfig); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4638,7 +4752,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[26].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ConnectionSettingsStatus); i {
+			switch v := v.(*RemoteConfigStatus); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4650,7 +4764,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[27].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*PackageStatuses); i {
+			switch v := v.(*ConnectionSettingsStatus); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4662,7 +4776,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[28].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*PackageStatus); i {
+			switch v := v.(*PackageStatuses); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4674,7 +4788,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[29].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*PackageDownloadDetails); i {
+			switch v := v.(*PackageStatus); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4686,7 +4800,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[30].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*AgentIdentification); i {
+			switch v := v.(*PackageDownloadDetails); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4698,7 +4812,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[31].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*AgentRemoteConfig); i {
+			switch v := v.(*AgentIdentification); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4710,7 +4824,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[32].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*AgentConfigMap); i {
+			switch v := v.(*AgentRemoteConfig); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4722,7 +4836,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[33].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*AgentConfigFile); i {
+			switch v := v.(*AgentConfigMap); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4734,7 +4848,7 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[34].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*CustomCapabilities); i {
+			switch v := v.(*AgentConfigFile); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4746,6 +4860,18 @@ func file_opamp_proto_init() {
 			}
 		}
 		file_opamp_proto_msgTypes[35].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CustomCapabilities); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_opamp_proto_msgTypes[36].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*CustomMessage); i {
 			case 0:
 				return &v.state
@@ -4758,7 +4884,7 @@ func file_opamp_proto_init() {
 			}
 		}
 	}
-	file_opamp_proto_msgTypes[19].OneofWrappers = []interface{}{
+	file_opamp_proto_msgTypes[20].OneofWrappers = []interface{}{
 		(*ServerErrorResponse_RetryInfo)(nil),
 	}
 	type x struct{}
@@ -4767,7 +4893,7 @@ func file_opamp_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_opamp_proto_rawDesc,
 			NumEnums:      10,
-			NumMessages:   44,
+			NumMessages:   45,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

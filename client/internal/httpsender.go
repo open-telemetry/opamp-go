@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -82,6 +83,35 @@ func NewHTTPSender(logger types.Logger) *HTTPSender {
 	// initialize the headers with no additional headers
 	h.SetRequestHeader(nil, nil)
 	return h
+}
+
+// SetProxy will force each request to use passed proxy and use the passed headers when making a CONNECT request to the proxy.
+// If the proxy has no schema http is used.
+// This method is not thread safe and must be called before h.client is used.
+func (h *HTTPSender) SetProxy(proxy string, headers http.Header) error {
+	proxyURL, err := url.Parse(proxy)
+	if err != nil || proxyURL.Scheme == "" || proxyURL.Host == "" { // error or bad URL - try to use http as scheme to resolve
+		proxyURL, err = url.Parse("http://" + proxy)
+		if err != nil {
+			return err
+		}
+	}
+	if proxyURL.Hostname() == "" {
+		return url.InvalidHostError(proxy)
+	}
+
+	proxyTransport := &http.Transport{}
+	if h.client.Transport != nil {
+		transport, ok := h.client.Transport.(*http.Transport)
+		if !ok {
+			return fmt.Errorf("unable to coorce client transport as *http.Transport detected type is: %T", h.client.Transport)
+		}
+		proxyTransport = transport.Clone()
+	}
+	proxyTransport.Proxy = http.ProxyURL(proxyURL)
+	proxyTransport.ProxyConnectHeader = headers
+	h.client.Transport = proxyTransport
+	return nil
 }
 
 // Run starts the processing loop that will perform the HTTP request/response.
