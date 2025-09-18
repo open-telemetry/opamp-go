@@ -249,8 +249,7 @@ func TestSetCapabilitiesErrorsBeforeStart(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		capabilities := coreCapabilities | protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents
 		setCapabilityErr := client.SetCapabilities(&capabilities)
-		assert.Error(t, setCapabilityErr)
-		assert.Contains(t, setCapabilityErr.Error(), "AvailableComponents is nil")
+		assert.NoError(t, setCapabilityErr)
 	})
 }
 

@@ -190,6 +190,11 @@ func (c *ClientCommon) PrepareStart(
 		c.ClientSyncedState.SetConnectionSettingsStatus(settings.LastConnectionSettingsStatus)
 	}
 
+	// Validate capabilities after initializing the client state.
+	if err := c.validateCapabilities(c.ClientSyncedState.Capabilities()); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -547,8 +552,12 @@ func (c *ClientCommon) SetCapabilities(capabilities *protobufs.AgentCapabilities
 	}
 	// According to OpAMP spec this capability MUST be set, since all Agents MUST report status.
 	*capabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
-	if validateErr := c.validateCapabilities(*capabilities); validateErr != nil {
-		return validateErr
+
+	// Only validate capabilities if we have already started.
+	if c.isStarted {
+		if validateErr := c.validateCapabilities(*capabilities); validateErr != nil {
+			return validateErr
+		}
 	}
 	// store the capabilities to send
 	if err := c.ClientSyncedState.SetCapabilities(capabilities); err != nil {
