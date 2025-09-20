@@ -23,6 +23,7 @@ import (
 
 	clienttypes "github.com/open-telemetry/opamp-go/client/types"
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
+	"github.com/open-telemetry/opamp-go/internal/certs"
 	"github.com/open-telemetry/opamp-go/internal/testhelpers"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server/types"
@@ -1349,9 +1350,7 @@ func TestServerTLS(t *testing.T) {
 
 	// Start a Server.
 	srvTLSConfig, err := sharedinternal.CreateServerTLSConfig(
-		"../internal/certs/certs/ca.cert.pem",
-		"../internal/certs/server_certs/server.cert.pem",
-		"../internal/certs/server_certs/server.key.pem",
+		certs.CaCert, certs.ServerCert, certs.ServerKey,
 	)
 	require.NoError(t, err)
 	settings := &StartSettings{Settings: Settings{Callbacks: callbacks}, TLSConfig: srvTLSConfig}

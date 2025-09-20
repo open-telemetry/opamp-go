@@ -24,6 +24,7 @@ import (
 	"github.com/open-telemetry/opamp-go/client"
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/internal"
+	"github.com/open-telemetry/opamp-go/internal/certs"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -108,7 +109,7 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string, initia
 	} else {
 		tlsConfig, err := internal.CreateClientTLSConfig(
 			agent.opampClientCert,
-			"../../certs/certs/ca.cert.pem",
+			certs.CaCert,
 		)
 		if err != nil {
 			agent.logger.Errorf(context.Background(), "Cannot load client TLS config: %v", err)
