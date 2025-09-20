@@ -24,6 +24,7 @@ import (
 	"github.com/open-telemetry/opamp-go/client"
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/internal"
+	"github.com/open-telemetry/opamp-go/internal/certs"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -108,7 +109,7 @@ func NewAgent(logger types.Logger, agentType string, agentVersion string, initia
 	} else {
 		tlsConfig, err := internal.CreateClientTLSConfig(
 			agent.opampClientCert,
-			"../../certs/certs/ca.cert.pem",
+			certs.CaCert,
 		)
 		if err != nil {
 			agent.logger.Errorf(context.Background(), "Cannot load client TLS config: %v", err)
@@ -171,12 +172,6 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 			OnConnectionSettings:      agent.onConnectionSettings,
 		},
 		RemoteConfigStatus: agent.remoteConfigStatus,
-		Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
-			protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig |
-			protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
-			protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
-			protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings |
-			protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus,
 	}
 	for _, op := range ops {
 		op(&settings)
@@ -188,6 +183,17 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 	}
 
 	err := agent.opampClient.SetAgentDescription(agent.agentDescription)
+	if err != nil {
+		return err
+	}
+
+	supportedCapabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
+		protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig |
+		protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
+		protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
+		protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings |
+		protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus
+	err = agent.opampClient.SetCapabilities(&supportedCapabilities)
 	if err != nil {
 		return err
 	}
