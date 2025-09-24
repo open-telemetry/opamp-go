@@ -8,13 +8,14 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math/big"
 	"net"
+	"path"
 	"sync"
 	"time"
 
-	"github.com/open-telemetry/opamp-go/internal/certs"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -29,11 +30,25 @@ var (
 var loadCACertOnce sync.Once
 
 func loadCACert() {
-	// Convert from DER to PEM format.
-	caCertPB, _ := pem.Decode(certs.CaCert)
-	caKeyPB, _ := pem.Decode(certs.CaKey)
+	certsDir := "../../certs"
 
-	caCert, err := x509.ParseCertificate(caCertPB.Bytes)
+	// Load CA certificate.
+	var err error
+	caCertBytes, err = ioutil.ReadFile(path.Join(certsDir, "certs/ca.cert.pem"))
+	if err != nil {
+		logger.Fatalf("Cannot read CA cert: %v", err)
+	}
+
+	caKeyBytes, err := ioutil.ReadFile(path.Join(certsDir, "private/ca.key.pem"))
+	if err != nil {
+		logger.Fatalf("Cannot read CA key: %v", err)
+	}
+
+	// Convert from DER to PEM format.
+	caCertPB, _ := pem.Decode(caCertBytes)
+	caKeyPB, _ := pem.Decode(caKeyBytes)
+
+	caCert, err = x509.ParseCertificate(caCertPB.Bytes)
 	if err != nil {
 		logger.Fatalf("Cannot parse CA certificate: %v", err)
 	}
