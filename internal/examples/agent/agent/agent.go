@@ -171,12 +171,6 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 			OnConnectionSettings:      agent.onConnectionSettings,
 		},
 		RemoteConfigStatus: agent.remoteConfigStatus,
-		Capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
-			protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig |
-			protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
-			protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
-			protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings |
-			protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus,
 	}
 	for _, op := range ops {
 		op(&settings)
@@ -188,6 +182,17 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 	}
 
 	err := agent.opampClient.SetAgentDescription(agent.agentDescription)
+	if err != nil {
+		return err
+	}
+
+	supportedCapabilities := protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
+		protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig |
+		protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
+		protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
+		protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings |
+		protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus
+	err = agent.opampClient.SetCapabilities(&supportedCapabilities)
 	if err != nil {
 		return err
 	}
