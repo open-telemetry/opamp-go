@@ -9,7 +9,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	"github.com/open-telemetry/opamp-go/internal"
+	"github.com/open-telemetry/opamp-go/internal/examples/certs"
 	"github.com/open-telemetry/opamp-go/internal/examples/server/data"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server"
@@ -59,10 +59,10 @@ func (srv *Server) Start() {
 		ListenEndpoint: "127.0.0.1:4320",
 		HTTPMiddleware: otelhttp.NewMiddleware("/v1/opamp"),
 	}
-	tlsConfig, err := internal.CreateServerTLSConfig(
-		"../../certs/certs/ca.cert.pem",
-		"../../certs/server_certs/server.cert.pem",
-		"../../certs/server_certs/server.key.pem",
+	tlsConfig, err := certs.CreateServerTLSConfig(
+		certs.CaCert,
+		certs.ServerCert,
+		certs.ServerKey,
 	)
 	if err != nil {
 		srv.logger.Debugf(context.Background(), "Could not load TLS config, working without TLS: %v", err.Error())
