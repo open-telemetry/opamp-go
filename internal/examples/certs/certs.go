@@ -37,7 +37,6 @@ var ServerCert []byte
 var ServerKey []byte
 
 func CreateClientTLSConfig(clientCert *tls.Certificate, caCertBytes []byte) (*tls.Config, error) {
-
 	// Create a certificate pool and make our CA trusted.
 	caCertPool := x509.NewCertPool()
 	if ok := caCertPool.AppendCertsFromPEM(caCertBytes); !ok {
@@ -115,7 +114,6 @@ func CreateServerTLSConfigFromFiles(caCertPath, serverCertPath, serverKeyPath st
 }
 
 func CreateTLSCert(caCertBytes, caKeyBytes []byte) (*protobufs.TLSCertificate, error) {
-
 	caCertPB, _ := pem.Decode(caCertBytes)
 	caKeyPB, _ := pem.Decode(caKeyBytes)
 	caCert, err := x509.ParseCertificate(caCertPB.Bytes)
