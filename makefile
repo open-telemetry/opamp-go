@@ -51,9 +51,9 @@ build-example-server:
 	cd internal/examples && $(GOCMD) build -o server/bin/server server/main.go
 
 run-examples: build-examples
-	cd internal/examples/server && ./bin/server &
+	internal/examples/server/bin/server &
 	@echo Server UI is running at http://localhost:4321/
-	cd internal/examples/agent && ./bin/agent
+	internal/examples/agent/bin/agent
 
 OTEL_DOCKER_PROTOBUF ?= otel/build-protobuf:0.14.0
 
