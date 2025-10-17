@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/madflojo/testcerts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -1347,13 +1348,14 @@ func TestServerTLS(t *testing.T) {
 		},
 	}
 
-	// Start a Server.
-	srvTLSConfig, err := sharedinternal.CreateServerTLSConfig(
-		"../internal/certs/certs/ca.cert.pem",
-		"../internal/certs/server_certs/server.cert.pem",
-		"../internal/certs/server_certs/server.key.pem",
-	)
+	ca := testcerts.NewCA()
+	kp, err := ca.NewKeyPair("localhost")
 	require.NoError(t, err)
+
+	srvTLSConfig, err := kp.ConfigureTLSConfig(ca.GenerateTLSConfig())
+	require.NoError(t, err)
+
+	// Start a Server.
 	settings := &StartSettings{Settings: Settings{Callbacks: callbacks}, TLSConfig: srvTLSConfig}
 	srv := startServer(t, settings)
 	defer srv.Stop(context.Background())

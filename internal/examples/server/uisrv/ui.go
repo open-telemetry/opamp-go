@@ -5,15 +5,14 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
-	"sync"
 	"text/template"
 	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/open-telemetry/opamp-go/internal"
+	"github.com/open-telemetry/opamp-go/internal/examples/certs"
+	"github.com/open-telemetry/opamp-go/internal/examples/html"
 	"github.com/open-telemetry/opamp-go/internal/examples/server/data"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
@@ -21,13 +20,6 @@ import (
 var (
 	htmlDir string
 	srv     *http.Server
-	opampCA = sync.OnceValue(func() string {
-		p, err := os.ReadFile("../../certs/certs/ca.cert.pem")
-		if err != nil {
-			panic(err)
-		}
-		return string(p)
-	})
 )
 
 var logger = log.New(log.Default().Writer(), "[UI] ", log.Default().Flags()|log.Lmsgprefix|log.Lmicroseconds)
@@ -53,10 +45,7 @@ func Shutdown() {
 }
 
 func renderTemplate(w http.ResponseWriter, htmlTemplateFile string, data interface{}) {
-	t, err := template.ParseFiles(
-		path.Join(htmlDir, "header.html"),
-		path.Join(htmlDir, htmlTemplateFile),
-	)
+	t, err := template.ParseFS(html.HtmlFS, "html/*")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		logger.Printf("Error parsing html template %s: %v", htmlTemplateFile, err)
@@ -153,7 +142,7 @@ func rotateInstanceClientCert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create a new certificate for the agent.
-	certificate, err := internal.CreateTLSCert("../../certs/certs/ca.cert.pem", "../../certs/private/ca.key.pem")
+	certificate, err := certs.CreateTLSCert(certs.CaCert, certs.CaKey)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		logger.Println(err)
@@ -226,7 +215,7 @@ func opampConnectionSettings(w http.ResponseWriter, r *http.Request) {
 	offers := &protobufs.ConnectionSettingsOffers{
 		Opamp: &protobufs.OpAMPConnectionSettings{
 			Tls: &protobufs.TLSConnectionSettings{
-				CaPemContents: opampCA(),
+				CaPemContents: string(certs.CaCert),
 				MinVersion:    tlsMin,
 				MaxVersion:    "1.3",
 			},
