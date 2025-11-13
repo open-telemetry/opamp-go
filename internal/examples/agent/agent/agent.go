@@ -106,7 +106,7 @@ func NewAgent(logger types.Logger, agentType, agentVersion string, agentConfig *
 
 	tls, err := agentConfig.GetTLSConfig(context.Background())
 	if err != nil {
-		agent.logger.Errorf(context.Background(), "Cannot determine if TLS is required: %v", err)
+		agent.logger.Errorf(context.Background(), "Cannot get the TLS config: %v", err)
 		return nil
 	}
 
