@@ -56,7 +56,7 @@ func (srv *Server) Start() {
 				},
 			},
 		},
-		ListenEndpoint: "127.0.0.1:4320",
+		ListenEndpoint: "0.0.0.0:4320",
 		HTTPMiddleware: otelhttp.NewMiddleware("/v1/opamp"),
 	}
 	tlsConfig, err := certs.CreateServerTLSConfig(
