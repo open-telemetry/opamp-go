@@ -243,6 +243,9 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 					case http.StatusTooManyRequests, http.StatusServiceUnavailable:
 						interval = recalculateInterval(interval, resp)
 						err = fmt.Errorf("server response code=%d", resp.StatusCode)
+						if cerr := resp.Body.Close(); cerr != nil {
+							h.logger.Errorf(ctx, "cannot close response body: %v", cerr)
+						}
 
 					default:
 						return nil, fmt.Errorf("invalid response from server: %d", resp.StatusCode)
