@@ -507,25 +507,24 @@ func TestHTTPSenderSetProxy(t *testing.T) {
 func TestHTTPSenderClosesBodyOnStatusTooManyRequests(t *testing.T) {
 	var connectionAttempts int64
 	bodyClosed := &atomic.Bool{}
-	
+
 	srv := StartMockServer(t)
 	t.Cleanup(srv.Close)
-	
+
 	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
 		attempt := atomic.AddInt64(&connectionAttempts, 1)
 		if attempt == 1 {
-			// First attempt: return 429
-			w.Header().Set("Retry-After", "0") // Use 0 to speed up test
+			w.Header().Set("Retry-After", "0")
 			w.WriteHeader(http.StatusTooManyRequests)
 			w.Write([]byte("retry"))
 		} else {
 			w.WriteHeader(http.StatusOK)
 		}
 	}
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	url := "http://" + srv.Endpoint
 	sender := NewHTTPSender(&sharedinternal.NopLogger{})
 	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
@@ -545,19 +544,17 @@ func TestHTTPSenderClosesBodyOnStatusTooManyRequests(t *testing.T) {
 		},
 	}
 	sender.url = url
-	
-	// Wrap the HTTP client transport to track response body closures
+
 	originalTransport := sender.client.Transport
 	sender.client.Transport = &bodyTrackingTransport{
 		transport: originalTransport,
 		closed:    bodyClosed,
 	}
-	
+
 	resp, err := sender.sendRequestWithRetries(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Greater(t, atomic.LoadInt64(&connectionAttempts), int64(1), "should have retried after 429")
-	// Verify that the response body from the 429 response was closed
 	assert.True(t, bodyClosed.Load(), "response body should have been closed during retry")
 }
 
@@ -566,25 +563,24 @@ func TestHTTPSenderClosesBodyOnStatusTooManyRequests(t *testing.T) {
 func TestHTTPSenderClosesBodyOnStatusServiceUnavailable(t *testing.T) {
 	var connectionAttempts int64
 	bodyClosed := &atomic.Bool{}
-	
+
 	srv := StartMockServer(t)
 	t.Cleanup(srv.Close)
-	
+
 	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
 		attempt := atomic.AddInt64(&connectionAttempts, 1)
 		if attempt == 1 {
-			// First attempt: return 503
-			w.Header().Set("Retry-After", "0") // Use 0 to speed up test
+			w.Header().Set("Retry-After", "0")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			w.Write([]byte("unavailable"))
 		} else {
 			w.WriteHeader(http.StatusOK)
 		}
 	}
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	url := "http://" + srv.Endpoint
 	sender := NewHTTPSender(&sharedinternal.NopLogger{})
 	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
@@ -604,19 +600,17 @@ func TestHTTPSenderClosesBodyOnStatusServiceUnavailable(t *testing.T) {
 		},
 	}
 	sender.url = url
-	
-	// Wrap the HTTP client transport to track response body closures
+
 	originalTransport := sender.client.Transport
 	sender.client.Transport = &bodyTrackingTransport{
 		transport: originalTransport,
 		closed:    bodyClosed,
 	}
-	
+
 	resp, err := sender.sendRequestWithRetries(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Greater(t, atomic.LoadInt64(&connectionAttempts), int64(1), "should have retried after 503")
-	// Verify that the response body from the 503 response was closed
 	assert.True(t, bodyClosed.Load(), "response body should have been closed during retry")
 }
 
@@ -624,28 +618,27 @@ func TestHTTPSenderClosesBodyOnStatusServiceUnavailable(t *testing.T) {
 type bodyTrackingTransport struct {
 	transport http.RoundTripper
 	closed    *atomic.Bool
+	wrapAll   bool // If true, wrap all response bodies, not just retryable ones
 }
 
 func (t *bodyTrackingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if t.transport == nil {
 		t.transport = http.DefaultTransport
 	}
-	
+
 	resp, err := t.transport.RoundTrip(req)
 	if err != nil {
 		return nil, err
 	}
-	
-	// Wrap the response body to track Close() calls
-	// Only wrap if this is a retryable status code (429 or 503)
-	if resp.Body != nil && (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable) {
+
+	if resp.Body != nil && (t.wrapAll || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable) {
 		originalBody := resp.Body
 		resp.Body = &closeTrackingBodyWrapper{
 			ReadCloser: originalBody,
 			closed:     t.closed,
 		}
 	}
-	
+
 	return resp, nil
 }
 
@@ -656,5 +649,103 @@ type closeTrackingBodyWrapper struct {
 
 func (b *closeTrackingBodyWrapper) Close() error {
 	b.closed.Store(true)
+	return b.ReadCloser.Close()
+}
+
+// TestHTTPSenderClosesBodyOnReceiveResponseError verifies that resp.Body.Close() is called
+// in receiveResponse() when there's an error reading the response body.
+func TestHTTPSenderClosesBodyOnReceiveResponseError(t *testing.T) {
+	bodyClosed := &atomic.Bool{}
+
+	srv := StartMockServer(t)
+	t.Cleanup(srv.Close)
+
+	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("test"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	url := "http://" + srv.Endpoint
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.AgentDescription = &protobufs.AgentDescription{
+			IdentifyingAttributes: []*protobufs.KeyValue{{
+				Key: "service.name",
+				Value: &protobufs.AnyValue{
+					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
+				},
+			}},
+		}
+	})
+	sender.callbacks = types.Callbacks{
+		OnConnect: func(ctx context.Context) {
+		},
+		OnConnectFailed: func(ctx context.Context, _ error) {
+		},
+	}
+	sender.url = url
+
+	originalTransport := sender.client.Transport
+	sender.client.Transport = &failingBodyTransport{
+		transport: originalTransport,
+		closed:    bodyClosed,
+	}
+
+	resp, err := sender.sendRequestWithRetries(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	sender.receiveResponse(ctx, resp)
+	assert.True(t, bodyClosed.Load(), "response body should have been closed even when reading fails")
+}
+
+// failingBodyTransport wraps http.Transport to inject a failing body reader
+type failingBodyTransport struct {
+	transport http.RoundTripper
+	closed    *atomic.Bool
+}
+
+func (t *failingBodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t.transport == nil {
+		t.transport = http.DefaultTransport
+	}
+
+	resp, err := t.transport.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.Body != nil {
+		originalBody := resp.Body
+		resp.Body = &failingReadCloser{
+			ReadCloser: originalBody,
+			closed:     t.closed,
+			failOnRead: true,
+		}
+	}
+
+	return resp, nil
+}
+
+type failingReadCloser struct {
+	io.ReadCloser
+	closed     *atomic.Bool
+	failOnRead bool
+}
+
+func (b *failingReadCloser) Read(p []byte) (n int, err error) {
+	if b.failOnRead {
+		return 0, io.ErrUnexpectedEOF
+	}
+	return b.ReadCloser.Read(p)
+}
+
+func (b *failingReadCloser) Close() error {
+	if b.closed != nil {
+		b.closed.Store(true)
+	}
 	return b.ReadCloser.Close()
 }

@@ -322,11 +322,15 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
 	msgBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		_ = resp.Body.Close()
+		if cerr := resp.Body.Close(); cerr != nil {
+			h.logger.Errorf(ctx, "cannot close response body: %v", cerr)
+		}
 		h.logger.Errorf(ctx, "cannot read response body: %v", err)
 		return
 	}
-	_ = resp.Body.Close()
+	if cerr := resp.Body.Close(); cerr != nil {
+		h.logger.Errorf(ctx, "cannot close response body: %v", cerr)
+	}
 
 	var response protobufs.ServerToAgent
 	if err := proto.Unmarshal(msgBytes, &response); err != nil {
