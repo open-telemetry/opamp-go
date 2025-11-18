@@ -244,6 +244,7 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 						interval = recalculateInterval(interval, resp)
 						err = fmt.Errorf("server response code=%d", resp.StatusCode)
 						_ = resp.Body.Close()
+
 					default:
 						return nil, fmt.Errorf("invalid response from server: %d", resp.StatusCode)
 					}
