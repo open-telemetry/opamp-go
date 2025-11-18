@@ -243,10 +243,7 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 					case http.StatusTooManyRequests, http.StatusServiceUnavailable:
 						interval = recalculateInterval(interval, resp)
 						err = fmt.Errorf("server response code=%d", resp.StatusCode)
-						if cerr := resp.Body.Close(); cerr != nil {
-							h.logger.Errorf(ctx, "cannot close response body: %v", cerr)
-						}
-
+						_ = resp.Body.Close()
 					default:
 						return nil, fmt.Errorf("invalid response from server: %d", resp.StatusCode)
 					}
@@ -322,15 +319,12 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
 	msgBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		if cerr := resp.Body.Close(); cerr != nil {
-			h.logger.Errorf(ctx, "cannot close response body: %v", cerr)
-		}
+		_ = resp.Body.Close()
 		h.logger.Errorf(ctx, "cannot read response body: %v", err)
 		return
 	}
-	if cerr := resp.Body.Close(); cerr != nil {
-		h.logger.Errorf(ctx, "cannot close response body: %v", cerr)
-	}
+
+	_ = resp.Body.Close()
 
 	var response protobufs.ServerToAgent
 	if err := proto.Unmarshal(msgBytes, &response); err != nil {
