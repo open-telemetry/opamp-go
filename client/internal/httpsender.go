@@ -323,7 +323,6 @@ func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
 		h.logger.Errorf(ctx, "cannot read response body: %v", err)
 		return
 	}
-
 	_ = resp.Body.Close()
 
 	var response protobufs.ServerToAgent

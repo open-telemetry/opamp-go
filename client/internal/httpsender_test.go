@@ -62,6 +62,48 @@ func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
 	srv.Close()
 }
 
+func TestHTTPSenderRetryForStatusServiceUnavailable(t *testing.T) {
+	var connectionAttempts int64
+	srv := StartMockServer(t)
+	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+		attempt := atomic.AddInt64(&connectionAttempts, 1)
+		// Return a Retry-After header with a value of 1 second for first attempt.
+		if attempt == 1 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusServiceUnavailable)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	url := "http://" + srv.Endpoint
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.AgentDescription = &protobufs.AgentDescription{
+			IdentifyingAttributes: []*protobufs.KeyValue{{
+				Key: "service.name",
+				Value: &protobufs.AnyValue{
+					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
+				},
+			}},
+		}
+	})
+	sender.callbacks = types.Callbacks{
+		OnConnect: func(ctx context.Context) {
+		},
+		OnConnectFailed: func(ctx context.Context, _ error) {
+		},
+	}
+	sender.url = url
+	start := time.Now()
+	resp, err := sender.sendRequestWithRetries(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.True(t, time.Since(start) > time.Second)
+	cancel()
+	srv.Close()
+}
+
 func TestHTTPSenderSetHeartbeatInterval(t *testing.T) {
 	sender := NewHTTPSender(&sharedinternal.NopLogger{})
 
