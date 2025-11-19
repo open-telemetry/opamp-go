@@ -254,6 +254,7 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 			h.callbacks.OnConnectFailed(ctx, result.err)
 
 		case <-ctx.Done():
+			timer.Stop()
 			h.logger.Debugf(ctx, "Client is stopped, will not try anymore.")
 			return nil, ctx.Err()
 		}

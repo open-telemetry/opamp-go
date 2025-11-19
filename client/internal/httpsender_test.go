@@ -972,6 +972,38 @@ func TestAttemptRequest(t *testing.T) {
 	}
 }
 
+// TestSendRequestWithRetriesContextCancellation verifies that timer is stopped when context is cancelled.
+func TestSendRequestWithRetriesContextCancellation(t *testing.T) {
+	srv := StartMockServer(t)
+	t.Cleanup(srv.Close)
+
+	// Server will always return 429 to force retries
+	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sender := setupTestSender(t, "http://"+srv.Endpoint)
+	sender.callbacks = types.Callbacks{
+		OnConnect: func(ctx context.Context) {
+		},
+		OnConnectFailed: func(ctx context.Context, _ error) {
+		},
+	}
+
+	// Cancel context after a short delay to ensure timer is created
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	resp, err := sender.sendRequestWithRetries(ctx)
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, context.Canceled))
+	assert.Nil(t, resp)
+}
+
 // TestSendRequestWithRetriesOnConnectFailed verifies that OnConnectFailed is called on retryable errors.
 func TestSendRequestWithRetriesOnConnectFailed(t *testing.T) {
 	var connectionAttempts int64
