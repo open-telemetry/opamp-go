@@ -254,7 +254,6 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 			h.callbacks.OnConnectFailed(ctx, result.err)
 
 		case <-ctx.Done():
-			timer.Stop()
 			h.logger.Debugf(ctx, "Client is stopped, will not try anymore.")
 			return nil, ctx.Err()
 		}
@@ -284,11 +283,17 @@ func (h *HTTPSender) attemptRequest(ctx context.Context, req *requestWrapper, cu
 
 	case http.StatusTooManyRequests, http.StatusServiceUnavailable:
 		retryInterval := recalculateInterval(currentInterval, resp)
+		_, _ = io.Copy(io.Discard, resp.Body) // to allow connection reuse.
 		_ = resp.Body.Close()
-		err := fmt.Errorf("server response code=%d", resp.StatusCode)
-		return requestResult{resp: nil, err: err, retry: true, interval: retryInterval}
+		return requestResult{
+			resp:     nil,
+			err:      fmt.Errorf("server response code=%d", resp.StatusCode),
+			retry:    true,
+			interval: retryInterval,
+		}
 
 	default:
+		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
 		return requestResult{
 			resp:  nil,
