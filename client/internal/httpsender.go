@@ -202,6 +202,14 @@ func (h *HTTPSender) makeOneRequestRoundtrip(ctx context.Context) {
 	h.receiveResponse(ctx, resp)
 }
 
+// requestResult represents the outcome of a single HTTP request attempt.
+type requestResult struct {
+	resp     *http.Response
+	err      error
+	retry    bool
+	interval time.Duration
+}
+
 func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response, error) {
 	req, err := h.prepareRequest(ctx)
 	if err != nil {
@@ -230,36 +238,63 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 
 		select {
 		case <-timer.C:
-			{
-				req.rewind(ctx)
-				resp, err := h.client.Do(req.Request)
-				if err == nil {
-					switch resp.StatusCode {
-					case http.StatusOK:
-						// We consider it connected if we receive 200 status from the Server.
-						h.callbacks.OnConnect(ctx)
-						return resp, nil
+			result := h.attemptRequest(ctx, req, interval)
 
-					case http.StatusTooManyRequests, http.StatusServiceUnavailable:
-						interval = recalculateInterval(interval, resp)
-						err = fmt.Errorf("server response code=%d", resp.StatusCode)
-						_ = resp.Body.Close()
-
-					default:
-						return nil, fmt.Errorf("invalid response from server: %d", resp.StatusCode)
-					}
-				} else if errors.Is(err, context.Canceled) {
-					h.logger.Debugf(ctx, "Client is stopped, will not try anymore.")
-					return nil, err
-				}
-
-				h.logger.Errorf(ctx, "Failed to do HTTP request (%v), will retry", err)
-				h.callbacks.OnConnectFailed(ctx, err)
+			if !result.retry {
+				return result.resp, result.err
 			}
+
+			// Update interval if retry was requested with a specific interval.
+			if result.interval > 0 {
+				interval = result.interval
+			}
+
+			// Log and notify about the retryable failure.
+			h.logger.Errorf(ctx, "Failed to do HTTP request (%v), will retry", result.err)
+			h.callbacks.OnConnectFailed(ctx, result.err)
 
 		case <-ctx.Done():
 			h.logger.Debugf(ctx, "Client is stopped, will not try anymore.")
 			return nil, ctx.Err()
+		}
+	}
+}
+
+// attemptRequest performs a single HTTP request attempt and returns a result indicating
+// whether to retry or return.
+func (h *HTTPSender) attemptRequest(ctx context.Context, req *requestWrapper, currentInterval time.Duration) requestResult {
+	req.rewind(ctx)
+
+	resp, err := h.client.Do(req.Request)
+
+	// Handle network/connection errors.
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			h.logger.Debugf(ctx, "Client is stopped, will not try anymore.")
+			return requestResult{resp: nil, err: err, retry: false}
+		}
+		// other errors are retryable.
+		return requestResult{resp: nil, err: err, retry: true}
+	}
+
+	// Handle HTTP response status codes.
+	switch resp.StatusCode {
+	case http.StatusOK:
+		h.callbacks.OnConnect(ctx)
+		return requestResult{resp: resp, err: nil, retry: false}
+
+	case http.StatusTooManyRequests, http.StatusServiceUnavailable:
+		retryInterval := recalculateInterval(currentInterval, resp)
+		_ = resp.Body.Close()
+		err := fmt.Errorf("server response code=%d", resp.StatusCode)
+		return requestResult{resp: nil, err: err, retry: true, interval: retryInterval}
+
+	default:
+		_ = resp.Body.Close()
+		return requestResult{
+			resp:  nil,
+			err:   fmt.Errorf("invalid response from server: %d", resp.StatusCode),
+			retry: false,
 		}
 	}
 }
