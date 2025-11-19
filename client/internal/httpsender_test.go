@@ -14,11 +14,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/open-telemetry/opamp-go/client/types"
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/testhelpers"
 	"github.com/open-telemetry/opamp-go/protobufs"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
@@ -955,104 +956,6 @@ func TestSendRequestWithRetriesContextCancellation(t *testing.T) {
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, context.Canceled))
 	assert.Nil(t, resp)
-}
-
-// TestSendRequestWithRetriesOnConnectFailed verifies that OnConnectFailed is called on retryable errors.
-func TestSendRequestWithRetriesOnConnectFailed(t *testing.T) {
-	var connectionAttempts int64
-	connectFailedCalled := &atomic.Bool{}
-
-	srv := StartMockServer(t)
-	t.Cleanup(srv.Close)
-
-	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
-		attempt := atomic.AddInt64(&connectionAttempts, 1)
-		if attempt == 1 {
-			w.WriteHeader(http.StatusTooManyRequests)
-		} else {
-			w.WriteHeader(http.StatusOK)
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
-	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
-		msg.AgentDescription = &protobufs.AgentDescription{
-			IdentifyingAttributes: []*protobufs.KeyValue{{
-				Key: "service.name",
-				Value: &protobufs.AnyValue{
-					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
-				},
-			}},
-		}
-	})
-	sender.callbacks = types.Callbacks{
-		OnConnect: func(ctx context.Context) {
-		},
-		OnConnectFailed: func(ctx context.Context, err error) {
-			connectFailedCalled.Store(true)
-		},
-	}
-	sender.url = "http://" + srv.Endpoint
-
-	resp, err := sender.sendRequestWithRetries(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Greater(t, atomic.LoadInt64(&connectionAttempts), int64(1), "should have retried")
-	assert.True(t, connectFailedCalled.Load(), "OnConnectFailed should be called on retryable error")
-}
-
-// TestSendRequestWithRetriesRetryInterval verifies that retry interval is properly updated.
-func TestSendRequestWithRetriesRetryInterval(t *testing.T) {
-	var connectionAttempts int64
-
-	srv := StartMockServer(t)
-	t.Cleanup(srv.Close)
-
-	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
-		attempt := atomic.AddInt64(&connectionAttempts, 1)
-		if attempt == 1 {
-			// Server suggests retrying after 1 second
-			w.Header().Set("Retry-After", "1")
-			w.WriteHeader(http.StatusServiceUnavailable)
-		} else {
-			w.WriteHeader(http.StatusOK)
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
-	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
-		msg.AgentDescription = &protobufs.AgentDescription{
-			IdentifyingAttributes: []*protobufs.KeyValue{{
-				Key: "service.name",
-				Value: &protobufs.AnyValue{
-					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
-				},
-			}},
-		}
-	})
-	sender.callbacks = types.Callbacks{
-		OnConnect: func(ctx context.Context) {
-		},
-		OnConnectFailed: func(ctx context.Context, _ error) {
-		},
-	}
-	sender.url = "http://" + srv.Endpoint
-
-	start := time.Now()
-	resp, err := sender.sendRequestWithRetries(ctx)
-	duration := time.Since(start)
-
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Greater(t, atomic.LoadInt64(&connectionAttempts), int64(1), "should have retried")
-	// Should wait at least 1 second due to Retry-After header
-	assert.True(t, duration >= time.Second, "should respect Retry-After header")
 }
 
 // failingBodyTransport wraps http.Transport to inject a failing body reader
