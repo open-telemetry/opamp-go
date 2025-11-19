@@ -267,7 +267,6 @@ func (h *HTTPSender) attemptRequest(ctx context.Context, req *requestWrapper, cu
 	req.rewind(ctx)
 
 	resp, err := h.client.Do(req.Request)
-	// Handle network/connection errors.
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			h.logger.Debugf(ctx, "Client is stopped, will not try anymore.")
