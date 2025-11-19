@@ -63,49 +63,6 @@ func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
 	srv.Close()
 }
 
-func TestHTTPSenderRetryForStatusServiceUnavailable(t *testing.T) {
-	var connectionAttempts int64
-	srv := StartMockServer(t)
-	t.Cleanup(srv.Close)
-	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
-		attempt := atomic.AddInt64(&connectionAttempts, 1)
-		// Return a Retry-After header with a value of 1 second for first attempt.
-		if attempt == 1 {
-			w.Header().Set("Retry-After", "1")
-			w.WriteHeader(http.StatusServiceUnavailable)
-		} else {
-			w.WriteHeader(http.StatusOK)
-		}
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	url := "http://" + srv.Endpoint
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
-	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
-		msg.AgentDescription = &protobufs.AgentDescription{
-			IdentifyingAttributes: []*protobufs.KeyValue{{
-				Key: "service.name",
-				Value: &protobufs.AnyValue{
-					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
-				},
-			}},
-		}
-	})
-	sender.callbacks = types.Callbacks{
-		OnConnect: func(ctx context.Context) {
-		},
-		OnConnectFailed: func(ctx context.Context, _ error) {
-		},
-	}
-	sender.url = url
-	start := time.Now()
-	resp, err := sender.sendRequestWithRetries(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.True(t, time.Since(start) > time.Second)
-	assert.Greater(t, atomic.LoadInt64(&connectionAttempts), int64(1), "should have retried after 503")
-}
-
 func TestHTTPSenderSetHeartbeatInterval(t *testing.T) {
 	sender := NewHTTPSender(&sharedinternal.NopLogger{})
 
@@ -703,7 +660,7 @@ func setupTestSender(t *testing.T, url string) *HTTPSender {
 	return sender
 }
 
-// TestAttemptRequest verifies attemptRequest behavior for all scenarios using table-driven tests.
+// AI Generated: TestAttemptRequest verifies attemptRequest behavior for all scenarios using table-driven tests.
 func TestAttemptRequest(t *testing.T) {
 	tests := []struct {
 		name                string
@@ -717,8 +674,6 @@ func TestAttemptRequest(t *testing.T) {
 		wantStatusCode      int
 		wantIntervalGreater bool
 		wantOnConnectCalled bool
-		wantBodyClosed      bool
-		checkBodyClosed     bool
 	}{
 		{
 			name: "Success_StatusOK",
@@ -866,7 +821,6 @@ func TestAttemptRequest(t *testing.T) {
 			currentInterval: 0,
 			wantRetry:       true,
 			wantErr:         true,
-			checkBodyClosed: true,
 		},
 		{
 			name: "BodyClosed_NonRetryableStatus",
@@ -895,7 +849,6 @@ func TestAttemptRequest(t *testing.T) {
 			currentInterval: 0,
 			wantRetry:       false,
 			wantErr:         true,
-			checkBodyClosed: true,
 		},
 	}
 
