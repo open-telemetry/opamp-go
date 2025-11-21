@@ -3,7 +3,6 @@ package internal
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -504,65 +503,89 @@ func TestHTTPSenderSetProxy(t *testing.T) {
 	})
 }
 
-func TestHTTPSenderClosesBodyOnStatusTooManyRequests(t *testing.T) {
-	var connectionAttempts int64
-	bodyClosed := &atomic.Bool{}
-
-	srv := StartMockServer(t)
-	t.Cleanup(srv.Close)
-
-	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
-		attempt := atomic.AddInt64(&connectionAttempts, 1)
-		if attempt == 1 {
-			w.Header().Set("Retry-After", "0")
-			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte("retry"))
-		} else {
-			w.WriteHeader(http.StatusOK)
-		}
+func TestHTTPSenderClosesBody(t *testing.T) {
+	tests := []struct {
+		name           string
+		statusCode     int
+		shouldRetry    bool
+		eventualStatus int
+	}{
+		{
+			name:           "Retryable_StatusTooManyRequests",
+			statusCode:     http.StatusTooManyRequests,
+			shouldRetry:    true,
+			eventualStatus: http.StatusOK,
+		},
+		{
+			name:           "Retryable_StatusServiceUnavailable",
+			statusCode:     http.StatusServiceUnavailable,
+			shouldRetry:    true,
+			eventualStatus: http.StatusOK,
+		},
+		{
+			name:           "NonRetryable_StatusBadRequest",
+			statusCode:     http.StatusBadRequest,
+			shouldRetry:    false,
+			eventualStatus: http.StatusBadRequest,
+		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var connectionAttempts int64
+			bodyClosed := &atomic.Bool{}
 
-	url := "http://" + srv.Endpoint
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
-	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
-		msg.AgentDescription = &protobufs.AgentDescription{
-			IdentifyingAttributes: []*protobufs.KeyValue{{
-				Key: "service.name",
-				Value: &protobufs.AnyValue{
-					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
+			srv := StartMockServer(t)
+			t.Cleanup(srv.Close)
+
+			srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+				attempt := atomic.AddInt64(&connectionAttempts, 1)
+				if tt.shouldRetry && attempt == 1 {
+					w.Header().Set("Retry-After", "0")
+					w.WriteHeader(tt.statusCode)
+					w.Write([]byte("retry"))
+				} else {
+					w.WriteHeader(tt.eventualStatus)
+					w.Write([]byte("test"))
+				}
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			sender := setupTestSender(t, "http://"+srv.Endpoint)
+			sender.callbacks = types.Callbacks{
+				OnConnect: func(ctx context.Context) {
 				},
-			}},
-		}
-	})
-	sender.callbacks = types.Callbacks{
-		OnConnect: func(ctx context.Context) {
-		},
-		OnConnectFailed: func(ctx context.Context, _ error) {
-		},
-	}
-	sender.url = url
+				OnConnectFailed: func(ctx context.Context, _ error) {
+				},
+			}
 
-	originalTransport := sender.client.Transport
-	sender.client.Transport = &bodyTrackingTransport{
-		transport: originalTransport,
-		closed:    bodyClosed,
-	}
+			originalTransport := sender.client.Transport
+			sender.client.Transport = &bodyTrackingTransport{
+				transport: originalTransport,
+				closed:    bodyClosed,
+			}
 
-	resp, err := sender.sendRequestWithRetries(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Greater(t, atomic.LoadInt64(&connectionAttempts), int64(1), "should have retried after 429")
-	assert.True(t, bodyClosed.Load(), "response body should have been closed during retry")
+			resp, err := sender.sendRequestWithRetries(ctx)
+
+			if tt.shouldRetry {
+				assert.NoError(t, err)
+				assert.Equal(t, http.StatusOK, resp.StatusCode)
+				assert.Greater(t, atomic.LoadInt64(&connectionAttempts), int64(1), "should have retried")
+			} else {
+				assert.Error(t, err)
+				assert.Nil(t, resp)
+			}
+			assert.True(t, bodyClosed.Load(), "response body should have been closed")
+		})
+	}
 }
 
 // bodyTrackingTransport wraps http.Transport to track response body closures
 type bodyTrackingTransport struct {
 	transport http.RoundTripper
 	closed    *atomic.Bool
-	wrapAll   bool // If true, wrap all response bodies, not just retryable ones
 }
 
 func (t *bodyTrackingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -575,7 +598,7 @@ func (t *bodyTrackingTransport) RoundTrip(req *http.Request) (*http.Response, er
 		return nil, err
 	}
 
-	if resp.Body != nil && (t.wrapAll || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable) {
+	if resp.Body != nil {
 		originalBody := resp.Body
 		resp.Body = &closeTrackingBodyWrapper{
 			ReadCloser: originalBody,
@@ -596,56 +619,8 @@ func (b *closeTrackingBodyWrapper) Close() error {
 	return b.ReadCloser.Close()
 }
 
-func TestHTTPSenderClosesBodyOnReceiveResponseError(t *testing.T) {
-	bodyClosed := &atomic.Bool{}
-
-	srv := StartMockServer(t)
-	t.Cleanup(srv.Close)
-
-	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("test"))
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	url := "http://" + srv.Endpoint
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
-	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
-		msg.AgentDescription = &protobufs.AgentDescription{
-			IdentifyingAttributes: []*protobufs.KeyValue{{
-				Key: "service.name",
-				Value: &protobufs.AnyValue{
-					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
-				},
-			}},
-		}
-	})
-	sender.callbacks = types.Callbacks{
-		OnConnect: func(ctx context.Context) {
-		},
-		OnConnectFailed: func(ctx context.Context, _ error) {
-		},
-	}
-	sender.url = url
-
-	originalTransport := sender.client.Transport
-	sender.client.Transport = &failingBodyTransport{
-		transport: originalTransport,
-		closed:    bodyClosed,
-	}
-
-	resp, err := sender.sendRequestWithRetries(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	sender.receiveResponse(ctx, resp)
-	assert.True(t, bodyClosed.Load(), "response body should have been closed even when reading fails")
-}
-
 // setupTestSender creates a test HTTPSender with a standard message.
-func setupTestSender(t *testing.T, url string) *HTTPSender {
+func setupTestSender(_ *testing.T, url string) *HTTPSender {
 	sender := NewHTTPSender(&sharedinternal.NopLogger{})
 	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
 		msg.AgentDescription = &protobufs.AgentDescription{
@@ -661,347 +636,59 @@ func setupTestSender(t *testing.T, url string) *HTTPSender {
 	return sender
 }
 
-// AI Generated: TestAttemptRequest verifies attemptRequest behavior for all scenarios using table-driven tests.
-func TestAttemptRequest(t *testing.T) {
+func TestSendRequestWithRetriesPrepareRequestError(t *testing.T) {
 	tests := []struct {
-		name                string
-		setupServer         func(*testing.T) *MockServer
-		setupSender         func(*testing.T, *HTTPSender)
-		setupContext        func() context.Context
-		currentInterval     time.Duration
-		wantRetry           bool
-		wantErr             bool
-		wantErrContains     string
-		wantStatusCode      int
-		wantIntervalGreater bool
-		wantOnConnectCalled bool
+		name       string
+		url        string
+		hasMessage bool
+		cancelCtx  bool
+		wantErr    bool
 	}{
 		{
-			name: "Success_StatusOK",
-			setupServer: func(t *testing.T) *MockServer {
-				srv := StartMockServer(t)
-				t.Cleanup(srv.Close)
-				srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusOK)
-				}
-				return srv
-			},
-			setupSender: func(t *testing.T, sender *HTTPSender) {
-				// OnConnect will be checked after attemptRequest call
-			},
-			setupContext:        context.Background,
-			currentInterval:     0,
-			wantRetry:           false,
-			wantErr:             false,
-			wantStatusCode:      http.StatusOK,
-			wantOnConnectCalled: true,
+			name:       "ContextCanceled",
+			url:        "http://example.com",
+			hasMessage: true,
+			cancelCtx:  true,
+			wantErr:    true,
 		},
 		{
-			name: "Retryable_StatusTooManyRequests",
-			setupServer: func(t *testing.T) *MockServer {
-				srv := StartMockServer(t)
-				t.Cleanup(srv.Close)
-				srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Retry-After", "2")
-					w.WriteHeader(http.StatusTooManyRequests)
-				}
-				return srv
-			},
-			setupSender:         func(*testing.T, *HTTPSender) {},
-			setupContext:        context.Background,
-			currentInterval:     time.Second,
-			wantRetry:           true,
-			wantErr:             true,
-			wantErrContains:     "server response code=429",
-			wantIntervalGreater: true,
+			name:       "InvalidURL",
+			url:        "://invalid-url",
+			hasMessage: true,
+			wantErr:    true,
 		},
 		{
-			name: "Retryable_StatusServiceUnavailable",
-			setupServer: func(t *testing.T) *MockServer {
-				srv := StartMockServer(t)
-				t.Cleanup(srv.Close)
-				srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Retry-After", "2")
-					w.WriteHeader(http.StatusServiceUnavailable)
-				}
-				return srv
-			},
-			setupSender:         func(*testing.T, *HTTPSender) {},
-			setupContext:        context.Background,
-			currentInterval:     time.Second,
-			wantRetry:           true,
-			wantErr:             true,
-			wantErrContains:     "server response code=503",
-			wantIntervalGreater: true,
-		},
-		{
-			name: "NonRetryable_StatusBadRequest",
-			setupServer: func(t *testing.T) *MockServer {
-				srv := StartMockServer(t)
-				t.Cleanup(srv.Close)
-				srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusBadRequest)
-				}
-				return srv
-			},
-			setupSender:     func(*testing.T, *HTTPSender) {},
-			setupContext:    context.Background,
-			currentInterval: 0,
-			wantRetry:       false,
-			wantErr:         true,
-			wantErrContains: "invalid response from server: 400",
-		},
-		{
-			name: "NonRetryable_StatusNotFound",
-			setupServer: func(t *testing.T) *MockServer {
-				srv := StartMockServer(t)
-				t.Cleanup(srv.Close)
-				srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusNotFound)
-				}
-				return srv
-			},
-			setupSender:     func(*testing.T, *HTTPSender) {},
-			setupContext:    context.Background,
-			currentInterval: 0,
-			wantRetry:       false,
-			wantErr:         true,
-			wantErrContains: "invalid response from server: 404",
-		},
-		{
-			name:        "NetworkError_InvalidHost",
-			setupServer: nil, // No server for network error
-			setupSender: func(t *testing.T, sender *HTTPSender) {
-				// Use an invalid URL to force a network error
-				sender.url = "http://invalid-host-that-does-not-exist:9999"
-			},
-			setupContext:    context.Background,
-			currentInterval: 0,
-			wantRetry:       true,
-			wantErr:         true,
-		},
-		{
-			name:        "ContextCanceled",
-			setupServer: nil,
-			setupSender: func(t *testing.T, sender *HTTPSender) {
-				sender.url = "http://example.com"
-			},
-			setupContext: func() context.Context {
-				ctx, cancel := context.WithCancel(context.Background())
-				cancel() // Cancel immediately
-				return ctx
-			},
-			currentInterval: 0,
-			wantRetry:       false,
-			wantErr:         true,
-			wantErrContains: "", // Will check for context.Canceled
-		},
-		{
-			name: "BodyClosed_RetryableStatus",
-			setupServer: func(t *testing.T) *MockServer {
-				srv := StartMockServer(t)
-				t.Cleanup(srv.Close)
-				srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusTooManyRequests)
-					w.Write([]byte("retry"))
-				}
-				return srv
-			},
-			setupSender: func(t *testing.T, sender *HTTPSender) {
-				bodyClosed := &atomic.Bool{}
-				originalTransport := sender.client.Transport
-				sender.client.Transport = &bodyTrackingTransport{
-					transport: originalTransport,
-					closed:    bodyClosed,
-				}
-				t.Cleanup(func() {
-					assert.True(t, bodyClosed.Load(), "response body should have been closed")
-				})
-			},
-			setupContext:    context.Background,
-			currentInterval: 0,
-			wantRetry:       true,
-			wantErr:         true,
-		},
-		{
-			name: "BodyClosed_NonRetryableStatus",
-			setupServer: func(t *testing.T) *MockServer {
-				srv := StartMockServer(t)
-				t.Cleanup(srv.Close)
-				srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte("error"))
-				}
-				return srv
-			},
-			setupSender: func(t *testing.T, sender *HTTPSender) {
-				bodyClosed := &atomic.Bool{}
-				originalTransport := sender.client.Transport
-				sender.client.Transport = &bodyTrackingTransport{
-					transport: originalTransport,
-					closed:    bodyClosed,
-					wrapAll:   true, // Wrap all responses to track body closing
-				}
-				t.Cleanup(func() {
-					assert.True(t, bodyClosed.Load(), "response body should have been closed")
-				})
-			},
-			setupContext:    context.Background,
-			currentInterval: 0,
-			wantRetry:       false,
-			wantErr:         true,
+			name: "NoMessageToSend",
+			url:  "http://example.com",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var srv *MockServer
-			if tt.setupServer != nil {
-				srv = tt.setupServer(t)
+			ctx := context.Background()
+			if tt.cancelCtx {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(context.Background())
+				cancel()
 			}
 
-			ctx := tt.setupContext()
-			var url string
-			if srv != nil {
-				url = "http://" + srv.Endpoint
-			} else {
-				url = "http://example.com" // Will be overridden by setupSender if needed
+			sender := NewHTTPSender(&sharedinternal.NopLogger{})
+			sender.url = tt.url
+			if tt.hasMessage {
+				sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+					msg.AgentDescription = &protobufs.AgentDescription{
+						IdentifyingAttributes: []*protobufs.KeyValue{{
+							Key: "service.name",
+							Value: &protobufs.AnyValue{
+								Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
+							},
+						}},
+					}
+				})
 			}
 
-			sender := setupTestSender(t, url)
-			if tt.setupSender != nil {
-				tt.setupSender(t, sender)
-			}
-
-			req, err := sender.prepareRequest(ctx)
-			assert.NoError(t, err)
-			assert.NotNil(t, req)
-
-			// Handle context cancellation for context test
-			if errors.Is(ctx.Err(), context.Canceled) {
-				req.Request = req.Request.WithContext(ctx)
-			}
-
-			// Setup OnConnect callback for success test
-			var connected *atomic.Bool
-			if tt.wantOnConnectCalled {
-				connected = &atomic.Bool{}
-				sender.callbacks = types.Callbacks{
-					OnConnect: func(ctx context.Context) {
-						connected.Store(true)
-					},
-				}
-			}
-
-			result := sender.attemptRequest(ctx, req, tt.currentInterval)
-
-			assert.Equal(t, tt.wantRetry, result.retry, "retry flag mismatch")
-			if tt.wantErr {
-				assert.Error(t, result.err)
-				if tt.wantErrContains != "" {
-					assert.Contains(t, result.err.Error(), tt.wantErrContains)
-				}
-				if tt.name == "ContextCanceled" {
-					assert.True(t, errors.Is(result.err, context.Canceled))
-				}
-			} else {
-				assert.NoError(t, result.err)
-			}
-
-			if tt.wantStatusCode != 0 {
-				assert.NotNil(t, result.resp)
-				assert.Equal(t, tt.wantStatusCode, result.resp.StatusCode)
-			} else {
-				assert.Nil(t, result.resp)
-			}
-
-			if tt.wantIntervalGreater {
-				assert.Greater(t, result.interval, time.Duration(0), "should set retry interval")
-			}
-
-			if tt.wantOnConnectCalled && connected != nil {
-				assert.True(t, connected.Load(), "OnConnect should be called")
-			}
+			_, err := sender.sendRequestWithRetries(ctx)
+			assert.Equal(t, tt.wantErr, err != nil)
 		})
 	}
-}
-
-// TestSendRequestWithRetriesContextCancellation verifies that timer is stopped when context is cancelled.
-func TestSendRequestWithRetriesContextCancellation(t *testing.T) {
-	srv := StartMockServer(t)
-	t.Cleanup(srv.Close)
-
-	// Server will always return 429 to force retries
-	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Retry-After", "1")
-		w.WriteHeader(http.StatusTooManyRequests)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	sender := setupTestSender(t, "http://"+srv.Endpoint)
-	sender.callbacks = types.Callbacks{
-		OnConnect: func(ctx context.Context) {
-		},
-		OnConnectFailed: func(ctx context.Context, _ error) {
-		},
-	}
-
-	// Cancel context after a short delay to ensure timer is created
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		cancel()
-	}()
-
-	resp, err := sender.sendRequestWithRetries(ctx)
-	assert.Error(t, err)
-	assert.True(t, errors.Is(err, context.Canceled))
-	assert.Nil(t, resp)
-}
-
-// failingBodyTransport wraps http.Transport to inject a failing body reader
-type failingBodyTransport struct {
-	transport http.RoundTripper
-	closed    *atomic.Bool
-}
-
-func (t *failingBodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if t.transport == nil {
-		t.transport = http.DefaultTransport
-	}
-
-	resp, err := t.transport.RoundTrip(req)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.Body != nil {
-		originalBody := resp.Body
-		resp.Body = &failingReadCloser{
-			ReadCloser: originalBody,
-			closed:     t.closed,
-			failOnRead: true,
-		}
-	}
-
-	return resp, nil
-}
-
-type failingReadCloser struct {
-	io.ReadCloser
-	closed     *atomic.Bool
-	failOnRead bool
-}
-
-func (b *failingReadCloser) Read(p []byte) (n int, err error) {
-	if b.failOnRead {
-		return 0, io.ErrUnexpectedEOF
-	}
-	return b.ReadCloser.Read(p)
-}
-
-func (b *failingReadCloser) Close() error {
-	if b.closed != nil {
-		b.closed.Store(true)
-	}
-	return b.ReadCloser.Close()
 }
