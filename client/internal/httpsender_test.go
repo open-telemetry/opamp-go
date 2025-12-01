@@ -13,11 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/open-telemetry/opamp-go/client/types"
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/testhelpers"
 	"github.com/open-telemetry/opamp-go/protobufs"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
@@ -500,4 +501,130 @@ func TestHTTPSenderSetProxy(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.True(t, connected.Load(), "test request did not use proxy")
 	})
+}
+
+func TestHTTPSenderClosesBody(t *testing.T) {
+	tests := []struct {
+		name           string
+		statusCode     int
+		shouldRetry    bool
+		eventualStatus int
+	}{
+		{
+			name:           "Retryable_StatusTooManyRequests",
+			statusCode:     http.StatusTooManyRequests,
+			shouldRetry:    true,
+			eventualStatus: http.StatusOK,
+		},
+		{
+			name:           "Retryable_StatusServiceUnavailable",
+			statusCode:     http.StatusServiceUnavailable,
+			shouldRetry:    true,
+			eventualStatus: http.StatusOK,
+		},
+		{
+			name:           "NonRetryable_StatusBadRequest",
+			statusCode:     http.StatusBadRequest,
+			shouldRetry:    false,
+			eventualStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var connectionAttempts int64
+			bodyClosed := &atomic.Bool{}
+
+			srv := StartMockServer(t)
+			t.Cleanup(srv.Close)
+
+			srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+				attempt := atomic.AddInt64(&connectionAttempts, 1)
+				if tt.shouldRetry && attempt == 1 {
+					w.Header().Set("Retry-After", "0")
+					w.WriteHeader(tt.statusCode)
+					w.Write([]byte("retry"))
+				} else {
+					w.WriteHeader(tt.eventualStatus)
+					w.Write([]byte("test"))
+				}
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			sender := setupTestSender(t, "http://"+srv.Endpoint)
+			sender.callbacks = types.Callbacks{
+				OnConnect: func(ctx context.Context) {
+				},
+				OnConnectFailed: func(ctx context.Context, _ error) {
+				},
+			}
+
+			originalTransport := sender.client.Transport
+			sender.client.Transport = &bodyTrackingTransport{
+				transport: originalTransport,
+				closed:    bodyClosed,
+			}
+
+			_, err := sender.sendRequestWithRetries(ctx)
+
+			assert.Equal(t, tt.shouldRetry, err == nil)
+			assert.True(t, bodyClosed.Load(), "response body should have been closed")
+		})
+	}
+}
+
+// bodyTrackingTransport wraps http.Transport to track response body closures
+type bodyTrackingTransport struct {
+	transport http.RoundTripper
+	closed    *atomic.Bool
+}
+
+func (t *bodyTrackingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t.transport == nil {
+		t.transport = http.DefaultTransport
+	}
+
+	resp, err := t.transport.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.Body != nil {
+		originalBody := resp.Body
+		resp.Body = &closeTrackingBodyWrapper{
+			ReadCloser: originalBody,
+			closed:     t.closed,
+		}
+	}
+
+	return resp, nil
+}
+
+type closeTrackingBodyWrapper struct {
+	io.ReadCloser
+	closed *atomic.Bool
+}
+
+func (b *closeTrackingBodyWrapper) Close() error {
+	b.closed.Store(true)
+	return b.ReadCloser.Close()
+}
+
+// setupTestSender creates a test HTTPSender with a standard message.
+func setupTestSender(_ *testing.T, url string) *HTTPSender {
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.AgentDescription = &protobufs.AgentDescription{
+			IdentifyingAttributes: []*protobufs.KeyValue{{
+				Key: "service.name",
+				Value: &protobufs.AnyValue{
+					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
+				},
+			}},
+		}
+	})
+	sender.url = url
+	return sender
 }
