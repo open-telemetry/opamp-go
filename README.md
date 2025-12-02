@@ -20,6 +20,14 @@
   <a href="https://github.com/open-telemetry/opamp-go/releases">
     <img alt="GitHub release (latest by date including pre-releases)" src="https://img.shields.io/github/v/release/open-telemetry/opamp-go?include_prereleases&style=for-the-badge"></a>
 </p>
+<p align="center">
+  <a href="https://app.fossa.com/projects/custom%2B162%2Fgithub.com%2Fopen-telemetry%2Fopamp-go?ref=badge_shield&issueType=license" alt="FOSSA Status">
+    <img src="https://app.fossa.com/api/projects/custom%2B162%2Fgithub.com%2Fopen-telemetry%2Fopamp-go.svg?type=shield&issueType=license"/></a>
+  <a href="https://app.fossa.com/projects/custom%2B162%2Fgithub.com%2Fopen-telemetry%2Fopamp-go?ref=badge_shield&issueType=security" alt="FOSSA Status">
+    <img src="https://app.fossa.com/api/projects/custom%2B162%2Fgithub.com%2Fopen-telemetry%2Fopamp-go.svg?type=shield&issueType=security"/></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/open-telemetry/opamp-go" alt="OpenSSF Scorecard">
+    <img src="https://api.scorecard.dev/projects/github.com/open-telemetry/opamp-go/badge"/></a>
+</p>
 
 ---
 
