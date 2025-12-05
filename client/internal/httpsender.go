@@ -400,8 +400,13 @@ func (h *HTTPSender) EnableCompression() {
 
 func (h *HTTPSender) AddTLSConfig(config *tls.Config) {
 	if config != nil {
-		h.client.Transport = &http.Transport{
-			TLSClientConfig: config,
+		tlsTransport := &http.Transport{}
+		if h.client.Transport != nil {
+			if transport, ok := h.client.Transport.(*http.Transport); ok {
+				tlsTransport = transport.Clone()
+			}
 		}
+		tlsTransport.TLSClientConfig = config
+		h.client.Transport = tlsTransport
 	}
 }
