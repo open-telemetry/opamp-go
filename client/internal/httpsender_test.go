@@ -84,8 +84,6 @@ func TestHTTPSenderSetHeartbeatInterval(t *testing.T) {
 }
 
 func TestAddTLSConfig(t *testing.T) {
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
-
 	certificate, err := GenerateCertificate()
 	assert.NoError(t, err)
 
@@ -93,8 +91,90 @@ func TestAddTLSConfig(t *testing.T) {
 		Certificates: []tls.Certificate{certificate},
 	}
 
-	sender.AddTLSConfig(tlsConfig)
-	assert.Equal(t, sender.client.Transport, &http.Transport{TLSClientConfig: tlsConfig})
+	// Custom RoundTripper for testing non-*http.Transport case
+	type customTransport struct {
+		http.RoundTripper
+	}
+
+	tests := []struct {
+		name              string
+		existingTransport http.RoundTripper
+		tlsConfig         *tls.Config
+		validateFunc      func(*testing.T, *HTTPSender)
+	}{
+		{
+			name:              "nil TLS config",
+			existingTransport: nil,
+			tlsConfig:         nil,
+			validateFunc: func(t *testing.T, sender *HTTPSender) {
+				assert.Nil(t, sender.client.Transport, "transport should remain nil when config is nil")
+			},
+		},
+		{
+			name: "nil TLS config with existing transport",
+			existingTransport: &http.Transport{
+				MaxResponseHeaderBytes: 4096,
+			},
+			tlsConfig: nil,
+			validateFunc: func(t *testing.T, sender *HTTPSender) {
+				transport, ok := sender.client.Transport.(*http.Transport)
+				assert.True(t, ok, "transport should remain *http.Transport")
+				assert.Equal(t, int64(4096), transport.MaxResponseHeaderBytes)
+			},
+		},
+		{
+			name:              "valid TLS config with nil existing transport",
+			existingTransport: nil,
+			tlsConfig:         tlsConfig,
+			validateFunc: func(t *testing.T, sender *HTTPSender) {
+				transport, ok := sender.client.Transport.(*http.Transport)
+				assert.True(t, ok, "transport should be *http.Transport")
+				assert.NotNil(t, transport.TLSClientConfig)
+				assert.Equal(t, tlsConfig, transport.TLSClientConfig)
+			},
+		},
+		{
+			name: "preserve existing transport settings",
+			existingTransport: &http.Transport{
+				MaxResponseHeaderBytes: 1024,
+				MaxIdleConns:           100,
+				IdleConnTimeout:        90 * time.Second,
+			},
+			tlsConfig: tlsConfig,
+			validateFunc: func(t *testing.T, sender *HTTPSender) {
+				transport, ok := sender.client.Transport.(*http.Transport)
+				assert.True(t, ok, "transport should be *http.Transport")
+				assert.NotNil(t, transport.TLSClientConfig)
+				assert.Equal(t, tlsConfig, transport.TLSClientConfig)
+				// Verify existing settings were preserved
+				assert.Equal(t, int64(1024), transport.MaxResponseHeaderBytes)
+				assert.Equal(t, 100, transport.MaxIdleConns)
+				assert.Equal(t, 90*time.Second, transport.IdleConnTimeout)
+			},
+		},
+		{
+			name:              "non-*http.Transport",
+			existingTransport: &customTransport{},
+			tlsConfig:         tlsConfig,
+			validateFunc: func(t *testing.T, sender *HTTPSender) {
+				transport, ok := sender.client.Transport.(*http.Transport)
+				assert.True(t, ok, "transport should be *http.Transport")
+				assert.NotNil(t, transport.TLSClientConfig)
+				assert.Equal(t, tlsConfig, transport.TLSClientConfig)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sender := NewHTTPSender(&sharedinternal.NopLogger{})
+			sender.client.Transport = tc.existingTransport
+
+			sender.AddTLSConfig(tc.tlsConfig)
+
+			tc.validateFunc(t, sender)
+		})
+	}
 }
 
 func GenerateCertificate() (tls.Certificate, error) {
