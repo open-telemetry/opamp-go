@@ -56,10 +56,10 @@ run-examples: build-examples
 	internal/examples/agent/bin/agent
 
 build-docker-server:
-	docker build -f Dockerfile.server -t opamp-server-example:$(shell git rev-parse --short HEAD) .
+	docker build -f internal/examples/Dockerfile.server -t opamp-server-example:$(shell git rev-parse --short HEAD) .
 
 build-docker-agent:
-	docker build -f Dockerfile.agent -t opamp-agent-example:$(shell git rev-parse --short HEAD) .
+	docker build -f internal/examples/Dockerfile.agent -t opamp-agent-example:$(shell git rev-parse --short HEAD) .
 
 run-docker-server: build-docker-server
 	docker run --rm -p 4320:4320 -p 4321:4321 opamp-server-example:$(shell git rev-parse --short HEAD) & \

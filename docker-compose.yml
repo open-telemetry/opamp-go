@@ -4,7 +4,7 @@ services:
   opamp-server:
     build:
       context: .
-      dockerfile: Dockerfile.server
+      dockerfile: internal/examples/Dockerfile.server
     container_name: opamp-server
     ports:
       - "4320:4320"
@@ -16,7 +16,7 @@ services:
   opamp-agent:
     build:
       context: .
-      dockerfile: Dockerfile.agent
+      dockerfile: internal/examples/Dockerfile.agent
     entrypoint: 
       - "./agent"
       - "--endpoint"
