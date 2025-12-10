@@ -39,21 +39,24 @@ show-coverage: test-with-cover
 	$(GOCMD) tool cover -html=coverage.out
 
 .PHONY: build-examples
-build-examples: build-example-agent build-example-supervisor build-example-server
+build-examples:
+	$(MAKE) -C internal/examples build-examples
 
+.PHONY: build-example-agent
 build-example-agent:
-	cd internal/examples && $(GOCMD) build -o agent/bin/agent agent/main.go
+	$(MAKE) -C internal/examples build-example-agent
 
+.PHONY: build-example-supervisor
 build-example-supervisor:
-	cd internal/examples && $(GOCMD) build -o supervisor/bin/supervisor supervisor/main.go
+	$(MAKE) -C internal/examples build-example-supervisor
 
+.PHONY: build-example-server
 build-example-server:
-	cd internal/examples && $(GOCMD) build -o server/bin/server server/main.go
+	$(MAKE) -C internal/examples build-example-server
 
-run-examples: build-examples
-	internal/examples/server/bin/server &
-	@echo Server UI is running at http://localhost:4321/
-	internal/examples/agent/bin/agent
+.PHONY: run-examples
+run-examples:
+	$(MAKE) -C internal/examples run-examples
 
 OTEL_DOCKER_PROTOBUF ?= otel/build-protobuf:0.14.0
 
