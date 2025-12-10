@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  opamp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: opamp-server
+    ports:
+      - "4320:4320"
+      - "4321:4321"
+    networks:
+      - opamp-network
+    restart: unless-stopped
+
+  opamp-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    entrypoint: 
+      - "./agent"
+      - "--endpoint"
+      - "wss://opamp-server:4320/v1/opamp"
+      - "--tls-insecure_skip_verify"
+    networks:
+      - opamp-network
+    depends_on:
+      - opamp-server
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+
+networks:
+  opamp-network:
+    driver: bridge

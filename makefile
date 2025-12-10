@@ -55,6 +55,48 @@ run-examples: build-examples
 	@echo Server UI is running at http://localhost:4321/
 	internal/examples/agent/bin/agent
 
+build-docker-server:
+	docker build -f Dockerfile.server -t opamp-server-example:$(shell git rev-parse --short HEAD) .
+
+build-docker-agent:
+	docker build -f Dockerfile.agent -t opamp-agent-example:$(shell git rev-parse --short HEAD) .
+
+run-docker-server: build-docker-server
+	docker run --rm -p 4320:4320 -p 4321:4321 opamp-server-example:$(shell git rev-parse --short HEAD) & \
+	echo "Server UI is running at http://$(shell hostname):4321/"
+
+run-docker-agent: build-docker-agent
+	docker run --rm --network host opamp-agent-example:$(shell git rev-parse --short HEAD) --endpoint wss://$(shell hostname):4320/v1/opamp --tls-insecure_skip_verify
+
+run-docker: build-docker-server build-docker-agent
+	@docker run --rm --name opamp-server -p 4320:4320 -p 4321:4321 opamp-server-example:$(shell git rev-parse --short HEAD) & \
+	SERVER_PID=$$!; \
+	echo "Server UI is running at http://$(shell hostname):4321/"; \
+	trap 'docker stop opamp-server 2>/dev/null || true; kill $$SERVER_PID 2>/dev/null || true' INT TERM; \
+	docker run --rm --name opamp-agent --network host opamp-agent-example:$(shell git rev-parse --short HEAD) --endpoint wss://$(shell hostname):4320/v1/opamp --tls-insecure_skip_verify; \
+	docker stop opamp-server 2>/dev/null || true
+
+.PHONY: docker-compose-up
+docker-compose-up:
+	docker compose up --build
+
+.PHONY: docker-compose-down
+docker-compose-down:
+	docker compose down
+
+.PHONY: docker-compose-logs
+docker-compose-logs:
+	docker compose logs -f
+
+.PHONY: docker-compose-scale
+docker-compose-scale:
+	@echo "Usage: make docker-compose-scale AGENTS=<number>"
+	@if [ -z "$(AGENTS)" ]; then \
+		echo "Error: AGENTS variable not set"; \
+		exit 1; \
+	fi
+	docker compose up --scale opamp-agent=$(AGENTS) -d
+
 OTEL_DOCKER_PROTOBUF ?= otel/build-protobuf:0.14.0
 
 # Generate Protobuf Go files.

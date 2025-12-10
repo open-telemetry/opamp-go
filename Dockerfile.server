@@ -1,0 +1,23 @@
+FROM golang:1.24-bookworm AS builder
+
+WORKDIR /src
+
+COPY ./ ./
+
+WORKDIR /src/internal/examples
+
+ENV GOPROXY="https://proxy.golang.org,direct"
+
+RUN go mod download
+
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w" -o server/bin/server server/main.go
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+WORKDIR /app
+
+COPY --from=builder /src/internal/examples/server/bin/server ./
+
+EXPOSE 4320 4321
+
+ENTRYPOINT ["./server"]
