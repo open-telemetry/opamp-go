@@ -3,7 +3,7 @@ version: '3.8'
 services:
   opamp-server:
     build:
-      context: .
+      context: ../..
       dockerfile: internal/examples/Dockerfile.server
     container_name: opamp-server
     ports:
@@ -15,7 +15,7 @@ services:
 
   opamp-agent:
     build:
-      context: .
+      context: ../..
       dockerfile: internal/examples/Dockerfile.agent
     entrypoint: 
       - "./agent"
