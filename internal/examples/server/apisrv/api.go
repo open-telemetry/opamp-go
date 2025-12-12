@@ -80,7 +80,12 @@ func (s *ApiServer) Start() {
 		Addr:    "0.0.0.0:4322",
 		Handler: mux,
 	}
-	go s.srv.ListenAndServe()
+	go func() {
+		s.logger.Println("Starting API server on", s.srv.Addr)
+		if err := s.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			s.logger.Println("API server error:", err)
+		}
+	}()
 }
 
 func (s *ApiServer) Shutdown() {

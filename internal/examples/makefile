@@ -39,8 +39,9 @@ build-docker-agent:
 
 .PHONY: run-docker-server
 run-docker-server: build-docker-server
-	docker run --rm -p 4320:4320 -p 4321:4321 opamp-server-example:$(shell git rev-parse --short HEAD) & \
-	echo "Server UI is running at http://$(shell hostname):4321/"
+	docker run --rm -p 4320:4320 -p 4321:4321  -p 4322:4322 opamp-server-example:$(shell git rev-parse --short HEAD) & \
+	echo "Server legacy UI is running at http://$(shell hostname):4321/"
+	echo "Server REST is running at http://$(shell hostname):4322/"
 
 .PHONY: run-docker-agent
 run-docker-agent: build-docker-agent

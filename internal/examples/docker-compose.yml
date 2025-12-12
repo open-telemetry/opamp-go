@@ -9,6 +9,7 @@ services:
     ports:
       - "4320:4320"
       - "4321:4321"
+      - "4322:4322"
     networks:
       - opamp-network
     restart: unless-stopped
