@@ -1,0 +1,55 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github
+.circleci
+.travis.yml
+
+# Documentation
+*.md
+README*
+LICENSE
+CHANGELOG*
+docs/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.exe
+*.test
+*.out
+.tools/
+internal/examples/agent/bin/
+internal/examples/server/bin/
+internal/examples/supervisor/bin/
+
+# Test files
+*_test.go
+testdata/
+
+# Coverage
+coverage.out
+*.coverprofile
+
+# Misc
+.DS_Store
+Thumbs.db
+renovate.json
+
+# Dockerfiles
+Dockerfile*
+.dockerignore
+docker-compose.yml
+
+makefile
