@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/ory/go-acc v0.2.8
-	golang.org/x/tools v0.36.0
+	golang.org/x/tools v0.40.0
 	mvdan.cc/gofumpt v0.8.0
 )
 
