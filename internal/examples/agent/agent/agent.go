@@ -263,6 +263,10 @@ func (agent *Agent) createAgentIdentity() {
 	}
 }
 
+func (agent *Agent) GetInstanceId() uuid.UUID {
+	return agent.instanceId
+}
+
 func (agent *Agent) updateAgentIdentity(ctx context.Context, instanceId uuid.UUID) {
 	agent.logger.Debugf(ctx, "Agent identify is being changed from id=%v to id=%v",
 		agent.instanceId,

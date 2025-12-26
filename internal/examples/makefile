@@ -27,8 +27,22 @@ run-examples: build-examples
 	@echo Server UI is running at http://localhost:4321/
 	agent/bin/agent
 
-# Docker targets
+# Test targets
+.PHONY: test
+test:
+	$(GOCMD) test -v -p 1 ./...
 
+.PHONY: test-coverage
+test-coverage:
+	$(GOCMD) test -v -p 1 -coverprofile=coverage.out -covermode=atomic ./...
+	$(GOCMD) tool cover -func=coverage.out
+
+.PHONY: test-coverage-html
+test-coverage-html: test-coverage
+	$(GOCMD) tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
+
+# Docker targets
 .PHONY: build-docker-server
 build-docker-server:
 	cd $(SRC_ROOT) && docker build -f internal/examples/Dockerfile.server -t opamp-server-example:$(shell git rev-parse --short HEAD) .
