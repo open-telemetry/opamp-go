@@ -98,6 +98,23 @@ func (agent *Agent) CloneReadonly() *Agent {
 	}
 }
 
+// GetCustomConfig returns the custom instance config that was set for this agent.
+func (agent *Agent) GetCustomConfig() string {
+	agent.mux.RLock()
+	defer agent.mux.RUnlock()
+	return agent.CustomInstanceConfig
+}
+
+// GetRemoteConfig returns the remote config that was sent to this agent.
+func (agent *Agent) GetRemoteConfig() *protobufs.AgentRemoteConfig {
+	agent.mux.RLock()
+	defer agent.mux.RUnlock()
+	if agent.remoteConfig == nil {
+		return nil
+	}
+	return proto.Clone(agent.remoteConfig).(*protobufs.AgentRemoteConfig)
+}
+
 // UpdateStatus updates the status of the Agent struct based on the newly received
 // status report and sets appropriate fields in the response message to be sent
 // to the Agent.

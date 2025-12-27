@@ -1,6 +1,7 @@
 package apisrv
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"log"
@@ -8,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/config/configtls"
@@ -122,6 +124,80 @@ func ExtractAgentUUIDs(t *testing.T, result map[string]interface{}) map[string]b
 	return apiUUIDs
 }
 
+func GetAgentByIDFromAPI(t *testing.T, agentUUID string) (int, map[string]interface{}) {
+	t.Helper()
+
+	resp, err := http.Get("http://localhost:4322/api/v1/agents/" + agentUUID)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	var result map[string]interface{}
+	err = json.Unmarshal(body, &result)
+	require.NoError(t, err)
+
+	return resp.StatusCode, result
+}
+
+func ValidateAgentResponse(t *testing.T, result map[string]interface{}, expectedUUID string) {
+	t.Helper()
+
+	assert.Contains(t, result, "uuid")
+	assert.Contains(t, result, "status")
+	assert.Equal(t, expectedUUID, result["uuid"])
+}
+
+func ValidateErrorResponse(t *testing.T, result map[string]interface{}) {
+	t.Helper()
+
+	assert.Contains(t, result, "error")
+}
+
+func UpdateAgentConfigViaAPI(t *testing.T, agentUUID string, config string) (int, map[string]interface{}) {
+	t.Helper()
+
+	configRequest := map[string]string{"config": config}
+	configJSONBytes, err := json.Marshal(configRequest)
+	require.NoError(t, err)
+
+	resp, err := http.Post(
+		"http://localhost:4322/api/v1/agents/"+agentUUID+"/config",
+		"application/json",
+		bytes.NewReader(configJSONBytes),
+	)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	var result map[string]interface{}
+	err = json.Unmarshal(body, &result)
+	require.NoError(t, err)
+
+	return resp.StatusCode, result
+}
+
+func ValidateSuccessResponse(t *testing.T, result map[string]interface{}) {
+	t.Helper()
+
+	assert.Contains(t, result, "message")
+}
+
+func GetAgentConfig(t *testing.T, agents *data.Agents, agentUUID string) string {
+	t.Helper()
+
+	uid, err := uuid.Parse(agentUUID)
+	require.NoError(t, err)
+
+	agent := agents.GetAgentReadonlyClone(data.InstanceId(uid))
+	require.NotNil(t, agent)
+
+	return agent.GetCustomConfig()
+}
+
 func TestServerStartStop(t *testing.T) {
 	srv := NewTestServer(t)
 	require.NotNil(t, srv)
@@ -153,4 +229,71 @@ func TestGetAgents(t *testing.T) {
 	assert.True(t, apiUUIDs[expectedUUID1], "API should contain first agent's UUID")
 	assert.True(t, apiUUIDs[expectedUUID2], "API should contain second agent's UUID")
 	assert.NotEqual(t, expectedUUID1, expectedUUID2, "Agent UUIDs should be different")
+}
+
+func TestGetAgentByID(t *testing.T) {
+	srv := NewTestServer(t)
+	require.NotNil(t, srv)
+
+	testAgent := NewTestAgent(t)
+	require.NotNil(t, testAgent)
+
+	// Wait for agent to connect and register with the OpAMP server
+	time.Sleep(500 * time.Millisecond)
+
+	agentUUID := testAgent.Agent.GetInstanceId().String()
+
+	// Test successful retrieval
+	statusCode, result := GetAgentByIDFromAPI(t, agentUUID)
+	assert.Equal(t, http.StatusOK, statusCode)
+	ValidateAgentResponse(t, result, agentUUID)
+
+	// Test invalid UUID format
+	statusCode, errorResult := GetAgentByIDFromAPI(t, "invalid-uuid")
+	assert.Equal(t, http.StatusBadRequest, statusCode)
+	ValidateErrorResponse(t, errorResult)
+
+	// Test non-existent agent
+	nonExistentUUID := "00000000-0000-0000-0000-000000000000"
+	statusCode, errorResult = GetAgentByIDFromAPI(t, nonExistentUUID)
+	assert.Equal(t, http.StatusNotFound, statusCode)
+	ValidateErrorResponse(t, errorResult)
+}
+
+func TestUpdateAgentConfig(t *testing.T) {
+	srv := NewTestServer(t)
+	require.NotNil(t, srv)
+
+	testAgent := NewTestAgent(t)
+	require.NotNil(t, testAgent)
+
+	// Wait for agent to connect and register with the OpAMP server
+	time.Sleep(500 * time.Millisecond)
+
+	agentUUID := testAgent.Agent.GetInstanceId().String()
+
+	// Get the config before update
+	configBeforeUpdate := GetAgentConfig(t, srv.Agents, agentUUID)
+
+	// Test successful config update - append a comment to the config
+	expectedConfig := configBeforeUpdate + "# comment for testing\n"
+	statusCode, result := UpdateAgentConfigViaAPI(t, agentUUID, expectedConfig)
+	assert.Equal(t, http.StatusOK, statusCode)
+	ValidateSuccessResponse(t, result)
+
+	// Verify the agent received the updated config
+	configAfterUpdate := GetAgentConfig(t, srv.Agents, agentUUID)
+	assert.Equal(t, expectedConfig, configAfterUpdate)
+	assert.NotEqual(t, configBeforeUpdate, configAfterUpdate, "Config should have changed")
+
+	// Test invalid UUID format
+	statusCode, errorResult := UpdateAgentConfigViaAPI(t, "invalid-uuid", expectedConfig)
+	assert.Equal(t, http.StatusBadRequest, statusCode)
+	ValidateErrorResponse(t, errorResult)
+
+	// Test non-existent agent
+	nonExistentUUID := "00000000-0000-0000-0000-000000000000"
+	statusCode, errorResult = UpdateAgentConfigViaAPI(t, nonExistentUUID, expectedConfig)
+	assert.Equal(t, http.StatusNotFound, statusCode)
+	ValidateErrorResponse(t, errorResult)
 }
