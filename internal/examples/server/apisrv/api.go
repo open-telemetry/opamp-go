@@ -166,6 +166,25 @@ func (s *ApiServer) writeJSON(w http.ResponseWriter, status int, data interface{
 	}
 }
 
+// corsMiddleware adds CORS headers to allow cross-origin requests
+func (s *ApiServer) corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Allow requests from any origin (adjust as needed for production)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Max-Age", "3600")
+
+		// Handle preflight OPTIONS requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *ApiServer) Start() {
 	mux := http.NewServeMux()
 
@@ -173,9 +192,12 @@ func (s *ApiServer) Start() {
 	mux.HandleFunc("GET /api/v1/agents/{instanceid}", s.agentHandler)
 	mux.HandleFunc("POST /api/v1/agents/{instanceid}/config", s.updateAgentConfigHandler)
 
+	// Wrap mux with CORS middleware
+	handler := s.corsMiddleware(mux)
+
 	s.srv = &http.Server{
 		Addr:    "0.0.0.0:4322",
-		Handler: mux,
+		Handler: handler,
 	}
 	go func() {
 		s.logger.Println("Starting API server on", s.srv.Addr)
