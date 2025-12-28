@@ -38,9 +38,6 @@ type Agent struct {
 }
 
 func (s *ApiServer) agentsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
 	var agent_list AgentList
 
 	for _, value := range s.agents.GetAllAgentsReadonlyClone() {
