@@ -11,7 +11,7 @@ jobs:
     permissions:
       contents: write # to allow pushing changes to the branch
     runs-on: ubuntu-latest
-    if: ${{ (github.actor == 'renovate[bot]' || contains(github.event.pull_request.labels.*.name, 'renovatebot')) }}
+    if: ${{ (github.actor == 'renovate[bot]' || contains(github.event.pull_request.labels.*.name, 'renovatebot')) && github.event.pull_request.head.repo.fork == false }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v5
