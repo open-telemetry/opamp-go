@@ -51,7 +51,10 @@ func main() {
 		},
 	}
 
-	agent := agent.NewAgent(&agent.Logger{Logger: log.Default()}, agentType, agentVersion, config)
+	agent := agent.NewAgent(config, agent.WithAgentType(agentType), agent.WithAgentVersion(agentVersion))
+	if err := agent.Start(); err != nil {
+		log.Fatal("Agent encountered error when starting: %v", err)
+	}
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)

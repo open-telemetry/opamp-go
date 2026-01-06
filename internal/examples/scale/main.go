@@ -9,6 +9,9 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/open-telemetry/opamp-go/internal/examples/agent/agent"
+	"github.com/open-telemetry/opamp-go/internal/examples/config"
 	"github.com/open-telemetry/opamp-go/internal/examples/scale/scale"
 	"go.opentelemetry.io/collector/config/configtls"
 )
@@ -59,23 +62,21 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	// Create tls.Config for clients
-	// client certs are not currently supported
-	tlsCFG, err := (&configtls.ClientConfig{
-		Insecure:           tlsInsecure,
-		InsecureSkipVerify: tlsInsecureSkipVerify,
-		Config: configtls.Config{
-			CAFile: tlsCAFile,
+	cfg := &config.AgentConfig{
+		Endpoint: serverURL,
+		TLSSetting: configtls.ClientConfig{
+			Insecure:           tlsInsecure,
+			InsecureSkipVerify: tlsInsecureSkipVerify,
+			Config: configtls.Config{
+				CAFile: tlsCAFile,
+			},
 		},
-	}).LoadTLSConfig(ctx)
-	if err != nil {
-		logger.Fatalf("Unable to create tls.Config: %v", err)
 	}
 
 	logger.Printf("Starting %d agents", agentCount)
 	// Create a slice to track agents so we can safely stop them later.
 	// Use of slice instead of a concurrent goroutine to reduce memory usage.
-	agents := make([]*scale.Agent, 0, agentCount)
+	agents := make([]*agent.Agent, 0, agentCount)
 	for range agentCount {
 		select {
 		case <-ctx.Done(): // early termination
@@ -83,9 +84,14 @@ func main() {
 		default:
 		}
 
-		agent := scale.NewAgent(serverURL, heartbeat, tlsCFG)
-		// Use context.Background instead of ctx so we can do a clean shutdown if SIGINT is recieved.
-		if err := agent.Start(context.Background()); err != nil {
+		id, err := uuid.NewV7()
+		if err != nil {
+			panic(err)
+		}
+		agentLogger := scale.NewLogger(id)
+		agent := agent.NewAgent(cfg, agent.WithNoClientCertRequest(), agent.WithInstanceID(id), agent.WithLogger(agentLogger)) // TODO heartbeat?
+
+		if err := agent.Start(); err != nil {
 			logger.Printf("Error starting agent: %v\n", err)
 			continue
 		}
@@ -94,9 +100,7 @@ func main() {
 	logger.Printf("%d agents started", len(agents))
 	<-ctx.Done()
 	for _, agent := range agents {
-		if err := agent.Stop(); err != nil {
-			logger.Printf("Error stopping agent: %v\n", err)
-		}
+		agent.Shutdown()
 	}
 	logger.Println("All agents stopped")
 

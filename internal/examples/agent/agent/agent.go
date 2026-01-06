@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"runtime"
@@ -27,7 +28,7 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
-const localConfig = `
+var localConfig = []byte(`
 exporters:
   otlp:
     endpoint: localhost:1111
@@ -44,23 +45,28 @@ service:
       receivers: [otlp]
       processors: []
       exporters: [otlp]
-`
+`)
+
+// Agent identification constants
+const (
+	agentType    = "io.opentelemetry.collector"
+	agentVersion = "1.0.0"
+)
 
 type Agent struct {
+	client client.OpAMPClient
 	logger types.Logger
+	doneCh chan struct{}
 
 	agentType    string
 	agentVersion string
+	instanceId   uuid.UUID
 
 	agentConfig *config.AgentConfig
 
-	effectiveConfig string
-
-	instanceId uuid.UUID
+	effectiveConfig []byte
 
 	agentDescription *protobufs.AgentDescription
-
-	opampClient client.OpAMPClient
 
 	remoteConfigStatus *protobufs.RemoteConfigStatus
 
@@ -89,31 +95,58 @@ func (p *proxySettings) Clone() *proxySettings {
 	}
 }
 
-func NewAgent(logger types.Logger, agentType, agentVersion string, agentConfig *config.AgentConfig) *Agent {
+type Option func(agent *Agent)
+
+// WithLogger is used to set an Agent's logger
+func WithLogger(l types.Logger) Option {
+	return func(agent *Agent) {
+		agent.logger = l
+	}
+}
+
+// WithLogger is used to set an Agent's type
+func WithAgentType(s string) Option {
+	return func(agent *Agent) {
+		agent.agentType = s
+	}
+}
+
+// WithLogger is used to set an Agent's version
+func WithAgentVersion(s string) Option {
+	return func(agent *Agent) {
+		agent.agentVersion = s
+	}
+}
+
+// WithLogger is used to set an Agent's id
+func WithInstanceID(id uuid.UUID) Option {
+	return func(agent *Agent) {
+		agent.instanceId = id
+	}
+}
+
+// WithNoClientCertRequest will ensure the agent does not request a client cert when initially connecting.
+func WithNoClientCertRequest() Option {
+	return func(agent *Agent) {
+		agent.certRequested = true
+	}
+}
+
+func NewAgent(agentConfig *config.AgentConfig, options ...Option) *Agent {
 	agent := &Agent{
-		effectiveConfig: localConfig,
-		logger:          logger,
+		logger:          &Logger{Logger: log.Default()},
 		agentType:       agentType,
 		agentVersion:    agentVersion,
 		agentConfig:     agentConfig,
+		effectiveConfig: localConfig,
+	}
+
+	for _, option := range options {
+		option(agent)
 	}
 
 	agent.createAgentIdentity()
-	agent.logger.Debugf(context.Background(), "Agent starting, id=%v, type=%s, version=%s.",
-		agent.instanceId, agentType, agentVersion)
-
 	agent.loadLocalConfig()
-
-	tls, err := agentConfig.GetTLSConfig(context.Background())
-	if err != nil {
-		agent.logger.Errorf(context.Background(), "Cannot get the TLS config: %v", err)
-		return nil
-	}
-
-	if err = agent.connect(withTLSConfig(tls)); err != nil {
-		agent.logger.Errorf(context.Background(), "Cannot connect OpAMP client: %v", err)
-		return nil
-	}
 
 	return agent
 }
@@ -139,7 +172,13 @@ func withProxy(proxy *proxySettings) settingsOp {
 }
 
 func (agent *Agent) connect(ops ...settingsOp) error {
-	agent.opampClient = client.NewWebSocket(agent.logger)
+	if strings.HasPrefix(agent.agentConfig.Endpoint, "http") {
+		agent.client = client.NewHTTP(agent.logger)
+	} else if strings.HasPrefix(agent.agentConfig.Endpoint, "ws") {
+		agent.client = client.NewWebSocket(agent.logger)
+	} else {
+		return fmt.Errorf("server endpoint has unknown scheme: %s", agent.agentConfig.Endpoint)
+	}
 
 	settings := types.StartSettings{
 		OpAMPServerURL: agent.agentConfig.Endpoint,
@@ -175,7 +214,7 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 		headers: settings.ProxyHeaders,
 	}
 
-	err := agent.opampClient.SetAgentDescription(agent.agentDescription)
+	err := agent.client.SetAgentDescription(agent.agentDescription)
 	if err != nil {
 		return err
 	}
@@ -186,7 +225,7 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 		protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
 		protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings |
 		protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus
-	err = agent.opampClient.SetCapabilities(&supportedCapabilities)
+	err = agent.client.SetCapabilities(&supportedCapabilities)
 	if err != nil {
 		return err
 	}
@@ -201,7 +240,7 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 
 	agent.logger.Debugf(context.Background(), "Starting OpAMP client...")
 
-	err = agent.opampClient.Start(context.Background(), settings)
+	err = agent.client.Start(context.Background(), settings)
 	if err != nil {
 		return err
 	}
@@ -213,16 +252,19 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 
 func (agent *Agent) disconnect(ctx context.Context) {
 	agent.logger.Debugf(ctx, "Disconnecting from server...")
-	agent.opampClient.Stop(ctx)
+	agent.client.Stop(ctx)
 }
 
+// createAgentIdentity sets the instanceId if it is not already set and populates agentDescription.
 func (agent *Agent) createAgentIdentity() {
 	// Generate instance id.
-	uid, err := uuid.NewV7()
-	if err != nil {
-		panic(err)
+	if agent.instanceId == uuid.Nil {
+		uid, err := uuid.NewV7()
+		if err != nil {
+			panic(err)
+		}
+		agent.instanceId = uid
 	}
-	agent.instanceId = uid
 
 	hostname, _ := os.Hostname()
 
@@ -275,23 +317,24 @@ func (agent *Agent) updateAgentIdentity(ctx context.Context, instanceId uuid.UUI
 	}
 }
 
+// loadLocalConfig sets effectiveConfig
 func (agent *Agent) loadLocalConfig() {
 	k := koanf.New(".")
-	_ = k.Load(rawbytes.Provider([]byte(localConfig)), yaml.Parser())
+	_ = k.Load(rawbytes.Provider(localConfig), yaml.Parser())
 
 	effectiveConfigBytes, err := k.Marshal(yaml.Parser())
 	if err != nil {
 		panic(err)
 	}
 
-	agent.effectiveConfig = string(effectiveConfigBytes)
+	agent.effectiveConfig = effectiveConfigBytes
 }
 
 func (agent *Agent) composeEffectiveConfig() *protobufs.EffectiveConfig {
 	return &protobufs.EffectiveConfig{
 		ConfigMap: &protobufs.AgentConfigMap{
 			ConfigMap: map[string]*protobufs.AgentConfigFile{
-				"": {Body: []byte(agent.effectiveConfig)},
+				"": {Body: agent.effectiveConfig},
 			},
 		},
 	}
@@ -345,7 +388,7 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 
 	// Begin with local config. We will later merge received configs on top of it.
 	k := koanf.New(".")
-	if err := k.Load(rawbytes.Provider([]byte(localConfig)), yaml.Parser()); err != nil {
+	if err := k.Load(rawbytes.Provider(localConfig), yaml.Parser()); err != nil {
 		return false, err
 	}
 
@@ -392,22 +435,41 @@ func (agent *Agent) applyRemoteConfig(config *protobufs.AgentRemoteConfig) (conf
 		panic(err)
 	}
 
-	newEffectiveConfig := string(effectiveConfigBytes)
 	configChanged = false
-	if agent.effectiveConfig != newEffectiveConfig {
+	if !bytes.Equal(agent.effectiveConfig, effectiveConfigBytes) {
 		agent.logger.Debugf(context.Background(), "Effective config changed. Need to report to server.")
-		agent.effectiveConfig = newEffectiveConfig
+		agent.effectiveConfig = effectiveConfigBytes
 		configChanged = true
 	}
 
 	return configChanged, nil
 }
 
-func (agent *Agent) Shutdown() {
-	agent.logger.Debugf(context.Background(), "Agent shutting down...")
-	if agent.opampClient != nil {
-		_ = agent.opampClient.Stop(context.Background())
+func (agent *Agent) Start() error {
+	tls, err := agent.agentConfig.GetTLSConfig(context.Background())
+	if err != nil {
+		return err
 	}
+	agent.logger.Debugf(context.Background(), "Agent starting, id=%v, type=%s, version=%s.",
+		agent.instanceId, agent.agentType, agent.agentVersion)
+	agent.doneCh = make(chan struct{})
+	return agent.connect(withTLSConfig(tls))
+}
+
+func (agent *Agent) Shutdown() {
+	if agent.doneCh == nil {
+		agent.logger.Debugf(context.Background(), "Agent not running.")
+		return
+	}
+	agent.logger.Debugf(context.Background(), "Agent shutting down...")
+	if agent.client != nil {
+		_ = agent.client.Stop(context.Background())
+	}
+	close(agent.doneCh)
+}
+
+func (agent *Agent) Wait() {
+	<-agent.doneCh
 }
 
 // requestClientCertificate sets a request to be sent to the Server to create
@@ -470,7 +532,7 @@ func (agent *Agent) requestClientCertificate() {
 
 	// Send the request to the Server (immediately if already connected
 	// or upon next successful connection).
-	err = agent.opampClient.RequestConnectionSettings(
+	err = agent.client.RequestConnectionSettings(
 		&protobufs.ConnectionSettingsRequest{
 			Opamp: &protobufs.OpAMPConnectionSettingsRequest{
 				CertificateRequest: &protobufs.CertificateRequest{
@@ -493,7 +555,7 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 		var err error
 		configChanged, err = agent.applyRemoteConfig(msg.RemoteConfig)
 		if err != nil {
-			agent.opampClient.SetRemoteConfigStatus(
+			agent.client.SetRemoteConfigStatus(
 				&protobufs.RemoteConfigStatus{
 					LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
 					Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
@@ -501,7 +563,7 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 				},
 			)
 		} else {
-			agent.opampClient.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
+			agent.client.SetRemoteConfigStatus(&protobufs.RemoteConfigStatus{
 				LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
 				Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED,
 			})
@@ -518,7 +580,7 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	}
 
 	if configChanged {
-		err := agent.opampClient.UpdateEffectiveConfig(ctx)
+		err := agent.client.UpdateEffectiveConfig(ctx)
 		if err != nil {
 			agent.logger.Errorf(ctx, err.Error())
 		}
