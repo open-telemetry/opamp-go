@@ -1,6 +1,6 @@
 # scale
 
-Scale provides dumb agents to scale test an OpAMP server.
+Scale provides agents to scale test an OpAMP server.
 
 Websocket and HTTP servers are supported, but all agents must use the same connection type.
 Each agent uses it's own OpAMP agent client, and runs in a goroutine.

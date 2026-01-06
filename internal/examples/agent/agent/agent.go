@@ -181,8 +181,9 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 	}
 
 	settings := types.StartSettings{
-		OpAMPServerURL: agent.agentConfig.Endpoint,
-		InstanceUid:    types.InstanceUid(agent.instanceId),
+		OpAMPServerURL:    agent.agentConfig.Endpoint,
+		HeartbeatInterval: agent.agentConfig.HeartbeatInterval,
+		InstanceUid:       types.InstanceUid(agent.instanceId),
 		Callbacks: types.Callbacks{
 			OnConnect: func(ctx context.Context) {
 				agent.logger.Debugf(ctx, "Connected to the server.")

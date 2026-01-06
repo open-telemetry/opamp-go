@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/url"
+	"time"
 
 	"github.com/open-telemetry/opamp-go/internal/examples/certs"
 	"go.opentelemetry.io/collector/config/configopaque"
@@ -12,8 +13,9 @@ import (
 )
 
 type AgentConfig struct {
-	Endpoint   string                 `mapstructure:"endpoint"`
-	TLSSetting configtls.ClientConfig `mapstructure:"tls,omitempty"`
+	Endpoint          string                 `mapstructure:"endpoint"`
+	HeartbeatInterval *time.Duration         `mapstructure:"heartbeat_interval"`
+	TLSSetting        configtls.ClientConfig `mapstructure:"tls,omitempty"`
 }
 
 func (a *AgentConfig) GetTLSConfig(ctx context.Context) (*tls.Config, error) {

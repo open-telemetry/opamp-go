@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/open-telemetry/opamp-go/internal/examples/agent/agent"
 	"github.com/open-telemetry/opamp-go/internal/examples/config"
-	"github.com/open-telemetry/opamp-go/internal/examples/scale/scale"
 	"go.opentelemetry.io/collector/config/configtls"
 )
 
@@ -63,7 +62,8 @@ func main() {
 	defer cancel()
 
 	cfg := &config.AgentConfig{
-		Endpoint: serverURL,
+		Endpoint:          serverURL,
+		HeartbeatInterval: &heartbeat,
 		TLSSetting: configtls.ClientConfig{
 			Insecure:           tlsInsecure,
 			InsecureSkipVerify: tlsInsecureSkipVerify,
@@ -88,24 +88,24 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		agentLogger := scale.NewLogger(id)
-		agent := agent.NewAgent(cfg, agent.WithNoClientCertRequest(), agent.WithInstanceID(id), agent.WithLogger(agentLogger)) // TODO heartbeat?
+		agentLogger := agent.NewScaleLogger(id)
+		a := agent.NewAgent(cfg, agent.WithNoClientCertRequest(), agent.WithInstanceID(id), agent.WithLogger(agentLogger))
 
-		if err := agent.Start(); err != nil {
+		if err := a.Start(); err != nil {
 			logger.Printf("Error starting agent: %v\n", err)
 			continue
 		}
-		agents = append(agents, agent)
+		agents = append(agents, a)
 	}
 	logger.Printf("%d agents started", len(agents))
 	<-ctx.Done()
-	for _, agent := range agents {
-		agent.Shutdown()
+	for _, a := range agents {
+		a.Shutdown()
 	}
 	logger.Println("All agents stopped")
 
-	for _, agent := range agents {
-		agent.Wait()
+	for _, a := range agents {
+		a.Wait()
 	}
 	logger.Println("All agents terminated cleanly")
 }
