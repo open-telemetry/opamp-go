@@ -135,15 +135,17 @@ func (c *ClientCommon) PrepareStart(
 	}
 
 	// Prepare remote config status.
-	if settings.RemoteConfigStatus == nil {
+	if c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig) {
 		// RemoteConfigStatus is not provided. Start with empty.
-		settings.RemoteConfigStatus = &protobufs.RemoteConfigStatus{
-			Status: protobufs.RemoteConfigStatuses_RemoteConfigStatuses_UNSET,
+		if settings.RemoteConfigStatus == nil {
+			settings.RemoteConfigStatus = &protobufs.RemoteConfigStatus{
+				Status: protobufs.RemoteConfigStatuses_RemoteConfigStatuses_UNSET,
+			}
 		}
-	}
 
-	if err := c.ClientSyncedState.SetRemoteConfigStatus(settings.RemoteConfigStatus); err != nil {
-		return err
+		if err := c.ClientSyncedState.SetRemoteConfigStatus(settings.RemoteConfigStatus); err != nil {
+			return err
+		}
 	}
 
 	var packageStatuses *protobufs.PackageStatuses
@@ -158,12 +160,15 @@ func (c *ClientCommon) PrepareStart(
 		}
 	}
 
-	if packageStatuses == nil {
+	if c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses) {
 		// PackageStatuses is not provided. Start with empty.
-		packageStatuses = &protobufs.PackageStatuses{}
-	}
-	if err := c.ClientSyncedState.SetPackageStatuses(packageStatuses); err != nil {
-		return err
+		if packageStatuses == nil {
+			packageStatuses = &protobufs.PackageStatuses{}
+		}
+
+		if err := c.ClientSyncedState.SetPackageStatuses(packageStatuses); err != nil {
+			return err
+		}
 	}
 
 	// Prepare callbacks.
