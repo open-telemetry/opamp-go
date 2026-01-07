@@ -104,21 +104,21 @@ func WithLogger(l types.Logger) Option {
 	}
 }
 
-// WithLogger is used to set an Agent's type
+// WithAgentType is used to set an Agent's type
 func WithAgentType(s string) Option {
 	return func(agent *Agent) {
 		agent.agentType = s
 	}
 }
 
-// WithLogger is used to set an Agent's version
+// WithAgentVersion is used to set an Agent's version
 func WithAgentVersion(s string) Option {
 	return func(agent *Agent) {
 		agent.agentVersion = s
 	}
 }
 
-// WithLogger is used to set an Agent's id
+// WithInstanceID is used to set an Agent's id
 func WithInstanceID(id uuid.UUID) Option {
 	return func(agent *Agent) {
 		agent.instanceId = id
