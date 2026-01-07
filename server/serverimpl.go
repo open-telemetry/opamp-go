@@ -43,9 +43,6 @@ type server struct {
 	httpServer        *http.Server
 	httpServerServeWg *sync.WaitGroup
 
-	// gwPool is a gzip.Writer pool. This is intended to lower the amount of writers that are created when responding to HTTP requests.
-	gwPool sync.Pool
-
 	// The network address Server is listening on. Nil if not started.
 	addr net.Addr
 }
@@ -68,14 +65,7 @@ func New(logger types.Logger) *server {
 		logger = &internal.NopLogger{}
 	}
 
-	return &server{
-		logger: logger,
-		gwPool: sync.Pool{
-			New: func() any {
-				return gzip.NewWriter(io.Discard)
-			},
-		},
-	}
+	return &server{logger: logger}
 }
 
 func (s *server) Attach(settings Settings) (HTTPHandlerFunc, ConnContext, error) {
@@ -255,20 +245,11 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 
 	connectionCallbacks.OnConnected(reqCtx, agentConn)
 
-	var sentCustomCapabilities sync.Once
+	sentCustomCapabilities := false
 
-	// Loop until fail to read from the WebSocket connection or reqCtx is cancelled.
-LOOP:
+	// Loop until fail to read from the WebSocket connection.
 	for {
-		select {
-		case <-reqCtx.Done(): // signal connection shutdown, note that ReadMessage below is a blocking call, so this will not write as soon as the context is cancelled.
-			if err := agentConn.SendClose(); err != nil {
-				s.logger.Errorf(context.Background(), "error sending close frame for WebSocket connection: %v", err)
-				break LOOP
-			}
-		default:
-		}
-		msgContext := context.Background() // FIXME why not reqContext?
+		msgContext := context.Background()
 		request := protobufs.AgentToServer{}
 
 		// Block until the next message can be read.
@@ -313,11 +294,12 @@ LOOP:
 		if len(response.InstanceUid) == 0 {
 			response.InstanceUid = request.InstanceUid
 		}
-		sentCustomCapabilities.Do(func() {
+		if !sentCustomCapabilities {
 			response.CustomCapabilities = &protobufs.CustomCapabilities{
 				Capabilities: s.settings.CustomCapabilities,
 			}
-		})
+			sentCustomCapabilities = true
+		}
 
 		err = agentConn.Send(msgContext, response)
 		if err != nil {
@@ -329,42 +311,32 @@ LOOP:
 	}
 }
 
-func (s *server) readReqBody(req *http.Request) ([]byte, error) {
-	if req.Header.Get(headerContentEncoding) == contentEncodingGzip {
-		data, err := decompressGzip(req.Body)
-		if err != nil {
-			return nil, err
-		}
-		return data, nil
+func decompressGzip(data []byte) ([]byte, error) {
+	r, err := gzip.NewReader(bytes.NewBuffer(data))
+	if err != nil {
+		return nil, err
 	}
+	defer r.Close()
+	return io.ReadAll(r)
+}
+
+func (s *server) readReqBody(req *http.Request) ([]byte, error) {
 	data, err := io.ReadAll(req.Body)
 	if err != nil {
 		return nil, err
 	}
+	if req.Header.Get(headerContentEncoding) == contentEncodingGzip {
+		data, err = decompressGzip(data)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return data, nil
-}
-
-func (s *server) compressGzip(data []byte) ([]byte, error) { // FIXME should we pass the request writer instead of allocating a buffer?
-	var buf bytes.Buffer
-	w, _ := s.gwPool.Get().(*gzip.Writer)
-	defer s.gwPool.Put(w)
-	w.Reset(&buf)
-
-	_, err := w.Write(data)
-	if err != nil {
-		return nil, err
-	}
-	err = w.Close()
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }
 
 func compressGzip(data []byte) ([]byte, error) {
 	var buf bytes.Buffer
 	w := gzip.NewWriter(&buf)
-
 	_, err := w.Write(data)
 	if err != nil {
 		return nil, err
@@ -433,7 +405,7 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	// Send the response.
 	w.Header().Set(headerContentType, contentTypeProtobuf)
 	if req.Header.Get(headerAcceptEncoding) == contentEncodingGzip {
-		bodyBytes, err = s.compressGzip(bodyBytes)
+		bodyBytes, err = compressGzip(bodyBytes)
 		if err != nil {
 			s.logger.Errorf(req.Context(), "Cannot compress response: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)

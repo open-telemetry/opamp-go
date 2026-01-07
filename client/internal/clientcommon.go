@@ -142,10 +142,8 @@ func (c *ClientCommon) PrepareStart(
 		}
 	}
 
-	if c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig) {
-		if err := c.ClientSyncedState.SetRemoteConfigStatus(settings.RemoteConfigStatus); err != nil {
-			return err
-		}
+	if err := c.ClientSyncedState.SetRemoteConfigStatus(settings.RemoteConfigStatus); err != nil {
+		return err
 	}
 
 	var packageStatuses *protobufs.PackageStatuses

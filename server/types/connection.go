@@ -20,10 +20,6 @@ type Connection interface {
 	// Should return as soon as possible if the ctx is cancelled.
 	Send(ctx context.Context, message *protobufs.ServerToAgent) error
 
-	// SendClose sends a close control frame with the CloseCode set to going away.
-	// This should be used to signal a server shutdown.
-	SendClose() error
-
 	// Disconnect closes the network connection.
 	// Any blocked Read or Write operations will be unblocked and return errors.
 	Disconnect() error

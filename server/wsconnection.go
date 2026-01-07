@@ -5,7 +5,6 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/gorilla/websocket"
 
@@ -39,13 +38,6 @@ func (c *wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent)
 	defer c.connMutex.Unlock()
 
 	return internal.WriteWSMessage(c.wsConn, message)
-}
-
-func (c *wsConnection) SendClose() error {
-	if c.closed.Load() {
-		return nil
-	}
-	return c.wsConn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "Server shutting down"), time.Time{})
 }
 
 func (c *wsConnection) Disconnect() error {

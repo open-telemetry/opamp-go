@@ -964,8 +964,11 @@ func TestServerHonoursAcceptEncoding(t *testing.T) {
 	// Verify the received message is what was sent.
 	assert.True(t, proto.Equal(rcvMsg.Load().(proto.Message), &sendMsg))
 
-	// Read and decompress the gzip response
-	b, err = srv.decompressGzip(resp.Body)
+	// Read Server's response.
+	b, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	// Decompress the gzip response
+	b, err = decompressGzip(b)
 	require.NoError(t, err)
 
 	assert.EqualValues(t, http.StatusOK, resp.StatusCode)
@@ -1394,18 +1397,4 @@ func TestServerTLS(t *testing.T) {
 	assert.EqualValues(t, protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus, response.Capabilities)
 
 	eventually(t, func() bool { return atomic.LoadInt32(&onCloseCalled) == 1 })
-}
-
-func BenchmarkCompressGzip(b *testing.B) {
-	input := []byte("Hello, World!")
-	s := New(nil)
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for range b.N {
-		p, err := s.compressGzip(input)
-		if p == nil || err != nil {
-			b.Fatal(err)
-		}
-	}
 }

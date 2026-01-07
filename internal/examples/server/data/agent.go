@@ -266,23 +266,18 @@ func (agent *Agent) processStatusUpdate(
 	if agentDescrChanged {
 		// Agent description is changed.
 
-		if agent.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig) {
-			// We need to recalculate the config.
-			configChanged = agent.calcRemoteConfig()
-			if agent.Status.RemoteConfigStatus != nil {
-				configChanged = configChanged || bytes.Equal(agent.Status.RemoteConfigStatus.LastRemoteConfigHash, agent.remoteConfig.ConfigHash)
-			}
-		}
+		// We need to recalculate the config.
+		configChanged = agent.calcRemoteConfig()
 
-		if agent.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOtherConnectionSettings) {
-			// And set connection settings that are appropriate for the Agent description.
-			agent.calcConnectionSettings(response)
-		}
+		// And set connection settings that are appropriate for the Agent description.
+		agent.calcConnectionSettings(response)
 	}
 
 	// If remote config is changed and different from what the Agent has then
 	// send the new remote config to the Agent.
-	if agent.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig) && configChanged {
+	if configChanged ||
+		(agent.Status.RemoteConfigStatus != nil &&
+			bytes.Compare(agent.Status.RemoteConfigStatus.LastRemoteConfigHash, agent.remoteConfig.ConfigHash) != 0) {
 		// The new status resulted in a change in the config of the Agent or the Agent
 		// does not have this config (hash is different). Send the new config the Agent.
 		response.RemoteConfig = agent.remoteConfig
