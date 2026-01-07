@@ -45,7 +45,7 @@ func (c *wsConnection) SendClose() error {
 	if c.closed.Load() {
 		return nil
 	}
-	return c.wsConn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "Server shutting down"), time.Time{}
+	return c.wsConn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "Server shutting down"), time.Time{})
 }
 
 func (c *wsConnection) Disconnect() error {
