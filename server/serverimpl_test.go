@@ -965,7 +965,7 @@ func TestServerHonoursAcceptEncoding(t *testing.T) {
 	assert.True(t, proto.Equal(rcvMsg.Load().(proto.Message), &sendMsg))
 
 	// Read and decompress the gzip response
-	b, err = decompressGzip(resp.Body)
+	b, err = srv.decompressGzip(resp.Body)
 	require.NoError(t, err)
 
 	assert.EqualValues(t, http.StatusOK, resp.StatusCode)

@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gorilla/websocket"
 
@@ -44,7 +45,7 @@ func (c *wsConnection) SendClose() error {
 	if c.closed.Load() {
 		return nil
 	}
-	return c.wsConn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "Server shutting down"), 0)
+	return c.wsConn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "Server shutting down"), time.Time{}
 }
 
 func (c *wsConnection) Disconnect() error {
