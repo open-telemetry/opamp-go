@@ -9,6 +9,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -22,11 +23,17 @@ import (
 	"github.com/open-telemetry/opamp-go/server/types"
 )
 
+var (
+	opampReadErrAttr = attribute.String("error.type", "read")
+	opampRespErrAttr = attribute.String("error.type", "resp")
+)
+
 type Server struct {
-	opampSrv server.OpAMPServer
-	agents   *data.Agents
-	logger   *Logger
-	counter  metric.Int64UpDownCounter
+	opampSrv   server.OpAMPServer
+	agents     *data.Agents
+	logger     *Logger
+	counter    metric.Int64UpDownCounter
+	errCounter metric.Int64Counter
 }
 
 func NewServer(agents *data.Agents) *Server {
@@ -62,10 +69,16 @@ func NewServer(agents *data.Agents) *Server {
 		panic(err)
 	}
 
+	errCounter, err := meter.Int64Counter("connections.error.count")
+	if err != nil {
+		panic(err)
+	}
+
 	srv := &Server{
-		agents:  agents,
-		logger:  logger,
-		counter: counter,
+		agents:     agents,
+		logger:     logger,
+		counter:    counter,
+		errCounter: errCounter,
 	}
 
 	srv.opampSrv = server.New(logger)
@@ -81,9 +94,15 @@ func (srv *Server) Start() {
 					return types.ConnectionResponse{
 						Accept: true,
 						ConnectionCallbacks: types.ConnectionCallbacks{
-							OnConnected:       func(ctx context.Context, conn types.Connection) { srv.counter.Add(ctx, 1) },
+							OnConnected:       func(ctx context.Context, _ types.Connection) { srv.counter.Add(ctx, 1) },
 							OnMessage:         srv.onMessage,
 							OnConnectionClose: srv.onDisconnect,
+							OnReadMessageError: func(_ types.Connection, _ int, _ []byte, _ error) {
+								srv.errCounter.Add(context.Background(), 1, metric.WithAttributes(opampReadErrAttr))
+							},
+							OnMessageResponseError: func(_ types.Connection, _ *protobufs.ServerToAgent, _ error) {
+								srv.errCounter.Add(context.Background(), 1, metric.WithAttributes(opampRespErrAttr))
+							},
 						},
 					}
 				},
