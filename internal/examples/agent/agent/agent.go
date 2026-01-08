@@ -56,7 +56,6 @@ const (
 type Agent struct {
 	client client.OpAMPClient
 	logger types.Logger
-	doneCh chan struct{}
 
 	agentType    string
 	agentVersion string
@@ -453,24 +452,14 @@ func (agent *Agent) Start() error {
 	}
 	agent.logger.Debugf(context.Background(), "Agent starting, id=%v, type=%s, version=%s.",
 		agent.instanceId, agent.agentType, agent.agentVersion)
-	agent.doneCh = make(chan struct{})
 	return agent.connect(withTLSConfig(tls))
 }
 
 func (agent *Agent) Shutdown() {
-	if agent.doneCh == nil {
-		agent.logger.Debugf(context.Background(), "Agent not running.")
-		return
-	}
 	agent.logger.Debugf(context.Background(), "Agent shutting down...")
 	if agent.client != nil {
 		_ = agent.client.Stop(context.Background())
 	}
-	close(agent.doneCh)
-}
-
-func (agent *Agent) Wait() {
-	<-agent.doneCh
 }
 
 // requestClientCertificate sets a request to be sent to the Server to create

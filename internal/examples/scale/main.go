@@ -92,20 +92,18 @@ func main() {
 		a := agent.NewAgent(cfg, agent.WithNoClientCertRequest(), agent.WithInstanceID(id), agent.WithLogger(agentLogger))
 
 		if err := a.Start(); err != nil {
+			// start errors currently only occur if there is a TLS config error, or the URL scheme is incorrect
+			// If the server is unavailable, an agent will retry
 			logger.Printf("Error starting agent: %v\n", err)
 			continue
 		}
 		agents = append(agents, a)
 	}
 	logger.Printf("%d agents started", len(agents))
+
 	<-ctx.Done()
 	for _, a := range agents {
 		a.Shutdown()
 	}
 	logger.Println("All agents stopped")
-
-	for _, a := range agents {
-		a.Wait()
-	}
-	logger.Println("All agents terminated cleanly")
 }
