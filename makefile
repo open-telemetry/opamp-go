@@ -79,6 +79,10 @@ gen-proto:
 gomoddownload:
 	$(GOCMD) mod download
 
+.PHONY: install-tools
+install-tools:
+	go get -modfile $(TOOLS_MOD) tool
+
 .PHONY: tidy
 tidy:
 	rm -fr go.sum

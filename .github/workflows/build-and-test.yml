@@ -32,16 +32,7 @@ jobs:
           key: go-pkg-mod-${{ runner.os }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
       - name: Install dependencies
         if: steps.module-cache.outputs.cache-hit != 'true'
-        run: make gomoddownload
-      - name: Cache Tools
-        id: tool-cache
-        uses: actions/cache@v4
-        with:
-          path: /home/runner/go/bin
-          key: tools-${{ runner.os }}-${{ hashFiles('./internal/tools/go.mod') }}
-      - name: Install Tools
-        if: steps.tool-cache.outputs.cache-hit != 'true'
-        run: make install-tools
+        run: make gomoddownload install-tools # get regular dependencies and tools
 
   build-and-test:
     runs-on: ubuntu-latest
@@ -95,12 +86,6 @@ jobs:
         with:
           path: /home/runner/go/pkg/mod
           key: go-pkg-mod-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
-      - name: Cache Tools
-        id: tool-cache
-        uses: actions/cache@v4
-        with:
-          path: /home/runner/go/bin
-          key: tools-${{ runner.os }}-${{ hashFiles('./internal/tools/go.mod') }}
       - name: Cache Build
         uses: actions/cache@v4
         with:
