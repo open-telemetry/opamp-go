@@ -27,7 +27,7 @@ test:
 	cd internal/examples && $(GOCMD) test -race ./...
 
 .PHONY: test-with-cover
-test-with-cover: $(GOACC)
+test-with-cover:
 	$(GOACC) --output=coverage.out --ignore=protobufs ./...
 
 show-coverage: test-with-cover
