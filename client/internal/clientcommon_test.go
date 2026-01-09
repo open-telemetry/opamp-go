@@ -1,27 +1,15 @@
 package internal
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	"github.com/open-telemetry/opamp-go/client/types"
+	opampinternal "github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-type testLogger struct {
-	testing.TB
-}
-
-func (t *testLogger) Debugf(_ context.Context, format string, v ...any) {
-	t.Logf("DEBUG: "+format, v...)
-}
-
-func (t *testLogger) Errorf(_ context.Context, format string, v ...any) {
-	t.Logf("ERROR: "+format, v...)
-}
 
 func TestPrepareStart(t *testing.T) {
 	uid := types.InstanceUid{0xd, 0xe, 0xa, 0xd, 0xb, 0xe, 0xe, 0xf, 0xd, 0xe, 0xa, 0xd, 0xb, 0xe, 0xe, 0xf}
@@ -33,14 +21,14 @@ func TestPrepareStart(t *testing.T) {
 	})
 
 	t.Run("description not set", func(t *testing.T) {
-		c := NewClientCommon(&testLogger{t}, nil)
+		c := NewClientCommon(&opampinternal.NopLogger{}, nil)
 		err := c.PrepareStart(t.Context(), types.StartSettings{})
 		assert.ErrorIs(t, err, ErrAgentDescriptionMissing)
 	})
 
 	t.Run("only reportsstatus capability", func(t *testing.T) {
 		sender := NewMockSender()
-		c := NewClientCommon(&testLogger{t}, sender)
+		c := NewClientCommon(&opampinternal.NopLogger{}, sender)
 
 		capabilities := protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
 		err := c.SetCapabilities(&capabilities)
@@ -75,7 +63,7 @@ func TestPrepareStart(t *testing.T) {
 	// Currently not setting capabilities should result in the similar behaviour as only setting the reports status capability
 	t.Run("no capabilities set", func(t *testing.T) {
 		sender := NewMockSender()
-		c := NewClientCommon(&testLogger{t}, sender)
+		c := NewClientCommon(&opampinternal.NopLogger{}, sender)
 
 		description := &protobufs.AgentDescription{
 			IdentifyingAttributes: []*protobufs.KeyValue{{
@@ -105,7 +93,7 @@ func TestPrepareStart(t *testing.T) {
 
 	t.Run("all capabilities set", func(t *testing.T) {
 		sender := NewMockSender()
-		c := NewClientCommon(&testLogger{t}, sender)
+		c := NewClientCommon(&opampinternal.NopLogger{}, sender)
 
 		err := c.SetHealth(&protobufs.ComponentHealth{Healthy: true})
 		require.NoError(t, err)
