@@ -266,7 +266,7 @@ func (agent *Agent) processStatusUpdate(
 	if agentDescrChanged {
 		// Agent description is changed.
 
-		if agent.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig) {
+		if agent.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig) {
 			// We need to recalculate the config.
 			configChanged = agent.calcRemoteConfig()
 			if agent.Status.RemoteConfigStatus != nil {
