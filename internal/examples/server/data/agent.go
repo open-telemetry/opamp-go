@@ -274,7 +274,8 @@ func (agent *Agent) processStatusUpdate(
 			}
 		}
 
-		if agent.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOtherConnectionSettings) {
+		if agent.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics) {
+			// calcConnectionSettings currently only sets OwnMetrics, so we only need to check that above
 			// And set connection settings that are appropriate for the Agent description.
 			agent.calcConnectionSettings(response)
 		}
