@@ -13,7 +13,7 @@ func main() {
 	logger := &supervisor.Logger{Logger: log.Default()}
 	supervisor, err := supervisor.NewSupervisor(logger)
 	if err != nil {
-		logger.Errorf(context.Background(), err.Error())
+		logger.Errorf(context.Background(), "Supervisor encountered an error: %v", err)
 		os.Exit(-1)
 		return
 	}
