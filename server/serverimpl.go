@@ -245,11 +245,11 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 
 	connectionCallbacks.OnConnected(reqCtx, agentConn)
 
-	sentCustomCapabilities := false
+	var sentCustomCapabilities sync.Once
 
 	// Loop until fail to read from the WebSocket connection.
 	for {
-		msgContext := context.Background()
+		msgContext := context.Background() // reqContext is cancelled when the ServerHTTP method is returned, for WebSockets connections this happens before this loop even starts.
 		request := protobufs.AgentToServer{}
 
 		// Block until the next message can be read.
@@ -294,12 +294,11 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 		if len(response.InstanceUid) == 0 {
 			response.InstanceUid = request.InstanceUid
 		}
-		if !sentCustomCapabilities {
+		sentCustomCapabilities.Do(func() {
 			response.CustomCapabilities = &protobufs.CustomCapabilities{
 				Capabilities: s.settings.CustomCapabilities,
 			}
-			sentCustomCapabilities = true
-		}
+		})
 
 		err = agentConn.Send(msgContext, response)
 		if err != nil {
@@ -311,8 +310,8 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 	}
 }
 
-func decompressGzip(data []byte) ([]byte, error) {
-	r, err := gzip.NewReader(bytes.NewBuffer(data))
+func decompressGzip(data io.Reader) ([]byte, error) {
+	r, err := gzip.NewReader(data)
 	if err != nil {
 		return nil, err
 	}
@@ -321,15 +320,16 @@ func decompressGzip(data []byte) ([]byte, error) {
 }
 
 func (s *server) readReqBody(req *http.Request) ([]byte, error) {
-	data, err := io.ReadAll(req.Body)
-	if err != nil {
-		return nil, err
-	}
 	if req.Header.Get(headerContentEncoding) == contentEncodingGzip {
-		data, err = decompressGzip(data)
+		data, err = decompressGzip(req.Body)
 		if err != nil {
 			return nil, err
 		}
+		return data, nil
+	}
+	data, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
 	}
 	return data, nil
 }
@@ -391,6 +391,7 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	}
 
 	// Return the CustomCapabilities
+	// Note that unlike a WebSocket response, this is included in all HTTP responses.
 	response.CustomCapabilities = &protobufs.CustomCapabilities{
 		Capabilities: s.settings.CustomCapabilities,
 	}
