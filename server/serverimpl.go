@@ -43,6 +43,10 @@ type server struct {
 	httpServer        *http.Server
 	httpServerServeWg *sync.WaitGroup
 
+	// gwPool is a gzip.Writer pool. This is intended to lower the amount of writers that are created when responding to HTTP requests.
+	// For best results HTTP responses should also have a rate-limit of some sort.
+	gwPool sync.Pool
+
 	// The network address Server is listening on. Nil if not started.
 	addr net.Addr
 }
@@ -65,7 +69,14 @@ func New(logger types.Logger) *server {
 		logger = &internal.NopLogger{}
 	}
 
-	return &server{logger: logger}
+	return &server{
+		logger: logger,
+		gwPool: sync.Pool{
+			New: func() any {
+				return gzip.NewWriter(io.Discard)
+			},
+		},
+	}
 }
 
 func (s *server) Attach(settings Settings) (HTTPHandlerFunc, ConnContext, error) {
@@ -334,6 +345,23 @@ func (s *server) readReqBody(req *http.Request) ([]byte, error) {
 	return data, nil
 }
 
+func (s *server) compressGzip(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	w, _ := s.gwPool.Get().(*gzip.Writer)
+	defer s.gwPool.Put(w)
+	w.Reset(&buf)
+
+	_, err := w.Write(data)
+	if err != nil {
+		return nil, err
+	}
+	err = w.Close()
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 func compressGzip(data []byte) ([]byte, error) {
 	var buf bytes.Buffer
 	w := gzip.NewWriter(&buf)
@@ -405,7 +433,7 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	// Send the response.
 	w.Header().Set(headerContentType, contentTypeProtobuf)
 	if req.Header.Get(headerAcceptEncoding) == contentEncodingGzip {
-		bodyBytes, err = compressGzip(bodyBytes)
+		bodyBytes, err = s.compressGzip(bodyBytes)
 		if err != nil {
 			s.logger.Errorf(req.Context(), "Cannot compress response: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)

@@ -875,7 +875,7 @@ func TestServerHonoursClientRequestContentEncoding(t *testing.T) {
 	require.NoError(t, err)
 
 	// gzip compress the request payload
-	b, err = compressGzip(b)
+	b, err = srv.compressGzip(b)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("POST", "http://"+settings.ListenEndpoint+settings.ListenPath, bytes.NewReader(b))
@@ -1397,4 +1397,29 @@ func TestServerTLS(t *testing.T) {
 	assert.EqualValues(t, protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus, response.Capabilities)
 
 	eventually(t, func() bool { return atomic.LoadInt32(&onCloseCalled) == 1 })
+}
+
+func BenchmarkCompressGzip(b *testing.B) {
+	input := []byte("Hello, World!")
+	s := New(nil)
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	b.Run("with pool", func(b *testing.B) {
+		for range b.N {
+			p, err := s.compressGzip(input)
+			if p == nil || err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("no pool", func(b *testing.B) {
+		for range b.N {
+			p, err := compressGzip(input)
+			if p == nil || err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
