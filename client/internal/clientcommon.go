@@ -87,10 +87,15 @@ func (c *ClientCommon) validateCapabilities(capabilities protobufs.AgentCapabili
 			return ErrAcceptsPackagesNotSet
 		}
 	} else {
-		if capabilities&protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages != 0 ||
-			capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses != 0 {
-			return ErrPackagesStateProviderNotSet
-		}
+		// FIXME This behaviour introduces a bug:
+		// If we create a new client, then set capabilities the AcceptsPackages or ReportsPackageStatus
+		// it will return an error because the PackagesStateProvider is not set.
+		// PackagesStateProvider is set in PrepareStart, which expects SetCapabilities to be set before.
+		//
+		//if capabilities&protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages != 0 ||
+		//	capabilities&protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses != 0 {
+		//	return ErrPackagesStateProviderNotSet
+		//}
 	}
 	return nil
 }
