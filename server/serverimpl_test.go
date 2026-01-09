@@ -1413,13 +1413,4 @@ func BenchmarkCompressGzip(b *testing.B) {
 			}
 		}
 	})
-
-	b.Run("no pool", func(b *testing.B) {
-		for range b.N {
-			p, err := compressGzip(input)
-			if p == nil || err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
 }
