@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	opampinternal "github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/examples/agent/agent"
 	"github.com/open-telemetry/opamp-go/internal/examples/config"
 	"go.opentelemetry.io/collector/config/configtls"
@@ -82,7 +83,7 @@ func main() {
 		},
 	}
 
-	nopLogger := &NOPLogger{}
+	nopLogger := &opampinternal.NopLogger{}
 
 	// Silence the otel errors agents can generate.
 	// i.e.: failed to upload metrics: ...
