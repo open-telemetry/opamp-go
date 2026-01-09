@@ -10,15 +10,11 @@ GOCMD?= go
 # SRC_ROOT is the top of the source tree.
 SRC_ROOT := $(shell git rev-parse --show-toplevel)
 
-TOOLS_MOD_DIR   := $(SRC_ROOT)/internal/tools
-TOOLS_BIN_DIR   := $(SRC_ROOT)/.tools
-TOOLS_MOD_REGEX := "\s+_\s+\".*\""
-TOOLS_PKG_NAMES := $(shell grep -E $(TOOLS_MOD_REGEX) < $(TOOLS_MOD_DIR)/tools.go | tr -d " _\"" | grep -vE '/v[0-9]+$$')
-TOOLS_BIN_NAMES := $(addprefix $(TOOLS_BIN_DIR)/, $(notdir $(shell echo $(TOOLS_PKG_NAMES))))
-
-GOFUMPT      := $(TOOLS_BIN_DIR)/gofumpt
-GOIMPORTS    := $(TOOLS_BIN_DIR)/goimports
-GOACC	     := $(TOOLS_BIN_DIR)/go-acc
+TOOLS_MOD_DIR := $(SRC_ROOT)/internal/tools
+TOOLS_MOD     := $(TOOLS_MOD_DIR)/go.mod
+GOFUMPT       := go tool -modfile $(TOOLS_MOD) gofumpt
+GOIMPORTS     := go tool -modfile $(TOOLS_MOD) goimports
+GOACC	      := go tool -modfile $(TOOLS_MOD) go-acc
 
 # Find all .proto files.
 BASELINE_PROTO_FILES := $(wildcard internal/opamp-spec/proto/*.proto)
@@ -31,7 +27,7 @@ test:
 	cd internal/examples && $(GOCMD) test -race ./...
 
 .PHONY: test-with-cover
-test-with-cover: $(GOACC)
+test-with-cover:
 	$(GOACC) --output=coverage.out --ignore=protobufs ./...
 
 show-coverage: test-with-cover
@@ -84,13 +80,8 @@ gomoddownload:
 	$(GOCMD) mod download
 
 .PHONY: install-tools
-install-tools: $(TOOLS_BIN_NAMES)
-
-$(TOOLS_BIN_DIR):
-	mkdir -p $@
-
-$(TOOLS_BIN_NAMES): $(TOOLS_BIN_DIR) $(TOOLS_MOD_DIR)/go.mod
-	cd $(TOOLS_MOD_DIR) && $(GOCMD) build -o $@ -trimpath $(filter %/$(notdir $@),$(TOOLS_PKG_NAMES))
+install-tools:
+	go get -modfile $(TOOLS_MOD) tool
 
 .PHONY: tidy
 tidy:
@@ -100,7 +91,7 @@ tidy:
 	cd $(TOOLS_MOD_DIR) && rm -fr go.sum && $(GOCMD) mod tidy
 
 .PHONY: fmt
-fmt: $(GOIMPORTS) $(GOFUMPT)
+fmt:
 	gofmt -w -s ./
 	$(GOIMPORTS) -w  ./
 	$(GOFUMPT) -l -w .
