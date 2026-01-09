@@ -256,12 +256,12 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 		mt, msgBytes, err := wsConn.ReadMessage()
 		isBreak, err := func() (bool, error) {
 			if err != nil {
-				if !websocket.IsUnexpectedCloseError(err) {
-					s.logger.Errorf(msgContext, "Cannot read a message from WebSocket: %v", err)
+				if !websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure) {
+					// This is a normal closing of the WebSocket connection.
+					s.logger.Debugf(msgContext, "Agent disconnected: %v", err)
 					return true, err
 				}
-				// This is a normal closing of the WebSocket connection.
-				s.logger.Debugf(msgContext, "Agent disconnected: %v", err)
+				s.logger.Errorf(msgContext, "Cannot read a message from WebSocket: %v", err)
 				return true, err
 			}
 			if mt != websocket.BinaryMessage {
@@ -279,7 +279,9 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			return false, nil
 		}()
 		if err != nil {
-			connectionCallbacks.OnReadMessageError(agentConn, mt, msgBytes, err)
+			if !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+				connectionCallbacks.OnReadMessageError(agentConn, mt, msgBytes, err)
+			}
 			if isBreak {
 				break
 			}
