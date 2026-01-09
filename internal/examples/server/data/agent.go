@@ -263,9 +263,9 @@ func (agent *Agent) processStatusUpdate(
 	}
 
 	configChanged := false
+	// Agent description is changed.
 	if agentDescrChanged {
-		// Agent description is changed.
-
+		// Only need to check if config has changed if the agent is able to accept a new config
 		if agent.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig) {
 			// We need to recalculate the config.
 			configChanged = agent.calcRemoteConfig()
@@ -274,9 +274,8 @@ func (agent *Agent) processStatusUpdate(
 			}
 		}
 
+		// calcConnectionSettings currently only sets OwnMetrics
 		if agent.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics) {
-			// calcConnectionSettings currently only sets OwnMetrics, so we only need to check that above
-			// And set connection settings that are appropriate for the Agent description.
 			agent.calcConnectionSettings(response)
 		}
 	}
