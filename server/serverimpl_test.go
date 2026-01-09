@@ -354,8 +354,8 @@ func TestDisconnectServerWSConnection(t *testing.T) {
 		return err != nil
 	})
 
-	// We expect exactly one error log
-	require.Equal(t, 1, len(logger.errorLogs))
+	// We expect exactly one debug log
+	require.Equal(t, 1, len(logger.debugLogs))
 }
 
 var testInstanceUid = []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}
