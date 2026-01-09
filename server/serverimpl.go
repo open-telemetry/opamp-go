@@ -321,7 +321,7 @@ func decompressGzip(data io.Reader) ([]byte, error) {
 
 func (s *server) readReqBody(req *http.Request) ([]byte, error) {
 	if req.Header.Get(headerContentEncoding) == contentEncodingGzip {
-		data, err = decompressGzip(req.Body)
+		data, err := decompressGzip(req.Body)
 		if err != nil {
 			return nil, err
 		}
