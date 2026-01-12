@@ -245,7 +245,7 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 
 	connectionCallbacks.OnConnected(reqCtx, agentConn)
 
-	var sentCustomCapabilities sync.Once
+	sentCustomCapabilities := false
 
 	// Loop until fail to read from the WebSocket connection.
 	for {
@@ -294,11 +294,12 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 		if len(response.InstanceUid) == 0 {
 			response.InstanceUid = request.InstanceUid
 		}
-		sentCustomCapabilities.Do(func() {
+		if !sentCustomCapabilities {
 			response.CustomCapabilities = &protobufs.CustomCapabilities{
 				Capabilities: s.settings.CustomCapabilities,
 			}
-		})
+			sentCustomCapabilities = true
+		}
 
 		err = agentConn.Send(msgContext, response)
 		if err != nil {
