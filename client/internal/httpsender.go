@@ -61,7 +61,7 @@ type HTTPSender struct {
 	logger             types.Logger
 	client             *http.Client
 	callbacks          types.Callbacks
-	pollingIntervalMs  int64
+	pollingIntervalMs  atomic.Int64
 	compressionEnabled bool
 
 	// Headers to send with all requests.
@@ -75,11 +75,11 @@ type HTTPSender struct {
 // with default settings.
 func NewHTTPSender(logger types.Logger) *HTTPSender {
 	h := &HTTPSender{
-		SenderCommon:      NewSenderCommon(),
-		logger:            logger,
-		client:            utils.NewHttpClient(),
-		pollingIntervalMs: defaultPollingIntervalMs,
+		SenderCommon: NewSenderCommon(),
+		logger:       logger,
+		client:       utils.NewHttpClient(),
 	}
+	h.pollingIntervalMs.Store(defaultPollingIntervalMs)
 	// initialize the headers with no additional headers
 	h.SetRequestHeader(nil, nil)
 	return h
@@ -142,7 +142,7 @@ func (h *HTTPSender) Run(
 	}
 
 	for {
-		pollingTimer := time.NewTimer(time.Millisecond * time.Duration(atomic.LoadInt64(&h.pollingIntervalMs)))
+		pollingTimer := time.NewTimer(time.Millisecond * time.Duration(h.pollingIntervalMs.Load()))
 		select {
 		case <-h.hasPendingMessage:
 			// Have something to send. Stop the polling timer and send what we have.
@@ -389,7 +389,7 @@ func (h *HTTPSender) SetHeartbeatInterval(duration time.Duration) error {
 // SetPollingInterval sets the interval between polling. Has effect starting from the
 // next polling cycle.
 func (h *HTTPSender) SetPollingInterval(duration time.Duration) {
-	atomic.StoreInt64(&h.pollingIntervalMs, duration.Milliseconds())
+	h.pollingIntervalMs.Store(duration.Milliseconds())
 }
 
 // EnableCompression enables compression for the sender.
