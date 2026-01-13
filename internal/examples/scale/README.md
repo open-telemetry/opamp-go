@@ -9,18 +9,24 @@ The main driver logs to stdout, and all agents log to stderr.
 
 ## Usage
 
+Configuration may be specified through command line flags, or environment variables.
+
+Configuration load priority is: `environment variables > flags > defaults`.
+
 ```
-scale \
+Usage of scale:
   -agent-count uint
-    	The number of agents to start. (default 1000)
+    	The number of agents to start (env var: SCALE_AGENT_COUNT). (default 1000)
   -heartbeat duration
-    	Heartbeat duration (default 30s)
+    	Heartbeat duration (env var: SCALE_HEARTBEAT). (default 30s)
   -server-url string
-    	OpAMP server URL (default "wss://127.0.0.1:4320/v1/opamp")
+    	OpAMP server URL (env var: SCALE_SERVER_URL). (default "wss://127.0.0.1:4320/v1/opamp")
   -tls-ca_file string
-    	Path to the CA cert. It verifies the server certificate
+    	Path to the OpAMP server CA cert (env var: SCALE_TLS_CA_FILE).
   -tls-insecure
-    	Disable the client transport security.
+    	Disable the client transport security (env var: SCALE_TLS_INSECURE).
   -tls-insecure_skip_verify
-    	Will enable TLS but not verify the certificate.
+    	Will enable TLS but not verify the certificate (env var: SCALE_TLS_INSECURE_SKIP_VERIFY).
+  -verbose-agents
+    	Enable agent logging (env var: SCALE_VERBOSE_AGENTS).
 ```
