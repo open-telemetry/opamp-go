@@ -58,10 +58,6 @@ func NewPackagesSyncer(
 
 // Sync performs the package syncing process.
 func (s *packagesSyncer) Sync(ctx context.Context) error {
-	defer func() {
-		close(s.doneCh) // this chan is closed before doSync is compelte; is this correct?
-	}()
-
 	// Prepare package statuses.
 	// Grab a lock to make sure that package statuses are not overriden by
 	// another call to Sync running in parallel.
@@ -122,9 +118,13 @@ func (s *packagesSyncer) initStatuses() error {
 
 // doSync performs the actual syncing process.
 func (s *packagesSyncer) doSync(ctx context.Context) {
-	// Once doSync returns  in a separate goroutine, make sure to release the
-	// mutex so that a new syncing process can take place.
-	defer s.mux.Unlock()
+	defer func() {
+		// Close channel to signal that sync is done
+		close(s.doneCh)
+		// Once doSync returns  in a separate goroutine, make sure to release the
+		// mutex so that a new syncing process can take place.
+		s.mux.Unlock()
+	}()
 
 	hash, err := s.localState.AllPackagesHash()
 	if err != nil {

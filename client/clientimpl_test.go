@@ -1786,9 +1786,9 @@ func TestOfferUpdatedVersion(t *testing.T) {
 
 		onMessageFunc := func(ctx context.Context, msg *types.MessageData) {
 			if msg.PackageSyncer != nil {
-				msg.PackageSyncer.Done() // returns a channel
 				err := msg.PackageSyncer.Sync(ctx)
 				require.NoError(t, err)
+				<-msg.PackageSyncer.Done()
 			}
 		}
 
