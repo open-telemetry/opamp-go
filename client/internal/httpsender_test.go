@@ -67,20 +67,20 @@ func TestHTTPSenderSetHeartbeatInterval(t *testing.T) {
 	sender := NewHTTPSender(&sharedinternal.NopLogger{})
 
 	// Default interval should be 30s as per OpAMP Specification
-	assert.Equal(t, (30 * time.Second).Milliseconds(), sender.pollingIntervalMs)
+	assert.Equal(t, (30 * time.Second).Milliseconds(), sender.pollingIntervalMs.Load())
 
 	// zero is invalid for http sender
 	assert.Error(t, sender.SetHeartbeatInterval(0))
-	assert.Equal(t, (30 * time.Second).Milliseconds(), sender.pollingIntervalMs)
+	assert.Equal(t, (30 * time.Second).Milliseconds(), sender.pollingIntervalMs.Load())
 
 	// negative interval is invalid for http sender
 	assert.Error(t, sender.SetHeartbeatInterval(-1))
-	assert.Equal(t, (30 * time.Second).Milliseconds(), sender.pollingIntervalMs)
+	assert.Equal(t, (30 * time.Second).Milliseconds(), sender.pollingIntervalMs.Load())
 
 	// zero should be valid for http sender
 	expected := 10 * time.Second
 	assert.NoError(t, sender.SetHeartbeatInterval(expected))
-	assert.Equal(t, expected.Milliseconds(), sender.pollingIntervalMs)
+	assert.Equal(t, expected.Milliseconds(), sender.pollingIntervalMs.Load())
 }
 
 func TestAddTLSConfig(t *testing.T) {
