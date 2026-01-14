@@ -3,7 +3,6 @@ package internal
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -59,10 +58,6 @@ func NewPackagesSyncer(
 
 // Sync performs the package syncing process.
 func (s *packagesSyncer) Sync(ctx context.Context) error {
-	defer func() {
-		close(s.doneCh)
-	}()
-
 	// Prepare package statuses.
 	// Grab a lock to make sure that package statuses are not overriden by
 	// another call to Sync running in parallel.
@@ -96,7 +91,7 @@ func (s *packagesSyncer) Done() <-chan struct{} {
 // periodically reported to the Server.
 func (s *packagesSyncer) initStatuses() error {
 	if s.localState == nil {
-		return errors.New("cannot sync packages because PackagesStateProvider is not provided")
+		return fmt.Errorf("cannot sync packages: %w", ErrPackagesStateProviderNotSet)
 	}
 
 	// Restore statuses that were previously stored in the local state.
@@ -123,13 +118,17 @@ func (s *packagesSyncer) initStatuses() error {
 
 // doSync performs the actual syncing process.
 func (s *packagesSyncer) doSync(ctx context.Context) {
-	// Once doSync returns  in a separate goroutine, make sure to release the
-	// mutex so that a new syncing process can take place.
-	defer s.mux.Unlock()
+	defer func() {
+		// Once doSync returns  in a separate goroutine, make sure to release the
+		// mutex so that a new syncing process can take place.
+		s.mux.Unlock()
+		// Close channel to signal that sync is done
+		close(s.doneCh)
+	}()
 
 	hash, err := s.localState.AllPackagesHash()
 	if err != nil {
-		s.logger.Errorf(ctx, "Package syncing failed: %V", err)
+		s.logger.Errorf(ctx, "Package syncing failed: %v", err)
 		return
 	}
 	if bytes.Equal(hash, s.available.AllPackagesHash) {
@@ -378,7 +377,7 @@ func (s *packagesSyncer) deleteUnneededLocalPackages(ctx context.Context) error 
 }
 
 // reportStatuses saves the last reported statuses to provider and client state.
-// If sendImmediately is true, the statuses are scheduled to be
+// If the client has ReportsPackageStatuses and sendImmediately is true, the statuses are scheduled to be
 // sent to the server.
 func (s *packagesSyncer) reportStatuses(ctx context.Context, sendImmediately bool) error {
 	// Save it in the user-supplied state provider.
@@ -392,13 +391,15 @@ func (s *packagesSyncer) reportStatuses(ctx context.Context, sendImmediately boo
 		s.logger.Errorf(ctx, "Cannot save client state: %v", err)
 		return err
 	}
-	s.sender.NextMessage().Update(
-		func(msg *protobufs.AgentToServer) {
-			msg.PackageStatuses = s.clientSyncedState.PackageStatuses()
-		})
+	if s.clientSyncedState.Capabilities()&protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses != 0 {
+		s.sender.NextMessage().Update(
+			func(msg *protobufs.AgentToServer) {
+				msg.PackageStatuses = s.clientSyncedState.PackageStatuses()
+			})
 
-	if sendImmediately {
-		s.sender.ScheduleSend()
+		if sendImmediately {
+			s.sender.ScheduleSend()
+		}
 	}
 	return nil
 }
