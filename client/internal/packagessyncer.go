@@ -119,11 +119,11 @@ func (s *packagesSyncer) initStatuses() error {
 // doSync performs the actual syncing process.
 func (s *packagesSyncer) doSync(ctx context.Context) {
 	defer func() {
-		// Close channel to signal that sync is done
-		close(s.doneCh)
 		// Once doSync returns  in a separate goroutine, make sure to release the
 		// mutex so that a new syncing process can take place.
 		s.mux.Unlock()
+		// Close channel to signal that sync is done
+		close(s.doneCh)
 	}()
 
 	hash, err := s.localState.AllPackagesHash()
