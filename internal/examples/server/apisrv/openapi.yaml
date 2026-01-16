@@ -1,0 +1,398 @@
+openapi: 3.0.0
+info:
+  title: OpAMP Server API
+  version: 1.0.0
+  description: |
+    REST API for the OpAMP Server example that provides programmatic access to connected agents.
+    
+    This API allows you to:
+    - List all connected agents
+    - Retrieve individual agent details
+    - Update agent configurations
+    
+    The API decouples the UI layer from the server logic, enabling modern web UIs, CLI tools, 
+    and other clients to interact with the OpAMP server.
+
+servers:
+  - url: http://localhost:4322
+    description: Local development server
+
+paths:
+  /api/v1/agents:
+    get:
+      summary: List all connected agents
+      description: Returns a list of all agents currently connected to the OpAMP server
+      operationId: listAgents
+      tags:
+        - Agents
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentList'
+              example:
+                data:
+                  - uuid: "019bc7b5-be9c-70b8-bad3-64c9807aa417"
+                    status:
+                      instance_uid: "AZvHtb6ccLi602TJgHqkFw=="
+                      sequence_num: "1"
+                      agent_description:
+                        identifying_attributes:
+                          - key: "service.name"
+                            value:
+                              Value:
+                                StringValue: "io.opentelemetry.collector"
+                          - key: "service.version"
+                            value:
+                              Value:
+                                StringValue: "1.0.0"
+                      capabilities: "7167"
+                      health:
+                        healthy: true
+
+  /api/v1/agents/{instanceid}:
+    get:
+      summary: Get agent by ID
+      description: Retrieves detailed information about a specific agent by its instance ID
+      operationId: getAgentById
+      tags:
+        - Agents
+      parameters:
+        - name: instanceid
+          in: path
+          required: true
+          description: UUID of the agent instance
+          schema:
+            type: string
+            format: uuid
+          example: "019bc7b5-be9c-70b8-bad3-64c9807aa417"
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+              example:
+                uuid: "019bc7b5-be9c-70b8-bad3-64c9807aa417"
+                status:
+                  instance_uid: "AZvHtb6ccLi602TJgHqkFw=="
+                  sequence_num: "1"
+                  agent_description:
+                    identifying_attributes:
+                      - key: "service.name"
+                        value:
+                          Value:
+                            StringValue: "io.opentelemetry.collector"
+                  capabilities: "7167"
+        '400':
+          description: Invalid UUID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Invalid instance ID format"
+        '404':
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Agent not found"
+
+  /api/v1/agents/{instanceid}/config:
+    post:
+      summary: Update agent configuration
+      description: |
+        Updates the configuration for a specific agent. The server will send the new configuration
+        to the agent and wait up to 5 seconds for acknowledgment.
+      operationId: updateAgentConfig
+      tags:
+        - Agents
+      parameters:
+        - name: instanceid
+          in: path
+          required: true
+          description: UUID of the agent instance
+          schema:
+            type: string
+            format: uuid
+          example: "019bc7b5-be9c-70b8-bad3-64c9807aa417"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigRequest'
+            example:
+              config: |
+                receivers:
+                  otlp:
+                    protocols:
+                      grpc:
+                        endpoint: 0.0.0.0:4317
+                exporters:
+                  logging:
+                    loglevel: debug
+                service:
+                  pipelines:
+                    traces:
+                      receivers: [otlp]
+                      exporters: [logging]
+      responses:
+        '200':
+          description: Configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                message: "Configuration updated successfully"
+        '400':
+          description: Invalid request (bad UUID or JSON format)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalidUuid:
+                  value:
+                    error: "Invalid instance ID format"
+                invalidJson:
+                  value:
+                    error: "Invalid JSON format"
+                invalidBody:
+                  value:
+                    error: "Failed to read request body"
+        '404':
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Agent not found"
+        '408':
+          description: Timeout waiting for agent acknowledgment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Timeout waiting for agent to acknowledge configuration update"
+
+components:
+  schemas:
+    AgentList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Agent'
+      required:
+        - data
+
+    Agent:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Server-assigned unique identifier for this agent connection
+        status:
+          $ref: '#/components/schemas/AgentStatus'
+      required:
+        - uuid
+        - status
+
+    AgentStatus:
+      type: object
+      description: |
+        Current agent status as reported by the agent via OpAMP protocol.
+        This is the AgentToServer protobuf message.
+      properties:
+        instance_uid:
+          type: string
+          format: byte
+          description: Agent's persistent identifier (base64-encoded)
+        sequence_num:
+          type: string
+          description: Monotonically increasing counter for message ordering
+        agent_description:
+          $ref: '#/components/schemas/AgentDescription'
+        capabilities:
+          type: string
+          description: |
+            Bitmask of supported features:
+            - 0x1: ReportsStatus
+            - 0x2: AcceptsRemoteConfig
+            - 0x4: ReportsEffectiveConfig
+            - 0x8: AcceptsRestartCommand
+            - 0x10: ReportsHealth
+            - 0x20: ReportsRemoteConfig
+            - 0x40: AcceptsOpAMPConnectionSettings
+            - 0x80: AcceptsOtherConnectionSettings
+            - 0x100: AcceptsPackages
+            - 0x200: ReportsPackageStatuses
+            - 0x400: ReportsOwnTraces
+            - 0x800: ReportsOwnMetrics
+            - 0x1000: ReportsOwnLogs
+            - 0x2000: AcceptsOpAMPConnectionSettingsRequest
+            - 0x4000: ReportsAvailableComponents
+        health:
+          $ref: '#/components/schemas/AgentHealth'
+        effective_config:
+          $ref: '#/components/schemas/EffectiveConfig'
+        remote_config_status:
+          $ref: '#/components/schemas/RemoteConfigStatus'
+        package_statuses:
+          $ref: '#/components/schemas/PackageStatuses'
+
+    AgentDescription:
+      type: object
+      description: Resource attributes identifying the agent
+      properties:
+        identifying_attributes:
+          type: array
+          description: Attributes that uniquely identify the agent instance
+          items:
+            $ref: '#/components/schemas/KeyValue'
+        non_identifying_attributes:
+          type: array
+          description: Attributes that describe the agent environment
+          items:
+            $ref: '#/components/schemas/KeyValue'
+
+    KeyValue:
+      type: object
+      properties:
+        key:
+          type: string
+          description: Attribute key (e.g., "service.name", "host.name")
+        value:
+          type: object
+          description: Attribute value wrapper
+          properties:
+            Value:
+              type: object
+              properties:
+                StringValue:
+                  type: string
+                IntValue:
+                  type: integer
+                  format: int64
+                DoubleValue:
+                  type: number
+                  format: double
+                BoolValue:
+                  type: boolean
+
+    AgentHealth:
+      type: object
+      properties:
+        healthy:
+          type: boolean
+          description: Whether the agent is healthy
+        start_time_unix_nano:
+          type: string
+          description: Agent start time in Unix nanoseconds
+        last_error:
+          type: string
+          description: Last error message if unhealthy
+
+    EffectiveConfig:
+      type: object
+      description: Current running configuration as reported by the agent
+      properties:
+        config_map:
+          type: object
+          properties:
+            config_map:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/ConfigFile'
+
+    ConfigFile:
+      type: object
+      properties:
+        body:
+          type: string
+          format: byte
+          description: Base64-encoded configuration content
+        content_type:
+          type: string
+          description: MIME type of the configuration (e.g., "text/yaml")
+
+    RemoteConfigStatus:
+      type: object
+      description: Status of the last remote configuration update
+      properties:
+        last_remote_config_hash:
+          type: string
+          format: byte
+        status:
+          type: string
+          enum:
+            - APPLIED
+            - APPLYING
+            - FAILED
+        error_message:
+          type: string
+
+    PackageStatuses:
+      type: object
+      description: Status of packages managed by the agent
+      properties:
+        packages:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/PackageStatus'
+
+    PackageStatus:
+      type: object
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        status:
+          type: string
+          enum:
+            - INSTALLED
+            - INSTALLING
+            - INSTALL_FAILED
+
+    ConfigRequest:
+      type: object
+      properties:
+        config:
+          type: string
+          description: Configuration content (typically YAML format)
+      required:
+        - config
+
+    SuccessResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message describing what went wrong
+      required:
+        - error
+
+tags:
+  - name: Agents
+    description: Operations for managing and monitoring OpAMP agents
