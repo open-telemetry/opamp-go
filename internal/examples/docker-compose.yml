@@ -15,7 +15,6 @@ services:
     build:
       context: ../..
       dockerfile: internal/examples/Dockerfile.agent
-    container_name: opamp-agent
     entrypoint:
       - "./agent"
       - "--endpoint"
@@ -26,21 +25,8 @@ services:
     depends_on:
       - opamp-server
     restart: unless-stopped
-
-  opamp-scale:
-    build:
-      context: ../..
-      dockerfile: internal/examples/Dockerfile.scale
-    container_name: opamp-scale
-    environment:
-      SCALE_AGENT_COUNT: "${SCALE_AGENT_COUNT:-1000}"
-    networks:
-      - opamp-network
-    profiles:
-      - scale
-    depends_on:
-      - opamp-server
-    restart: unless-stopped
+    deploy:
+      replicas: 1
 
 networks:
   opamp-network:

@@ -50,10 +50,6 @@ build-example-supervisor:
 build-example-server:
 	$(MAKE) -C internal/examples build-example-server
 
-.PHONY: build-example-scale
-build-example-scale:
-	$(MAKE) -C internal/examples build-example-scale
-
 .PHONY: run-examples
 run-examples:
 	$(MAKE) -C internal/examples run-examples

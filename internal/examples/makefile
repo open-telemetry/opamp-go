@@ -7,7 +7,7 @@ SRC_ROOT := $(shell git rev-parse --show-toplevel)
 
 # Build targets
 .PHONY: build-examples
-build-examples: build-example-agent build-example-supervisor build-example-server build-example-scale
+build-examples: build-example-agent build-example-supervisor build-example-server
 
 .PHONY: build-example-agent
 build-example-agent:
@@ -20,10 +20,6 @@ build-example-supervisor:
 .PHONY: build-example-server
 build-example-server:
 	$(GOCMD) build -o server/bin/server server/main.go
-
-.PHONY: build-example-scale
-build-example-scale:
-	$(GOCMD) build -o scale/bin/scale scale/main.go
 
 .PHONY: run-examples
 run-examples: build-examples
@@ -65,7 +61,7 @@ docker-compose-up:
 
 .PHONY: docker-compose-down
 docker-compose-down:
-	cd $(SRC_ROOT)/internal/examples && docker compose --profile scale down
+	cd $(SRC_ROOT)/internal/examples && docker compose down
 
 .PHONY: docker-compose-logs
 docker-compose-logs:
@@ -73,9 +69,9 @@ docker-compose-logs:
 
 .PHONY: docker-compose-scale
 docker-compose-scale:
-	@echo "Usage: make docker-compose-scale [AGENTS=<number>]"
+	@echo "Usage: make docker-compose-scale AGENTS=<number>"
 	@if [ -z "$(AGENTS)" ]; then \
-	  cd $(SRC_ROOT)/internal/examples && docker compose --profile scale up -d --build; \
-	else \
-	  cd $(SRC_ROOT)/internal/examples && SCALE_AGENT_COUNT=$(AGENTS) docker compose --profile scale up -d --build; \
+		echo "Error: AGENTS variable not set"; \
+		exit 1; \
 	fi
+	cd $(SRC_ROOT)/internal/examples && docker compose up --scale opamp-agent=$(AGENTS) -d
