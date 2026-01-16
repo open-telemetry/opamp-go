@@ -167,6 +167,7 @@ func loadEnv(cfg *flagConfig) {
 		}
 	}
 }
+
 func main() {
 	var cfg flagConfig
 	flag.StringVar(&cfg.agentType, "t", "io.opentelemetry.collector", "Agent Type String (env var: AGENT_TYPE).")
