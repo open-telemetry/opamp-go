@@ -43,6 +43,10 @@ type server struct {
 	httpServer        *http.Server
 	httpServerServeWg *sync.WaitGroup
 
+	// gwPool is a gzip.Writer pool. This is intended to lower the amount of writers that are created when responding to HTTP requests.
+	// For best results HTTP responses should also have a rate-limit of some sort.
+	gwPool sync.Pool
+
 	// The network address Server is listening on. Nil if not started.
 	addr net.Addr
 }
@@ -65,7 +69,14 @@ func New(logger types.Logger) *server {
 		logger = &internal.NopLogger{}
 	}
 
-	return &server{logger: logger}
+	return &server{
+		logger: logger,
+		gwPool: sync.Pool{
+			New: func() any {
+				return gzip.NewWriter(io.Discard)
+			},
+		},
+	}
 }
 
 func (s *server) Attach(settings Settings) (HTTPHandlerFunc, ConnContext, error) {
@@ -249,19 +260,19 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 
 	// Loop until fail to read from the WebSocket connection.
 	for {
-		msgContext := context.Background()
+		msgContext := context.Background() // reqContext is cancelled when the ServerHTTP method is returned, for WebSockets connections this happens before this loop even starts.
 		request := protobufs.AgentToServer{}
 
 		// Block until the next message can be read.
 		mt, msgBytes, err := wsConn.ReadMessage()
 		isBreak, err := func() (bool, error) {
 			if err != nil {
-				if !websocket.IsUnexpectedCloseError(err) {
-					s.logger.Errorf(msgContext, "Cannot read a message from WebSocket: %v", err)
+				if !websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure) {
+					// This is a normal closing of the WebSocket connection.
+					s.logger.Debugf(msgContext, "Agent disconnected: %v", err)
 					return true, err
 				}
-				// This is a normal closing of the WebSocket connection.
-				s.logger.Debugf(msgContext, "Agent disconnected: %v", err)
+				s.logger.Errorf(msgContext, "Cannot read a message from WebSocket: %v", err)
 				return true, err
 			}
 			if mt != websocket.BinaryMessage {
@@ -279,7 +290,9 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			return false, nil
 		}()
 		if err != nil {
-			connectionCallbacks.OnReadMessageError(agentConn, mt, msgBytes, err)
+			if !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+				connectionCallbacks.OnReadMessageError(agentConn, mt, msgBytes, err)
+			}
 			if isBreak {
 				break
 			}
@@ -311,8 +324,8 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 	}
 }
 
-func decompressGzip(data []byte) ([]byte, error) {
-	r, err := gzip.NewReader(bytes.NewBuffer(data))
+func decompressGzip(data io.Reader) ([]byte, error) {
+	r, err := gzip.NewReader(data)
 	if err != nil {
 		return nil, err
 	}
@@ -321,22 +334,26 @@ func decompressGzip(data []byte) ([]byte, error) {
 }
 
 func (s *server) readReqBody(req *http.Request) ([]byte, error) {
+	if req.Header.Get(headerContentEncoding) == contentEncodingGzip {
+		data, err := decompressGzip(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		return data, nil
+	}
 	data, err := io.ReadAll(req.Body)
 	if err != nil {
 		return nil, err
 	}
-	if req.Header.Get(headerContentEncoding) == contentEncodingGzip {
-		data, err = decompressGzip(data)
-		if err != nil {
-			return nil, err
-		}
-	}
 	return data, nil
 }
 
-func compressGzip(data []byte) ([]byte, error) {
+func (s *server) compressGzip(data []byte) ([]byte, error) {
 	var buf bytes.Buffer
-	w := gzip.NewWriter(&buf)
+	w, _ := s.gwPool.Get().(*gzip.Writer)
+	defer s.gwPool.Put(w)
+	w.Reset(&buf)
+
 	_, err := w.Write(data)
 	if err != nil {
 		return nil, err
@@ -391,6 +408,7 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	}
 
 	// Return the CustomCapabilities
+	// Note that unlike a WebSocket response, this is included in all HTTP responses.
 	response.CustomCapabilities = &protobufs.CustomCapabilities{
 		Capabilities: s.settings.CustomCapabilities,
 	}
@@ -405,7 +423,7 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	// Send the response.
 	w.Header().Set(headerContentType, contentTypeProtobuf)
 	if req.Header.Get(headerAcceptEncoding) == contentEncodingGzip {
-		bodyBytes, err = compressGzip(bodyBytes)
+		bodyBytes, err = s.compressGzip(bodyBytes)
 		if err != nil {
 			s.logger.Errorf(req.Context(), "Cannot compress response: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)

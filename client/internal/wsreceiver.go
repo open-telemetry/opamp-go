@@ -99,9 +99,12 @@ func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 }
 
 func (r *wsReceiver) receiveMessage(msg *protobufs.ServerToAgent) error {
-	_, bytes, err := r.conn.ReadMessage()
+	mt, bytes, err := r.conn.ReadMessage()
 	if err != nil {
 		return err
+	}
+	if mt != websocket.BinaryMessage {
+		return fmt.Errorf("unsupported message type: %v", mt)
 	}
 	err = internal.DecodeWSMessage(bytes, msg)
 	if err != nil {

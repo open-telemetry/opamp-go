@@ -20,7 +20,7 @@ jobs:
         dir: ["client", "internal", "server", "protobufshelpers"]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 1
       - id: install_go
