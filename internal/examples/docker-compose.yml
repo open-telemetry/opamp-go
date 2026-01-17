@@ -5,31 +5,35 @@ services:
     build:
       context: ../..
       dockerfile: internal/examples/Dockerfile.server
+      network: host
     container_name: opamp-server
-    ports:
-      - "4320:4320"
-      - "4321:4321"
-      - "4322:4322"
-    networks:
-      - opamp-network
+    network_mode: host
     restart: unless-stopped
+
+  opamp-agent:
+    build:
+      context: ../..
+      dockerfile: internal/examples/Dockerfile.agent
+      network: host
+    network_mode: host
+    entrypoint:
+      - "./agent"
+      - "--endpoint"
+      - "wss://localhost:4320/v1/opamp"
+      - "--tls-insecure_skip_verify"
+    depends_on:
+      - opamp-server
+    restart: unless-stopped
+    deploy:
+      replicas: 1
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
     container_name: otel-collector
+    network_mode: host
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
       - ./otel-collector-config.yaml:/etc/otelcol/config.yaml
-    ports:
-      - "4317:4317"   # OTLP gRPC receiver
-      - "4318:4318"   # OTLP HTTP receiver
-      - "8888:8888"   # Collector's own metrics
-    networks:
-      - opamp-network
     depends_on:
       - opamp-server
     restart: unless-stopped
-
-networks:
-  opamp-network:
-    driver: bridge
