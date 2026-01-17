@@ -227,23 +227,7 @@ components:
           $ref: '#/components/schemas/AgentDescription'
         capabilities:
           type: string
-          description: |
-            Bitmask of supported features:
-            - 0x1: ReportsStatus
-            - 0x2: AcceptsRemoteConfig
-            - 0x4: ReportsEffectiveConfig
-            - 0x8: AcceptsRestartCommand
-            - 0x10: ReportsHealth
-            - 0x20: ReportsRemoteConfig
-            - 0x40: AcceptsOpAMPConnectionSettings
-            - 0x80: AcceptsOtherConnectionSettings
-            - 0x100: AcceptsPackages
-            - 0x200: ReportsPackageStatuses
-            - 0x400: ReportsOwnTraces
-            - 0x800: ReportsOwnMetrics
-            - 0x1000: ReportsOwnLogs
-            - 0x2000: AcceptsOpAMPConnectionSettingsRequest
-            - 0x4000: ReportsAvailableComponents
+          description: "Bitmask of supported features. See https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#agentcapabilities"
         health:
           $ref: '#/components/schemas/AgentHealth'
         effective_config:
@@ -255,16 +239,14 @@ components:
 
     AgentDescription:
       type: object
-      description: Resource attributes identifying the agent
+      description: "Resource attributes identifying the agent. See https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#agentdescription"
       properties:
         identifying_attributes:
           type: array
-          description: Attributes that uniquely identify the agent instance
           items:
             $ref: '#/components/schemas/KeyValue'
         non_identifying_attributes:
           type: array
-          description: Attributes that describe the agent environment
           items:
             $ref: '#/components/schemas/KeyValue'
 
@@ -294,78 +276,33 @@ components:
 
     AgentHealth:
       type: object
-      properties:
-        healthy:
-          type: boolean
-          description: Whether the agent is healthy
-        start_time_unix_nano:
-          type: string
-          description: Agent start time in Unix nanoseconds
-        last_error:
-          type: string
-          description: Last error message if unhealthy
+      description: "Agent health status. See https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#agenthealth"
+      properties: {}
 
     EffectiveConfig:
       type: object
-      description: Current running configuration as reported by the agent
-      properties:
-        config_map:
-          type: object
-          properties:
-            config_map:
-              type: object
-              additionalProperties:
-                $ref: '#/components/schemas/ConfigFile'
+      description: "Current running configuration as reported by the agent. See https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#effectiveconfig"
+      properties: {}
 
     ConfigFile:
       type: object
-      properties:
-        body:
-          type: string
-          format: byte
-          description: Base64-encoded configuration content
-        content_type:
-          type: string
-          description: MIME type of the configuration (e.g., "text/yaml")
+      description: "Configuration file content. See https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#agentconfigfile"
+      properties: {}
 
     RemoteConfigStatus:
       type: object
-      description: Status of the last remote configuration update
-      properties:
-        last_remote_config_hash:
-          type: string
-          format: byte
-        status:
-          type: string
-          enum:
-            - APPLIED
-            - APPLYING
-            - FAILED
-        error_message:
-          type: string
+      description: "Status of the last remote configuration update. See https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#remoteconfigstatus"
+      properties: {}
 
     PackageStatuses:
       type: object
-      description: Status of packages managed by the agent
-      properties:
-        packages:
-          type: object
-          additionalProperties:
-            $ref: '#/components/schemas/PackageStatus'
+      description: "Status of packages managed by the agent. See https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#packagestatuses"
+      properties: {}
 
     PackageStatus:
       type: object
-      properties:
-        name:
-          type: string
-        version:
-          type: string
-        status:
-          type: string
-          enum:
-            - INSTALLED
-            - INSTALLING
-            - INSTALL_FAILED
+      description: "See https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#agenttoserverpackage_statuses"
+      properties: {}
 
     ConfigRequest:
       type: object
