@@ -132,56 +132,18 @@ The `status` field in agent responses contains the full `AgentToServer` protobuf
 
 ### Core Fields
 
+The status contains fields from the [AgentToServer](https://github.com/open-telemetry/opamp-spec/blob/main/proto/opamp.proto) protobuf message:
+
 - **`instance_uid`**: Agent's persistent identifier (base64-encoded)
 - **`sequence_num`**: Monotonically increasing counter for message ordering
-- **`agent_description`**: Resource attributes identifying the agent
-- **`capabilities`**: Bitmask of supported features (see below)
+- **`agent_description`**: Resource attributes identifying the agent (see [Agent Description](https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#agentdescription))
+- **`capabilities`**: Bitmask of supported features (see [Agent Capabilities](https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#agentcapabilities))
 - **`health`**: Health status if the agent reports it
 - **`effective_config`**: Current running configuration
 - **`remote_config_status`**: Status of last remote config update
 - **`package_statuses`**: Package management status
 
-### Agent Description
-
-#### Identifying Attributes
-
-Uniquely identify the agent instance:
-
-- `service.name` - Service name (required)
-- `service.instance.id` - Instance identifier (recommended)
-- `service.version` - Service version
-- `service.namespace` - Service namespace (optional)
-
-#### Non-Identifying Attributes
-
-Describe the agent environment:
-
-- `host.name` - Hostname
-- `host.arch` - CPU architecture
-- `os.type` - Operating system type
-- `os.description` - OS version details
-
-### Capabilities Bitmask
-
-The `capabilities` field indicates what features the agent supports:
-
-| Value  | Capability                            | Description                                  |
-|--------|---------------------------------------|----------------------------------------------|
-| 0x1    | ReportsStatus                         | Agent can report status                      |
-| 0x2    | AcceptsRemoteConfig                   | Agent accepts remote configuration           |
-| 0x4    | ReportsEffectiveConfig                | Agent reports its effective config           |
-| 0x8    | AcceptsRestartCommand                 | Agent can be restarted remotely              |
-| 0x10   | ReportsHealth                         | Agent reports health status                  |
-| 0x20   | ReportsRemoteConfig                   | Agent reports remote config status           |
-| 0x40   | AcceptsOpAMPConnectionSettings        | Agent accepts OpAMP connection settings      |
-| 0x80   | AcceptsOtherConnectionSettings        | Agent accepts other connection settings      |
-| 0x100  | AcceptsPackages                       | Agent accepts package installations          |
-| 0x200  | ReportsPackageStatuses                | Agent reports package statuses               |
-| 0x400  | ReportsOwnTraces                      | Agent reports its own traces                 |
-| 0x800  | ReportsOwnMetrics                     | Agent reports its own metrics                |
-| 0x1000 | ReportsOwnLogs                        | Agent reports its own logs                   |
-| 0x2000 | AcceptsOpAMPConnectionSettingsRequest | Agent accepts connection settings requests   |
-| 0x4000 | ReportsAvailableComponents            | Agent reports available components           |
+For detailed field definitions, see the [OpAMP Protocol Specification](https://github.com/open-telemetry/opamp-spec/blob/main/specification.md)
 
 ### Effective Configuration
 

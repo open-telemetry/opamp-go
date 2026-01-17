@@ -14,38 +14,6 @@ services:
       - opamp-network
     restart: unless-stopped
 
-  opamp-agent:
-    build:
-      context: ../..
-      dockerfile: internal/examples/Dockerfile.agent
-    entrypoint:
-      - "./agent"
-      - "--endpoint"
-      - "wss://opamp-server:4320/v1/opamp"
-      - "--tls-insecure_skip_verify"
-    networks:
-      - opamp-network
-    depends_on:
-      - opamp-server
-    restart: unless-stopped
-    deploy:
-      replicas: 1
-
-  opamp-ui:
-    image: ghcr.io/juandemanjon/opamp-ui:master-1036146
-    container_name: opamp-ui
-    entrypoint:
-      - "./opamp-ui"
-      - "--endpoint"
-      - "http://opamp-server:4322/api/v1"
-    ports:
-      - "4323:4323"
-    networks:
-      - opamp-network
-    depends_on:
-      - opamp-server
-    restart: unless-stopped
-
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
     container_name: otel-collector

@@ -30,7 +30,7 @@ run-examples: build-examples
 # Test targets
 .PHONY: test
 test:
-	$(GOCMD) test -v -p 1 ./...
+	$(GOCMD) test -race -v -p 1 ./...
 
 .PHONY: test-coverage
 test-coverage:
