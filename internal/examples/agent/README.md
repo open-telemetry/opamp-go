@@ -2,7 +2,7 @@
 
 Agent provides provides and example agent implementation for the OpAMP protocol.
 
-Both HTTP and Websocket connections are supported.
+Both HTTP and Websocket connections are supported by the agent, however the [example/server](../example/server) only supports Websocket..
 
 The example agent can be in a normal mode; where the binary starts a single agent, or in scale mode (when `-run-scale` is passed or `AGENT_RUN_SCALE=true` is set).
 

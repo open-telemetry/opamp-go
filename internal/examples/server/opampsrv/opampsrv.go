@@ -8,13 +8,6 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
-	"go.opentelemetry.io/otel/metric"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	otelresource "go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 
 	"github.com/open-telemetry/opamp-go/internal/examples/certs"
 	"github.com/open-telemetry/opamp-go/internal/examples/server/data"
@@ -23,17 +16,11 @@ import (
 	"github.com/open-telemetry/opamp-go/server/types"
 )
 
-var (
-	opampReadErrAttr = attribute.String("error.type", "read")
-	opampRespErrAttr = attribute.String("error.type", "resp")
-)
-
 type Server struct {
-	opampSrv   server.OpAMPServer
-	agents     *data.Agents
-	logger     *Logger
-	counter    metric.Int64UpDownCounter
-	errCounter metric.Int64Counter
+	opampSrv server.OpAMPServer
+	agents   *data.Agents
+	logger   *Logger
+	metrics  *metricsTracker
 }
 
 func NewServer(agents *data.Agents) *Server {
@@ -44,41 +31,16 @@ func NewServer(agents *data.Agents) *Server {
 			log.Default().Flags()|log.Lmsgprefix|log.Lmicroseconds,
 		),
 	}
-	resource, err := otelresource.New(context.Background(),
-		otelresource.WithAttributes(
-			semconv.ServiceNameKey.String("io.opentelemetry.opampserver"),
-			semconv.ServiceVersionKey.String("0.1.0"),
-		),
-	)
-	if err != nil {
-		panic(err)
-	}
-	exporter, err := stdoutmetric.New(stdoutmetric.WithPrettyPrint())
-	if err != nil {
-		panic(err)
-	}
 
-	meterProvider := sdkmetric.NewMeterProvider(
-		sdkmetric.WithResource(resource),
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
-	)
-	otel.SetMeterProvider(meterProvider)
-	meter := otel.Meter("opamp")
-	counter, err := meter.Int64UpDownCounter("connections.active.count")
-	if err != nil {
-		panic(err)
-	}
-
-	errCounter, err := meter.Int64Counter("connections.error.count")
+	metrics, err := NewMetricsTracker()
 	if err != nil {
 		panic(err)
 	}
 
 	srv := &Server{
-		agents:     agents,
-		logger:     logger,
-		counter:    counter,
-		errCounter: errCounter,
+		agents:  agents,
+		logger:  logger,
+		metrics: metrics,
 	}
 
 	srv.opampSrv = server.New(logger)
@@ -94,14 +56,14 @@ func (srv *Server) Start() {
 					return types.ConnectionResponse{
 						Accept: true,
 						ConnectionCallbacks: types.ConnectionCallbacks{
-							OnConnected:       func(ctx context.Context, _ types.Connection) { srv.counter.Add(ctx, 1) },
+							OnConnected:       func(ctx context.Context, _ types.Connection) { srv.metrics.OnConnected(ctx) },
 							OnMessage:         srv.onMessage,
 							OnConnectionClose: srv.onDisconnect,
 							OnReadMessageError: func(_ types.Connection, _ int, _ []byte, _ error) {
-								srv.errCounter.Add(context.Background(), 1, metric.WithAttributes(opampReadErrAttr))
+								srv.metrics.OnReadMessageError(context.Background())
 							},
 							OnMessageResponseError: func(_ types.Connection, _ *protobufs.ServerToAgent, _ error) {
-								srv.errCounter.Add(context.Background(), 1, metric.WithAttributes(opampRespErrAttr))
+								srv.metrics.OnMessageResponseError(context.Background())
 							},
 						},
 					}
@@ -132,7 +94,7 @@ func (srv *Server) Stop() {
 }
 
 func (srv *Server) onDisconnect(conn types.Connection) {
-	srv.counter.Add(context.Background(), -1)
+	srv.metrics.OnDisconnect(context.Background())
 	srv.agents.RemoveConnection(conn)
 }
 
