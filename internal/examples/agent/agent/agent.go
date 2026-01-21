@@ -538,7 +538,6 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 		)
 
 		if msg.CustomMessage.Capability == customCapability_Health {
-
 			switch msg.CustomMessage.Type {
 			case "get_health":
 

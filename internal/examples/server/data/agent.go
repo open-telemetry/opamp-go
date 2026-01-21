@@ -135,7 +135,6 @@ func (agent *Agent) UpdateStatus(
 }
 
 func (agent *Agent) processCustomMessage(statusMsg *protobufs.AgentToServer) {
-
 	formattedMessage := fmt.Sprintf("[%s] capability=%s, type=%s, data=%s",
 		time.Now().Format(time.DateTime),
 		statusMsg.CustomMessage.Capability,
