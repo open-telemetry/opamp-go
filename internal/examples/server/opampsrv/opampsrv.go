@@ -20,7 +20,6 @@ type Server struct {
 	opampSrv server.OpAMPServer
 	agents   *data.Agents
 	logger   *Logger
-	metrics  *metricsTracker
 }
 
 func NewServer(agents *data.Agents) *Server {
@@ -32,15 +31,9 @@ func NewServer(agents *data.Agents) *Server {
 		),
 	}
 
-	metrics, err := NewMetricsTracker()
-	if err != nil {
-		panic(err)
-	}
-
 	srv := &Server{
-		agents:  agents,
-		logger:  logger,
-		metrics: metrics,
+		agents: agents,
+		logger: logger,
 	}
 
 	srv.opampSrv = server.New(logger)
@@ -56,15 +49,8 @@ func (srv *Server) Start() {
 					return types.ConnectionResponse{
 						Accept: true,
 						ConnectionCallbacks: types.ConnectionCallbacks{
-							OnConnected:       func(ctx context.Context, _ types.Connection) { srv.metrics.OnConnected(ctx) },
 							OnMessage:         srv.onMessage,
 							OnConnectionClose: srv.onDisconnect,
-							OnReadMessageError: func(_ types.Connection, _ int, _ []byte, _ error) {
-								srv.metrics.OnReadMessageError(context.Background())
-							},
-							OnMessageResponseError: func(_ types.Connection, _ *protobufs.ServerToAgent, _ error) {
-								srv.metrics.OnMessageResponseError(context.Background())
-							},
 						},
 					}
 				},
@@ -94,7 +80,6 @@ func (srv *Server) Stop() {
 }
 
 func (srv *Server) onDisconnect(conn types.Connection) {
-	srv.metrics.OnDisconnect(context.Background())
 	srv.agents.RemoveConnection(conn)
 }
 
