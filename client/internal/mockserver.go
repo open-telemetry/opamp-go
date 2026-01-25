@@ -35,8 +35,9 @@ type MockServer struct {
 }
 
 const (
-	headerContentType   = "Content-Type"
-	contentTypeProtobuf = "application/x-protobuf"
+	headerContentType      = "Content-Type"
+	contentTypeProtobuf    = "application/x-protobuf"
+	headerOpAMPInstanceUID = "OpAMP-Instance-UID"
 )
 
 func newMockServer(t *testing.T) (*MockServer, *http.ServeMux) {

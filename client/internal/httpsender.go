@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/internal/utils"
@@ -348,11 +349,15 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 	} else {
 		req.bodyReader = bodyReader(data)
 	}
+
+	req.Header = h.getHeader()
+
+	uid, err := uuid.FromBytes(msgToSend.InstanceUid)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Add(headerOpAMPInstanceUID, uid.String())
 
-	req.Header = h.getHeader()
 	return &req, nil
 }
 
