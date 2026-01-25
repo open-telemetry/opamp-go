@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -432,4 +433,63 @@ func TestHTTPReportsAvailableComponents(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	}
+}
+
+func TestHTTPSenderOpAMPInstanceUIDHeader(t *testing.T) {
+	client := NewHTTP(nil)
+
+	var instanceUids [2][16]byte
+
+	// We run twice, once with initial instance UID 1, then with instance UID 2 that server
+	// asks the client to accept, to verify both scenarios.
+	for i := 0; i < 2; i++ {
+		instanceUids[i] = [16]byte{byte(i + 1)}
+	}
+
+	// Start a server.
+	srv := internal.StartMockServer(t)
+	var connCnt atomic.Int32
+	srv.OnConnect = func(r *http.Request) {
+		// Get request header
+		hdrUid := r.Header.Get("OpAMP-Instance-UID")
+
+		// Get expected UID
+		uidIdx := connCnt.Load()
+		if uidIdx > 1 {
+			uidIdx = 1
+		}
+		uid, err := uuid.FromBytes(instanceUids[uidIdx][:])
+		require.NoError(t, err)
+
+		// Make sure we got expected header
+		assert.EqualValues(t, uid.String(), hdrUid)
+
+		connCnt.Add(1)
+	}
+	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+		return &protobufs.ServerToAgent{
+			InstanceUid: msg.InstanceUid,
+			AgentIdentification: &protobufs.AgentIdentification{
+				NewInstanceUid: instanceUids[1][:], // Ask client to change its Instance UID
+			},
+			Flags: uint64(protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState),
+		}
+	}
+
+	header := http.Header{}
+
+	// Start a client.
+	settings := types.StartSettings{
+		OpAMPServerURL: "ws://" + srv.Endpoint,
+		Header:         header,
+		InstanceUid:    instanceUids[0],
+	}
+	startClient(t, settings, client)
+
+	// Wait for 2 connection attempts.
+	eventually(t, func() bool { return connCnt.Load() >= 2 })
+
+	// Shutdown the Server and the client.
+	srv.Close()
+	_ = client.Stop(context.Background())
 }
