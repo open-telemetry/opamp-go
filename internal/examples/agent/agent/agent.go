@@ -531,29 +531,7 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	}
 
 	if msg.CustomMessage != nil {
-		agent.logger.Debugf(ctx, "received custom message: capability=%s, type=%s, data=%s",
-			msg.CustomMessage.Capability,
-			msg.CustomMessage.Type,
-			string(msg.CustomMessage.Data),
-		)
-
-		if msg.CustomMessage.Capability == customCapability_Health {
-			switch msg.CustomMessage.Type {
-			case "get_health":
-
-				responseMsg := &protobufs.CustomMessage{
-					Capability: customCapability_Health,
-					Type:       "health_status",
-					Data:       []byte("OK"),
-				}
-
-				if err := agent.sendCustomMessage(ctx, responseMsg); err != nil {
-					agent.logger.Errorf(ctx, "Failed to send custom message: %v", err)
-				}
-			default:
-				agent.logger.Errorf(ctx, "unknown custom message type: %s", msg.CustomMessage.Type)
-			}
-		}
+		agent.processCustomMessage(ctx, msg.CustomMessage)
 	}
 
 	if configChanged {
@@ -571,6 +549,36 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	// necessary to check for AcceptsConnectionSettingsRequest (if the Agent is
 	// not certain that the Server has this capability).
 	agent.requestClientCertificate()
+}
+
+func (agent *Agent) processCustomMessage(ctx context.Context, customMessage *protobufs.CustomMessage) {
+	if customMessage == nil {
+		return
+	}
+
+	agent.logger.Debugf(ctx, "received custom message: capability=%s, type=%s, data=%s",
+		customMessage.Capability,
+		customMessage.Type,
+		string(customMessage.Data),
+	)
+
+	if customMessage.Capability == customCapability_Health {
+		switch customMessage.Type {
+		case "get_health":
+
+			responseMsg := &protobufs.CustomMessage{
+				Capability: customCapability_Health,
+				Type:       "health_status",
+				Data:       []byte("OK"),
+			}
+
+			if err := agent.sendCustomMessage(ctx, responseMsg); err != nil {
+				agent.logger.Errorf(ctx, "Failed to send custom message: %v", err)
+			}
+		default:
+			agent.logger.Errorf(ctx, "unknown custom message type: %s", customMessage.Type)
+		}
+	}
 }
 
 func (agent *Agent) sendCustomMessage(ctx context.Context, message *protobufs.CustomMessage) error {
