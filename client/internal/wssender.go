@@ -119,7 +119,12 @@ out:
 		case <-s.heartbeatIntervalUpdated:
 			// trigger heartbeat timer reset
 		case <-s.hasPendingMessage:
-			s.sendNextMessage(ctx)
+			if err := s.sendNextMessage(ctx); err != nil {
+				if isConnectionResetError(err) {
+					s.err = err
+					break out
+				}
+			}
 
 		case <-ctx.Done():
 			select {
@@ -127,7 +132,7 @@ out:
 			case <-s.hasPendingMessage:
 				stopCtx, cancel := context.WithTimeout(context.Background(), defaultSendCloseMessageTimeout)
 				defer cancel()
-				s.sendNextMessage(stopCtx)
+				_ = s.sendNextMessage(stopCtx)
 			default:
 			}
 
@@ -162,7 +167,6 @@ func (s *WSSender) sendNextMessage(ctx context.Context) error {
 func (s *WSSender) sendMessage(ctx context.Context, msg *protobufs.AgentToServer) error {
 	if err := internal.WriteWSMessage(s.conn, msg); err != nil {
 		s.logger.Errorf(ctx, "Cannot write WS message: %v", err)
-		// TODO: check if it is a connection error then propagate error back to Client and reconnect.
 		return err
 	}
 	return nil
