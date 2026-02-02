@@ -147,3 +147,34 @@
 
 </body>
 </html>
+
+<hr/>
+
+<h3>Custom Messages</h3>
+
+<h4>Send Custom Message</h4>
+<form action="/send_custom_message" method="post">
+    <input type="hidden" name="instanceid" value="{{ .InstanceIdStr }}"/>
+    
+    <label for="capability">Capability:</label>
+        <input type="text" name="capability" value="io.opentelemetry.custom.health" size="30"/><br/>
+
+    <label for="type">Type:</label>
+        <input type="text" name="type" value="get_health" size="30"/><br/>
+
+    <label for="data">Data:</label>
+        <input type="text" name="data" value="" size="30"/><br/>
+
+    <input type="submit" value="Send Custom Message" />
+</form>
+
+<h4>Received Messages</h4>
+
+{{ if eq (len .CustomMessageHistory) 0 }}
+No Received Messages
+{{ else }}
+Last {{ len .CustomMessageHistory }} Received Messages
+<pre class="log-container"><code>{{ range .CustomMessageHistory }}{{ . }}
+{{ end }}
+</code></pre>
+{{ end }} 
