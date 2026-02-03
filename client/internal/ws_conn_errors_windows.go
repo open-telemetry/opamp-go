@@ -26,8 +26,10 @@ func isConnectionResetError(err error) bool {
 func isResetSyscallError(err error) bool {
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
-		return errno == syscall.WSAECONNRESET ||
-			errno == syscall.WSAECONNABORTED
+		return errno == syscall.WSAECONNRESET || // connection reset by peer (windows specific)
+			errno == syscall.WSAECONNABORTED || // local software caused connection abort (windows specific)
+			errno == syscall.ENETRESET || // connection reset on network level
+			errno == syscall.ETIMEDOUT // connection timed out
 	}
 	return false
 }

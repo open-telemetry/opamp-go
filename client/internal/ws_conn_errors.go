@@ -26,11 +26,11 @@ func isConnectionResetError(err error) bool {
 func isResetSyscallError(err error) bool {
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
-		return errno == syscall.ECONNRESET ||
-			errno == syscall.EPIPE ||
-			errno == syscall.ECONNABORTED ||
-			errno == syscall.ENETRESET ||
-			errno == syscall.ETIMEDOUT
+		return errno == syscall.ECONNRESET || // connection reset by peer
+			errno == syscall.EPIPE || // broken pipe
+			errno == syscall.ECONNABORTED || // local software caused connection abort
+			errno == syscall.ENETRESET || // connection reset on network level
+			errno == syscall.ETIMEDOUT // connection timed out
 	}
 	return false
 }
