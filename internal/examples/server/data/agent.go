@@ -19,6 +19,10 @@ import (
 	"github.com/open-telemetry/opamp-go/server/types"
 )
 
+const (
+	CustomMessageHistorySize = 15
+)
+
 // Agent represents a connected Agent.
 type Agent struct {
 	// Some fields in this struct are exported so that we can render them in the UI.
@@ -50,6 +54,9 @@ type Agent struct {
 	ClientCert                  *x509.Certificate
 	ClientCertSha256Fingerprint string
 	ClientCertOfferError        string
+
+	// Custom message history
+	CustomMessageHistory []string
 
 	// Remote config that we will give to this Agent.
 	remoteConfig *protobufs.AgentRemoteConfig
@@ -95,6 +102,7 @@ func (agent *Agent) CloneReadonly() *Agent {
 		ClientCert:                  agent.ClientCert,
 		ClientCertOfferError:        agent.ClientCertOfferError,
 		ClientCertSha256Fingerprint: agent.ClientCertSha256Fingerprint,
+		CustomMessageHistory:        agent.CustomMessageHistory,
 	}
 }
 
@@ -113,6 +121,10 @@ func (agent *Agent) UpdateStatus(
 		agent.processConnectionSettingsRequest(statusMsg.ConnectionSettingsRequest.Opamp, response)
 	}
 
+	if statusMsg.CustomMessage != nil {
+		agent.processCustomMessage(statusMsg)
+	}
+
 	statusUpdateWatchers := agent.statusUpdateWatchers
 	agent.statusUpdateWatchers = nil
 
@@ -120,6 +132,28 @@ func (agent *Agent) UpdateStatus(
 
 	// Notify watcher outside mutex to avoid blocking the mutex for too long.
 	notifyStatusWatchers(statusUpdateWatchers)
+}
+
+func (agent *Agent) processCustomMessage(statusMsg *protobufs.AgentToServer) {
+	formattedMessage := fmt.Sprintf("[%s] capability=%s, type=%s, data=%s",
+		time.Now().Format(time.DateTime),
+		statusMsg.CustomMessage.Capability,
+		statusMsg.CustomMessage.Type,
+		string(statusMsg.CustomMessage.Data),
+	)
+
+	agent.CustomMessageHistory = append(agent.CustomMessageHistory, formattedMessage)
+
+	if len(agent.CustomMessageHistory) > CustomMessageHistorySize {
+		agent.CustomMessageHistory = agent.CustomMessageHistory[len(agent.CustomMessageHistory)-CustomMessageHistorySize:]
+	}
+}
+
+func (agent *Agent) SendCustomMessage(customMsg *protobufs.ServerToAgent) {
+	agent.mux.Lock()
+	defer agent.mux.Unlock()
+
+	agent.SendToAgent(customMsg)
 }
 
 func notifyStatusWatchers(statusUpdateWatchers []chan<- struct{}) {

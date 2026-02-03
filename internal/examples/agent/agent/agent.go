@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -45,6 +46,8 @@ service:
       processors: []
       exporters: [otlp]
 `
+
+const customCapability_Health = "io.opentelemetry.custom.health"
 
 type Agent struct {
 	logger types.Logger
@@ -187,6 +190,16 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 		protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings |
 		protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus
 	err = agent.opampClient.SetCapabilities(&supportedCapabilities)
+	if err != nil {
+		return err
+	}
+
+	customCapabilities := &protobufs.CustomCapabilities{
+		Capabilities: []string{
+			customCapability_Health,
+		},
+	}
+	err = agent.opampClient.SetCustomCapabilities(customCapabilities)
 	if err != nil {
 		return err
 	}
@@ -517,6 +530,10 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 		agent.updateAgentIdentity(ctx, uid)
 	}
 
+	if msg.CustomMessage != nil {
+		agent.processCustomMessage(ctx, msg.CustomMessage)
+	}
+
 	if configChanged {
 		err := agent.opampClient.UpdateEffectiveConfig(ctx)
 		if err != nil {
@@ -532,6 +549,53 @@ func (agent *Agent) onMessage(ctx context.Context, msg *types.MessageData) {
 	// necessary to check for AcceptsConnectionSettingsRequest (if the Agent is
 	// not certain that the Server has this capability).
 	agent.requestClientCertificate()
+}
+
+func (agent *Agent) processCustomMessage(ctx context.Context, customMessage *protobufs.CustomMessage) {
+	if customMessage == nil {
+		return
+	}
+
+	agent.logger.Debugf(ctx, "received custom message: capability=%s, type=%s, data=%s",
+		customMessage.Capability,
+		customMessage.Type,
+		string(customMessage.Data),
+	)
+
+	if customMessage.Capability == customCapability_Health {
+		switch customMessage.Type {
+		case "get_health":
+
+			responseMsg := &protobufs.CustomMessage{
+				Capability: customCapability_Health,
+				Type:       "health_status",
+				Data:       []byte("OK"),
+			}
+
+			if err := agent.sendCustomMessage(ctx, responseMsg); err != nil {
+				agent.logger.Errorf(ctx, "Failed to send custom message: %v", err)
+			}
+		default:
+			agent.logger.Errorf(ctx, "unknown custom message type: %s", customMessage.Type)
+		}
+	}
+}
+
+func (agent *Agent) sendCustomMessage(ctx context.Context, message *protobufs.CustomMessage) error {
+	for {
+		sendingChan, err := agent.opampClient.SendCustomMessage(message)
+
+		switch {
+		case err == nil:
+			return nil
+		case errors.Is(err, types.ErrCustomMessagePending):
+			// Failed to send opamp message. Waiting for previous custom message to be sent
+			<-sendingChan
+		default:
+			agent.logger.Errorf(ctx, "failed to send custom message: %w", err)
+			return fmt.Errorf("failed to send custom message: %w", err)
+		}
+	}
 }
 
 func (agent *Agent) tryChangeOpAMP(ctx context.Context, cert *tls.Certificate, tlsConfig *tls.Config, proxy *proxySettings) {
