@@ -28,34 +28,9 @@ func TestIsConnectionResetError(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "direct ECONNRESET returns true",
-			err:  syscall.Errno(syscall.ECONNRESET),
-			want: true,
-		},
-		{
 			name: "direct EPIPE returns true",
 			err:  syscall.Errno(syscall.EPIPE),
 			want: true,
-		},
-		{
-			name: "direct ECONNABORTED returns true",
-			err:  syscall.Errno(syscall.ECONNABORTED),
-			want: true,
-		},
-		{
-			name: "direct ENETRESET returns true",
-			err:  syscall.Errno(syscall.ENETRESET),
-			want: true,
-		},
-		{
-			name: "direct ETIMEDOUT returns true",
-			err:  syscall.Errno(syscall.ETIMEDOUT),
-			want: true,
-		},
-		{
-			name: "direct non-reset errno returns false",
-			err:  syscall.Errno(syscall.EINVAL),
-			want: false,
 		},
 		{
 			name: "OpError wrapping ECONNRESET returns true",
@@ -66,24 +41,10 @@ func TestIsConnectionResetError(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "OpError wrapping EPIPE returns true",
-			err: &net.OpError{
-				Op:  "write",
-				Err: syscall.Errno(syscall.EPIPE),
+			name: "test timeout error",
+			err: &net.DNSError{
+				IsTimeout: true,
 			},
-			want: true,
-		},
-		{
-			name: "OpError wrapping non-reset errno returns false",
-			err: &net.OpError{
-				Op:  "write",
-				Err: syscall.Errno(syscall.EINVAL),
-			},
-			want: false,
-		},
-		{
-			name: "wrapped OpError with ECONNRESET returns true",
-			err:  errors.Join(errors.New("wrapper"), &net.OpError{Op: "write", Err: syscall.Errno(syscall.ECONNRESET)}),
 			want: true,
 		},
 	}

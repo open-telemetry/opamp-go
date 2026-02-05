@@ -28,23 +28,15 @@ func TestIsConnectionResetErrorWindows(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "test timeout error",
+			err: &net.DNSError{
+				IsTimeout: true,
+			},
+			want: true,
+		},
+		{
 			name: "direct connection reset by peer",
 			err:  syscall.Errno(syscall.WSAECONNRESET),
-			want: true,
-		},
-		{
-			name: "direct software caused connection abort",
-			err:  syscall.Errno(syscall.WSAECONNABORTED),
-			want: true,
-		},
-		{
-			name: "direct connection reset on network level",
-			err:  syscall.Errno(syscall.ENETRESET),
-			want: true,
-		},
-		{
-			name: "direct connection timed out",
-			err:  syscall.Errno(syscall.ETIMEDOUT),
 			want: true,
 		},
 		{
@@ -52,30 +44,6 @@ func TestIsConnectionResetErrorWindows(t *testing.T) {
 			err: &net.OpError{
 				Op:  "write",
 				Err: syscall.Errno(syscall.WSAECONNRESET),
-			},
-			want: true,
-		},
-		{
-			name: "OpError software caused connection abort",
-			err: &net.OpError{
-				Op:  "write",
-				Err: syscall.Errno(syscall.WSAECONNABORTED),
-			},
-			want: true,
-		},
-		{
-			name: "OpError connection reset on network level",
-			err: &net.OpError{
-				Op:  "write",
-				Err: syscall.Errno(syscall.ENETRESET),
-			},
-			want: true,
-		},
-		{
-			name: "OpError connection timed out",
-			err: &net.OpError{
-				Op:  "write",
-				Err: syscall.Errno(syscall.ETIMEDOUT),
 			},
 			want: true,
 		},

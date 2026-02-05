@@ -14,9 +14,12 @@ func isConnectionResetError(err error) bool {
 		return false
 	}
 
-	var opError *net.OpError
-	if errors.As(err, &opError) {
-		return isResetSyscallError(opError.Err)
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		if netErr.Timeout() { // connection timed out
+			return true
+		}
+		return isResetSyscallError(netErr)
 	}
 
 	// Also check if it's directly a syscall error
