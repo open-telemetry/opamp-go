@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"net"
+	"runtime"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -120,6 +123,84 @@ func TestWSSenderWriteWSMessageFailure_ConnectionTimeout(t *testing.T) {
 	var netErr net.Error
 	require.True(t, errors.As(stoppingErr, &netErr))
 	require.Equal(t, true, netErr.Timeout())
+}
+
+func TestWSSenderWriteWSMessageFailure_ConnAborted(t *testing.T) {
+	srv := StartMockServer(t)
+	t.Cleanup(srv.Close)
+
+	// Custom dialer to inject our wrapped connection to simulate this case, since this case is usually hit when
+	// some local software in the system messes with the connection
+	dialer := *websocket.DefaultDialer
+	var connShim *connAbortedErrConn
+	dialer.NetDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		c, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		connShim = &connAbortedErrConn{Conn: c}
+		return connShim, nil
+	}
+
+	conn, _, err := dialer.DialContext(
+		context.Background(),
+		"ws://"+srv.Endpoint,
+		nil,
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	sender := NewSender(&sharedinternal.NopLogger{})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	err = sender.Start(ctx, conn)
+	require.NoError(t, err)
+
+	// Enable error injection
+	connShim.failWrite.Store(true)
+
+	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.InstanceUid = []byte("test-instance-uid-abort")
+	})
+	sender.ScheduleSend()
+
+	select {
+	case <-sender.IsStopped():
+		// Expected: sender stopped
+	case <-time.After(3 * time.Second):
+		t.Fatal("sender did not stop within 3s")
+	}
+
+	stoppingErr := sender.StoppingErr()
+	require.Error(t, stoppingErr)
+	var opErr *net.OpError
+	require.True(t, errors.As(stoppingErr, &opErr))
+	require.True(t, opErr.Err == syscall.ECONNABORTED || opErr.Err == syscall.Errno(10053))
+}
+
+type connAbortedErrConn struct {
+	net.Conn
+	failWrite atomic.Bool
+}
+
+func (c *connAbortedErrConn) Write(b []byte) (n int, err error) {
+	if c.failWrite.Load() {
+		switch runtime.GOOS {
+		case "windows":
+			// using windows err code number here directly to avoid separate test file for this single case
+			return 0, &net.OpError{
+				Op:  "write",
+				Err: syscall.Errno(10053),
+			}
+		default:
+			return 0, &net.OpError{
+				Op:  "write",
+				Err: syscall.Errno(syscall.ECONNABORTED),
+			}
+		}
+	}
+	return c.Conn.Write(b)
 }
 
 func TestWSSenderSetHeartbeatInterval(t *testing.T) {
