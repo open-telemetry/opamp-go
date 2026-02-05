@@ -109,7 +109,7 @@ func TestWSSenderWriteWSMessageFailure_ConnectionTimeout(t *testing.T) {
 	select {
 	case <-sender.IsStopped():
 		t.Log("Sender stopped successfully")
-	case <-time.After(3 * time.Hour):
+	case <-time.After(3 * time.Second):
 		t.Fatal("sender did not stop within 3s")
 	}
 
