@@ -33,6 +33,7 @@ func Start(rootDir string) {
 	mux.HandleFunc("/save_config", saveCustomConfigForInstance)
 	mux.HandleFunc("/rotate_client_cert", rotateInstanceClientCert)
 	mux.HandleFunc("/opamp_connection_settings", opampConnectionSettings)
+	mux.HandleFunc("/send_custom_message", sendCustomMessage)
 	srv = &http.Server{
 		Addr:    "0.0.0.0:4321",
 		Handler: mux,
@@ -78,6 +79,42 @@ func renderAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	renderTemplate(w, "agent.html", agent)
+}
+
+func sendCustomMessage(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	uid, err := uuid.Parse(r.Form.Get("instanceid"))
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	instanceId := data.InstanceId(uid)
+	agent := data.AllAgents.GetAgentReadonlyClone(instanceId)
+	if agent == nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	capability := r.PostForm.Get("capability")
+	msgType := r.PostForm.Get("type")
+	dataStr := r.PostForm.Get("data")
+
+	customMsg := &protobufs.ServerToAgent{
+		CustomMessage: &protobufs.CustomMessage{
+			Capability: capability,
+			Type:       msgType,
+			Data:       []byte(dataStr),
+		},
+	}
+
+	data.AllAgents.SendCustomMessageToAgent(instanceId, customMsg)
+
+	http.Redirect(w, r, "/agent?instanceid="+uid.String(), http.StatusSeeOther)
 }
 
 func saveCustomConfigForInstance(w http.ResponseWriter, r *http.Request) {

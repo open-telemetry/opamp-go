@@ -31,6 +31,16 @@ func (agents *Agents) RemoveConnection(conn types.Connection) {
 	delete(agents.connections, conn)
 }
 
+func (agents *Agents) SendCustomMessageToAgent(
+	agentId InstanceId,
+	customMsg *protobufs.ServerToAgent,
+) {
+	agent := agents.FindAgent(agentId)
+	if agent != nil {
+		agent.SendCustomMessage(customMsg)
+	}
+}
+
 func (agents *Agents) SetCustomConfigForAgent(
 	agentId InstanceId,
 	config *protobufs.AgentConfigMap,

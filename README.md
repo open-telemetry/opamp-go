@@ -48,6 +48,7 @@ For more information about the maintainer role, see the [community repository](h
 ### Approvers
 
 - [Evan Bradley](https://github.com/evan-bradley), Dynatrace
+- [Michel Laterman](https://github.com/michel-laterman), Elastic
 
 For more information about the approver role, see the [community repository](https://github.com/open-telemetry/community/blob/main/guides/contributor/membership.md#approver).
 

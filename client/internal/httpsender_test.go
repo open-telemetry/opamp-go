@@ -13,7 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
@@ -707,4 +709,36 @@ func setupTestSender(_ *testing.T, url string) *HTTPSender {
 	})
 	sender.url = url
 	return sender
+}
+
+func TestHTTPSenderOpAMPInstanceUIDHeader(t *testing.T) {
+	// Create instance UID
+	uidBytes := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+	uid, err := uuid.FromBytes(uidBytes)
+	require.NoError(t, err)
+
+	srv := StartMockServer(t)
+	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+		// Verify that request header contains the correct OpAMP Instance UID
+		assert.EqualValues(t, r.Header.Get(headerOpAMPInstanceUID), uid.String())
+		w.WriteHeader(http.StatusOK)
+	}
+	url := "http://" + srv.Endpoint
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+
+	// Make sure requests contain the Instance UID. Header value will be populated
+	// from the msg.InstanceUid field.
+	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.InstanceUid = uidBytes
+	})
+	sender.callbacks = types.Callbacks{
+		OnConnect: func(ctx context.Context) {},
+	}
+
+	// Make a request and wait for response.
+	sender.url = url
+	resp, err := sender.sendRequestWithRetries(t.Context())
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	srv.Close()
 }
