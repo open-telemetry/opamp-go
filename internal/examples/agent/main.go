@@ -38,10 +38,9 @@ type flagConfig struct {
 	tlsCAFile             string
 	endpoint              string
 	heartbeat             time.Duration
-	quiteAgent            bool
-
-	// scale test options
-	runScale   bool
+	quietAgent            bool
+	// scaleCount = 1 runs a normal agent
+	// scaleCount > 1 runs scale test agents (pre-assigned IDs, no initial cert request)
 	scaleCount uint64
 }
 
@@ -91,15 +90,14 @@ func (cfg flagConfig) verifyArgs() error {
 		return fmt.Errorf("heartbeat must be non-negative, got: %s", cfg.heartbeat)
 	}
 
-	if cfg.runScale {
-		if cfg.scaleCount == 0 {
-			return errors.New("scale count must not be zero")
-		}
+	if cfg.scaleCount == 0 {
+		return errors.New("scale count must not be zero")
 	}
 	return nil
 }
 
 // loadEnv will attempt to load config options from environment variables.
+// used to specifiy options when running the agent in a container.
 func loadEnv(cfg *flagConfig) {
 	if s, ok := os.LookupEnv("AGENT_TYPE"); ok {
 		cfg.agentType = s
@@ -146,17 +144,10 @@ func loadEnv(cfg *flagConfig) {
 		}
 	}
 
-	if s, ok := os.LookupEnv("AGENT_QUITE"); ok {
+	if s, ok := os.LookupEnv("AGENT_QUIET"); ok {
 		b, err := strconv.ParseBool(s)
 		if err == nil {
-			cfg.quiteAgent = b
-		}
-	}
-
-	if s, ok := os.LookupEnv("AGENT_RUN_SCALE"); ok {
-		b, err := strconv.ParseBool(s)
-		if err == nil {
-			cfg.runScale = b
+			cfg.quietAgent = b
 		}
 	}
 
@@ -179,23 +170,22 @@ func main() {
 	flag.StringVar(&cfg.tlsCAFile, "tls-ca_file", "", "Path to the CA cert. It verifies the server certificate (env var: AGENT_TLS_CA_FILE).")
 	flag.StringVar(&cfg.endpoint, "endpoint", "wss://127.0.0.1:4320/v1/opamp", "OpAMP server endpoint URL (env var: AGENT_ENDPOINT).")
 	flag.DurationVar(&cfg.heartbeat, "heartbeat", time.Second*30, "Heartbeat duration (env var: AGENT_HEARTBEAT).")
-	flag.BoolVar(&cfg.quiteAgent, "quite-agent", false, "Disable agent logger (env var: AGENT_QUITE).")
-	flag.BoolVar(&cfg.runScale, "run-scale", false, "Run in scale-test mode (env var: AGENT_RUN_SCALE).")
-	flag.Uint64Var(&cfg.scaleCount, "scale-count", 1000, "The number of agents to start in scale mode (env var: AGENT_SCALE_COUNT).")
+	flag.BoolVar(&cfg.quietAgent, "quite-agent", false, "Disable agent logger (env var: AGENT_QUIET).")
+	flag.Uint64Var(&cfg.scaleCount, "scale-count", 1, "The number of agents to start in scale mode (env var: AGENT_SCALE_COUNT).")
 
 	flag.Parse()
 	loadEnv(&cfg)
 
 	logger := log.Default()
-	if cfg.runScale {
-		logger = log.New(os.Stdout, "scale-test: ", log.Ldate|log.Lmicroseconds|log.Lmsgprefix)
-	}
-
 	if err := cfg.verifyArgs(); err != nil {
 		logger.Fatalf("Arg verification error: %v", err)
 	}
 
-	if cfg.quiteAgent {
+	if cfg.scaleCount > 1 {
+		logger = log.New(os.Stdout, "scale-test: ", log.Ldate|log.Lmicroseconds|log.Lmsgprefix)
+	}
+
+	if cfg.quietAgent {
 		// Silence the otel errors agents can generate.
 		// i.e.: failed to upload metrics: ...
 		otel.SetErrorHandler(&nopErrorHandler{})
@@ -204,21 +194,11 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	var agents []*agent.Agent
-	if cfg.runScale {
-		var err error
-		agents, err = runScale(ctx, cfg)
-		if err != nil {
-			logger.Printf("Error starting agents: %v", err)
-		}
-		logger.Printf("%d agents started", len(agents))
-	} else {
-		a, err := runAgent(cfg)
-		if err != nil {
-			logger.Fatalf("Agent encountered error when starting: %v", err)
-		}
-		agents = []*agent.Agent{a}
+	agents, err := runScale(ctx, cfg)
+	if err != nil {
+		logger.Printf("Error starting agents: %v", err)
 	}
+	logger.Printf("%d agents started", len(agents))
 
 	<-ctx.Done()
 	for _, a := range agents {
@@ -227,7 +207,7 @@ func main() {
 	logger.Println("All agents stopped")
 }
 
-// runScale starts and returns the configured amount of agents for a scale test.
+// runScale starts and returns the configured amount of agents.
 // If an error is encountered when starting an agent, it is return along with all started agents.
 func runScale(ctx context.Context, cfg flagConfig) ([]*agent.Agent, error) {
 	nopLogger := &opampinternal.NopLogger{}
@@ -255,23 +235,29 @@ func runScale(ctx context.Context, cfg flagConfig) ([]*agent.Agent, error) {
 		default:
 		}
 
-		id, err := uuid.NewV7()
-		if err != nil {
-			return nil, err
-		}
-
 		opts := []agent.Option{
 			agent.WithAgentType(cfg.agentType),
 			agent.WithAgentVersion(cfg.agentVersion),
-			agent.WithNoClientCertRequest(),
-			agent.WithInstanceID(id),
+		}
+		if cfg.quietAgent {
+			opts = append(opts, agent.WithLogger(nopLogger))
 		}
 
-		if cfg.quiteAgent {
-			opts = append(opts, agent.WithLogger(nopLogger))
-		} else {
-			opts = append(opts, agent.WithLogger(agent.NewScaleLogger(id)))
+		// Only pass in id and logger assocaited with id when running more than one agent.
+		if cfg.scaleCount > 1 {
+			id, err := uuid.NewV7()
+			if err != nil {
+				return nil, err
+			}
+			opts = append(opts,
+				agent.WithNoClientCertRequest(),
+				agent.WithInstanceID(id),
+			)
+			if !cfg.quiteAgent {
+				opts = append(opts, agent.WithLogger(agent.NewScaleLogger(id)))
+			}
 		}
+
 		a := agent.NewAgent(agentConfig, opts...)
 		if startErr := a.Start(); err != nil {
 			err = errors.Join(err, startErr)
@@ -280,33 +266,4 @@ func runScale(ctx context.Context, cfg flagConfig) ([]*agent.Agent, error) {
 		agents = append(agents, a)
 	}
 	return agents, err
-}
-
-// runAgent starts and runs a single agent with the passed config.
-func runAgent(cfg flagConfig) (*agent.Agent, error) {
-	agentConfig := &config.AgentConfig{
-		Endpoint:          cfg.endpoint,
-		HeartbeatInterval: &cfg.heartbeat,
-		TLSSetting: configtls.ClientConfig{
-			Insecure:           cfg.tlsInsecure,
-			InsecureSkipVerify: cfg.tlsInsecureSkipVerify,
-			Config: configtls.Config{
-				KeyFile:  cfg.tlsKeyFile,
-				CertFile: cfg.tlsCertFile,
-				CAFile:   cfg.tlsCAFile,
-			},
-		},
-	}
-
-	opts := []agent.Option{
-		agent.WithAgentType(cfg.agentType),
-		agent.WithAgentVersion(cfg.agentVersion),
-	}
-	if cfg.quiteAgent {
-		opts = append(opts, agent.WithLogger(&opampinternal.NopLogger{}))
-	}
-
-	agent := agent.NewAgent(agentConfig, opts...)
-	err := agent.Start()
-	return agent, err
 }
