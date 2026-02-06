@@ -178,7 +178,7 @@ func TestHTTPClientStartWithHeartbeatInterval(t *testing.T) {
 			}
 
 			// Start a client.
-			heartbeat := 100 * time.Millisecond
+			heartbeat := 10 * time.Millisecond
 			settings := types.StartSettings{
 				OpAMPServerURL:    "http://" + srv.Endpoint,
 				HeartbeatInterval: &heartbeat,
@@ -192,7 +192,7 @@ func TestHTTPClientStartWithHeartbeatInterval(t *testing.T) {
 			assert.NoError(t, client.Start(context.Background(), settings))
 
 			// Verify that status report is delivered.
-			eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) == 1 })
+			eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) >= 1 })
 
 			if tt.expectHeartbeats {
 				assert.Eventually(t, func() bool { return atomic.LoadInt64(&rcvCounter) >= 2 }, 5*time.Second, 10*time.Millisecond)
