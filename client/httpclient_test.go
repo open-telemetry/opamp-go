@@ -178,7 +178,7 @@ func TestHTTPClientStartWithHeartbeatInterval(t *testing.T) {
 			}
 
 			// Start a client.
-			heartbeat := 10 * time.Millisecond
+			heartbeat := 100 * time.Millisecond
 			settings := types.StartSettings{
 				OpAMPServerURL:    "http://" + srv.Endpoint,
 				HeartbeatInterval: &heartbeat,
