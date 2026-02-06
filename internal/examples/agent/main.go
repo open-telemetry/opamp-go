@@ -253,7 +253,7 @@ func runScale(ctx context.Context, cfg flagConfig) ([]*agent.Agent, error) {
 				agent.WithNoClientCertRequest(),
 				agent.WithInstanceID(id),
 			)
-			if !cfg.quiteAgent {
+			if !cfg.quietAgent {
 				opts = append(opts, agent.WithLogger(agent.NewScaleLogger(id)))
 			}
 		}
