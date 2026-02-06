@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const wsaECONNABORTED = 10053
+
 func TestIsConnectionResetError(t *testing.T) {
 	tests := []struct {
 		name string

@@ -176,7 +176,7 @@ func TestWSSenderWriteWSMessageFailure_ConnAborted(t *testing.T) {
 	require.Error(t, stoppingErr)
 	var opErr *net.OpError
 	require.True(t, errors.As(stoppingErr, &opErr))
-	require.True(t, opErr.Err == syscall.ECONNABORTED || opErr.Err == syscall.Errno(10053))
+	require.True(t, opErr.Err == syscall.ECONNABORTED || opErr.Err == syscall.Errno(wsaECONNABORTED))
 }
 
 type connAbortedErrConn struct {
@@ -188,10 +188,9 @@ func (c *connAbortedErrConn) Write(b []byte) (n int, err error) {
 	if c.failWrite.Load() {
 		switch runtime.GOOS {
 		case "windows":
-			// using windows err code number here directly to avoid separate test file for this single case
 			return 0, &net.OpError{
 				Op:  "write",
-				Err: syscall.Errno(10053),
+				Err: syscall.Errno(wsaECONNABORTED),
 			}
 		default:
 			return 0, &net.OpError{
