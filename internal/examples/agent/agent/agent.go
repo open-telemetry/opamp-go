@@ -238,7 +238,7 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 			customCapability_Health,
 		},
 	}
-	err = agent.opampClient.SetCustomCapabilities(customCapabilities)
+	err = agent.client.SetCustomCapabilities(customCapabilities)
 	if err != nil {
 		return err
 	}
@@ -635,7 +635,7 @@ func (agent *Agent) processCustomMessage(ctx context.Context, customMessage *pro
 
 func (agent *Agent) sendCustomMessage(ctx context.Context, message *protobufs.CustomMessage) error {
 	for {
-		sendingChan, err := agent.opampClient.SendCustomMessage(message)
+		sendingChan, err := agent.client.SendCustomMessage(message)
 
 		switch {
 		case err == nil:
