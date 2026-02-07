@@ -105,7 +105,9 @@ func genNewInstanceUid(t *testing.T) types.InstanceUid {
 
 func prepareSettings(t *testing.T, settings *types.StartSettings, c OpAMPClient) {
 	// Autogenerate instance id.
-	settings.InstanceUid = genNewInstanceUid(t)
+	if settings.InstanceUid == [16]byte{} {
+		settings.InstanceUid = genNewInstanceUid(t)
+	}
 
 	// Make sure correct URL scheme is used, based on the type of the OpAMP client.
 	u, err := url.Parse(settings.OpAMPServerURL)

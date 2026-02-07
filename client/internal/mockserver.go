@@ -34,11 +34,6 @@ type MockServer struct {
 	enableCompression bool
 }
 
-const (
-	headerContentType   = "Content-Type"
-	contentTypeProtobuf = "application/x-protobuf"
-)
-
 func newMockServer(t *testing.T) (*MockServer, *http.ServeMux) {
 	srv := &MockServer{
 		t:                t,
