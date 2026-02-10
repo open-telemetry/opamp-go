@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   opamp-server:
     build:
@@ -17,7 +15,7 @@ services:
     build:
       context: ../..
       dockerfile: internal/examples/Dockerfile.agent
-    entrypoint: 
+    entrypoint:
       - "./agent"
       - "--endpoint"
       - "wss://opamp-server:4320/v1/opamp"

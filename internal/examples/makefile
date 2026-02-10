@@ -57,7 +57,7 @@ run-docker: build-docker-server build-docker-agent
 
 .PHONY: docker-compose-up
 docker-compose-up:
-	cd $(SRC_ROOT)/internal/examples && docker compose up --build
+	cd $(SRC_ROOT)/internal/examples && docker compose up --build -d
 
 .PHONY: docker-compose-down
 docker-compose-down:
