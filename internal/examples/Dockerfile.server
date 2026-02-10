@@ -18,6 +18,6 @@ WORKDIR /app
 
 COPY --from=builder /src/internal/examples/server/bin/server ./
 
-EXPOSE 4320 4321
+EXPOSE 4320 4321 4322
 
 ENTRYPOINT ["./server"]

@@ -27,8 +27,22 @@ run-examples: build-examples
 	@echo Server UI is running at http://localhost:4321/
 	agent/bin/agent
 
-# Docker targets
+# Test targets
+.PHONY: test
+test:
+	$(GOCMD) test -race -v -p 1 ./...
 
+.PHONY: test-coverage
+test-coverage:
+	$(GOCMD) test -v -p 1 -coverprofile=coverage.out -covermode=atomic ./...
+	$(GOCMD) tool cover -func=coverage.out
+
+.PHONY: test-coverage-html
+test-coverage-html: test-coverage
+	$(GOCMD) tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
+
+# Docker targets
 .PHONY: build-docker-server
 build-docker-server:
 	cd $(SRC_ROOT) && docker build -f internal/examples/Dockerfile.server -t opamp-server-example:$(shell git rev-parse --short HEAD) .
@@ -39,8 +53,9 @@ build-docker-agent:
 
 .PHONY: run-docker-server
 run-docker-server: build-docker-server
-	docker run --rm -p 4320:4320 -p 4321:4321 opamp-server-example:$(shell git rev-parse --short HEAD) & \
-	echo "Server UI is running at http://$(shell hostname):4321/"
+	docker run --rm -p 4320:4320 -p 4321:4321  -p 4322:4322 opamp-server-example:$(shell git rev-parse --short HEAD) & \
+	echo "Server legacy UI is running at http://$(shell hostname):4321/"
+	echo "Server REST is running at http://$(shell hostname):4322/"
 
 .PHONY: run-docker-agent
 run-docker-agent: build-docker-agent
