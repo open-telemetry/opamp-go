@@ -1293,6 +1293,10 @@ func TestServerNotResponse(t *testing.T) {
 	assert.EqualValues(t, sendMsg.InstanceUid, response.InstanceUid)
 
 	// Test WebSocket
+	// Reset state from the HTTP phase so the checks below
+	// actually wait for the WebSocket message to arrive.
+	rcvMsg.Store((*protobufs.AgentToServer)(nil))
+
 	// Connect using a WebSocket client.
 	conn, _, _ := dialClient(settings)
 	require.NotNil(t, conn)
@@ -1308,9 +1312,13 @@ func TestServerNotResponse(t *testing.T) {
 	err = conn.WriteMessage(websocket.BinaryMessage, bytes)
 	require.NoError(t, err)
 
-	// Wait until Server receives the message.
-	eventually(t, func() bool { return rcvMsg.Load() != nil })
-	assert.True(t, proto.Equal(rcvMsg.Load().(proto.Message), &sendMsg))
+	// Wait until Server receives the WebSocket message.
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		msg, ok := rcvMsg.Load().(*protobufs.AgentToServer)
+		assert.True(c, ok, "rcvMsg is not type *protobufs.AgentToServer")
+		assert.NotNil(c, msg)
+		assert.True(c, proto.Equal(msg, &sendMsg), "message contents mismatch")
+	}, 5*time.Second, 10*time.Millisecond, "server did not receive message")
 	require.NoError(t, srvConn.Load().(net.Conn).Close())
 
 	// Read Server's response.
