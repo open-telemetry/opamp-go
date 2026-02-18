@@ -788,17 +788,19 @@ func TestAgentIdentification(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		// Start a server.
 		srv := internal.StartMockServer(t)
-		newInstanceUid := genNewInstanceUid(t)
+		var newInstanceUid atomic.Value
+		newInstanceUid.Store(genNewInstanceUid(t))
 		var rcvAgentInstanceUid atomic.Value
 		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			if msg.Flags&uint64(protobufs.AgentToServerFlags_AgentToServerFlags_RequestInstanceUid) == 1 {
-				newInstanceUid = genNewInstanceUid(t)
-				rcvAgentInstanceUid.Store(newInstanceUid[:])
+				uid := genNewInstanceUid(t)
+				newInstanceUid.Store(uid)
+				rcvAgentInstanceUid.Store(uid[:])
 				return &protobufs.ServerToAgent{
 					InstanceUid: msg.InstanceUid,
 					AgentIdentification: &protobufs.AgentIdentification{
 						// If the RequestInstanceUid flag was set, populate this field.
-						NewInstanceUid: newInstanceUid[:],
+						NewInstanceUid: uid[:],
 					},
 				}
 			}
@@ -856,7 +858,7 @@ func TestAgentIdentification(t *testing.T) {
 				if !ok {
 					return false
 				}
-				return types.InstanceUid(instanceUid) == newInstanceUid
+				return types.InstanceUid(instanceUid) == newInstanceUid.Load().(types.InstanceUid)
 			},
 		)
 
