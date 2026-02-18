@@ -11,6 +11,7 @@ import (
 var (
 	errRemoteConfigStatusMissing        = errors.New("RemoteConfigStatus is not set")
 	errLastRemoteConfigHashNil          = errors.New("LastRemoteConfigHash is nil")
+	errLastConnectionSettingsHashNil    = errors.New("LastConnectionSettingsHash is nil")
 	errConnectionSettingsStatusMissing  = errors.New("ConnectionSettingsStatus is not set")
 	errPackageStatusesMissing           = errors.New("PackageStatuses is not set")
 	errServerProvidedAllPackagesHashNil = errors.New("ServerProvidedAllPackagesHash is nil")

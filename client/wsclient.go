@@ -160,6 +160,10 @@ func (c *wsClient) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) e
 	return c.common.SetRemoteConfigStatus(status)
 }
 
+func (c *wsClient) SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus) error {
+	return c.common.SetConnectionSettingsStatus(status)
+}
+
 func (c *wsClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) error {
 	return c.common.SetPackageStatuses(statuses)
 }
