@@ -605,16 +605,11 @@ func TestFirstStatusReport(t *testing.T) {
 	})
 }
 
-func TestIncludesDetailsOnReconnect(t *testing.T) {
+func TestExcludesDetailsOnReconnect(t *testing.T) {
 	srv := internal.StartMockServer(t)
-
-	seqNum := 0
 
 	var receivedDetails int64
 	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
-		assert.EqualValues(t, seqNum, msg.SequenceNum)
-		seqNum++
-
 		// Track when we receive AgentDescription
 		if msg.AgentDescription != nil {
 			atomic.AddInt64(&receivedDetails, 1)
@@ -641,13 +636,14 @@ func TestIncludesDetailsOnReconnect(t *testing.T) {
 	eventually(t, func() bool { return atomic.LoadInt64(&connected) == 1 })
 	eventually(t, func() bool { return atomic.LoadInt64(&receivedDetails) == 1 })
 
-	// close the Agent connection. expect it to reconnect and send details again.
+	// close the Agent connection. expect it to reconnect without sending details.
 	require.NotNil(t, client.conn)
 	err := client.conn.Close()
 	assert.NoError(t, err)
 
 	eventually(t, func() bool { return atomic.LoadInt64(&connected) == 2 })
-	eventually(t, func() bool { return atomic.LoadInt64(&receivedDetails) == 2 })
+	// AgentDescription should NOT be sent again on reconnect.
+	assert.Never(t, func() bool { return atomic.LoadInt64(&receivedDetails) >= 2 }, 500*time.Millisecond, 10*time.Millisecond)
 
 	err = client.Stop(context.Background())
 	assert.NoError(t, err)

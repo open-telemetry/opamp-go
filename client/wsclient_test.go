@@ -869,6 +869,176 @@ func TestWSSenderReportsAvailableComponents(t *testing.T) {
 	}
 }
 
+func TestReconnectDoesNotSendFirstMessage(t *testing.T) {
+	t.Run("reconnect with next message", func(t *testing.T) {
+		srv := internal.StartMockServer(t)
+
+		var serverConn atomic.Pointer[websocket.Conn]
+		srv.OnWSConnect = func(conn *websocket.Conn) {
+			serverConn.Store(conn)
+		}
+
+		firstMsgCh := make(chan *protobufs.AgentToServer, 1)
+		reconnectMsgCh := make(chan *protobufs.AgentToServer, 1)
+		var connectCount atomic.Int32
+
+		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			if connectCount.Load() == 1 {
+				select {
+				case firstMsgCh <- proto.Clone(msg).(*protobufs.AgentToServer):
+				default:
+				}
+			} else if msg.Health != nil {
+				select {
+				case reconnectMsgCh <- proto.Clone(msg).(*protobufs.AgentToServer):
+				default:
+				}
+			}
+			return nil
+		}
+
+		client := NewWebSocket(nil)
+		reconnected := make(chan struct{}, 1)
+		settings := types.StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			Callbacks: types.Callbacks{
+				OnConnect: func(ctx context.Context) {
+					if connectCount.Add(1) == 2 {
+						// Queue health during reconnection, before sender.Start.
+						_ = client.SetHealth(&protobufs.ComponentHealth{Healthy: true})
+						select {
+						case reconnected <- struct{}{}:
+						default:
+						}
+					}
+				},
+			},
+		}
+		startClient(t, settings, client)
+
+		// First message should have full agent state (set by PrepareFirstMessage).
+		select {
+		case firstMsg := <-firstMsgCh:
+			assert.NotNil(t, firstMsg.AgentDescription, "first message should contain AgentDescription")
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "Timed out waiting for first message")
+		}
+
+		// Force disconnect by sending invalid data to the client.
+		wsConn := serverConn.Load()
+		writer, err := wsConn.NextWriter(websocket.BinaryMessage)
+		require.NoError(t, err)
+		_, err = writer.Write([]byte{99, 1, 2, 3, 4, 5})
+		require.NoError(t, err)
+		require.NoError(t, writer.Close())
+
+		// Wait for reconnect.
+		select {
+		case <-reconnected:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "Timed out waiting for reconnect")
+		}
+
+		// The reconnect message should contain only the health update,
+		// not the full agent state.
+		select {
+		case reconnectMsg := <-reconnectMsgCh:
+			assert.Nil(t, reconnectMsg.AgentDescription, "reconnect message should not contain AgentDescription")
+			assert.NotNil(t, reconnectMsg.Health)
+			assert.True(t, reconnectMsg.Health.Healthy)
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "Timed out waiting for reconnect message")
+		}
+
+		err = client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+
+	t.Run("reconnect with no accumulated message", func(t *testing.T) {
+		srv := internal.StartMockServer(t)
+
+		var serverConn atomic.Pointer[websocket.Conn]
+		srv.OnWSConnect = func(conn *websocket.Conn) {
+			serverConn.Store(conn)
+		}
+
+		firstMsgCh := make(chan *protobufs.AgentToServer, 1)
+		reconnectMsgCh := make(chan *protobufs.AgentToServer, 1)
+		var connectCount atomic.Int32
+
+		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			if connectCount.Load() == 1 {
+				select {
+				case firstMsgCh <- proto.Clone(msg).(*protobufs.AgentToServer):
+				default:
+				}
+			} else if msg.Health != nil {
+				select {
+				case reconnectMsgCh <- proto.Clone(msg).(*protobufs.AgentToServer):
+				default:
+				}
+			}
+			return nil
+		}
+
+		client := NewWebSocket(nil)
+		reconnected := make(chan struct{}, 1)
+		settings := types.StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			Callbacks: types.Callbacks{
+				OnConnect: func(ctx context.Context) {
+					if connectCount.Add(1) == 2 {
+						select {
+						case reconnected <- struct{}{}:
+						default:
+						}
+					}
+				},
+			},
+		}
+		startClient(t, settings, client)
+
+		// First message should have full agent state.
+		select {
+		case firstMsg := <-firstMsgCh:
+			assert.NotNil(t, firstMsg.AgentDescription, "first message should contain AgentDescription")
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "Timed out waiting for first message")
+		}
+
+		// Force disconnect by sending invalid data to the client.
+		wsConn := serverConn.Load()
+		writer, err := wsConn.NextWriter(websocket.BinaryMessage)
+		require.NoError(t, err)
+		_, err = writer.Write([]byte{99, 1, 2, 3, 4, 5})
+		require.NoError(t, err)
+		require.NoError(t, writer.Close())
+
+		// Wait for reconnect without queuing any updates.
+		select {
+		case <-reconnected:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "Timed out waiting for reconnect")
+		}
+
+		// Now trigger a send after reconnection. This message should not
+		// contain full agent state.
+		require.NoError(t, client.SetHealth(&protobufs.ComponentHealth{Healthy: true}))
+
+		select {
+		case reconnectMsg := <-reconnectMsgCh:
+			assert.Nil(t, reconnectMsg.AgentDescription, "message after reconnect should not contain AgentDescription")
+			assert.NotNil(t, reconnectMsg.Health)
+			assert.True(t, reconnectMsg.Health.Healthy)
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "Timed out waiting for health message after reconnect")
+		}
+
+		err = client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
 func TestWSClientUseProxy(t *testing.T) {
 	tests := []struct {
 		name    string

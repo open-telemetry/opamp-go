@@ -336,7 +336,7 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 
 // runOneCycle performs the following actions:
 //  1. connect (try until succeeds).
-//  2. send first status report.
+//  2. send first status report or the next message if sendFirstMessage is false.
 //  3. start the sender to wait for scheduled messages and send them to the server.
 //  4. start the receiver to receive and process messages until an error happens.
 //  5. wait until both the sender and receiver are stopped.
@@ -346,7 +346,7 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 // When Stop() is called (ctx is cancelled, isStopping is set), wsClient will shutdown gracefully:
 //  1. sender will be cancelled by the ctx, send the close message to server and return the error via sender.Err().
 //  2. runOneCycle will handle that error and wait for the close message from server until timeout.
-func (c *wsClient) runOneCycle(ctx context.Context) {
+func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 	if err := c.ensureConnected(ctx); err != nil {
 		// Can't connect, so can't move forward. This currently happens when we
 		// are being stopped.
@@ -359,11 +359,16 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 		return
 	}
 
-	// Prepare the first status report.
-	err := c.common.PrepareFirstMessage(ctx)
-	if err != nil {
-		c.common.Logger.Errorf(ctx, "cannot prepare the first message:%v", err)
-		return
+	if sendFirstMessage {
+		// Prepare the first status report with full agent state.
+		err := c.common.PrepareFirstMessage(ctx)
+		if err != nil {
+			c.common.Logger.Errorf(ctx, "cannot prepare the first message:%v", err)
+			return
+		}
+	} else {
+		// Send the next message even if it is empty
+		c.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {})
 	}
 
 	// Create a cancellable context for background processors.
@@ -371,9 +376,9 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 	defer stopSender()
 
 	// Connected successfully. Start the sender. This will also send the first
-	// status report.
+	// message.
 	if err := c.sender.Start(senderCtx, c.conn); err != nil {
-		c.common.Logger.Errorf(senderCtx, "Failed to send first status report: %v", err)
+		c.common.Logger.Errorf(senderCtx, "Failed to send message after connection: %v", err)
 		// We could not send the report, the only thing we can do is start over.
 		return
 	}
@@ -428,12 +433,14 @@ func (c *wsClient) runOneCycle(ctx context.Context) {
 
 func (c *wsClient) runUntilStopped(ctx context.Context) {
 	// Iterates until we detect that the client is stopping.
+	sendFirstMessage := true
 	for {
 		if c.common.IsStopping() {
 			return
 		}
 
-		c.runOneCycle(ctx)
+		c.runOneCycle(ctx, sendFirstMessage)
+		sendFirstMessage = false
 	}
 }
 
