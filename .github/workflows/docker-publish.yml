@@ -75,7 +75,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          buildArgs: "GO_VERSION=${{ steps.go-version.outputs.version }}"
+          build-args: "GO_VERSION=${{ steps.go-version.outputs.version }}"
           platforms: linux/amd64
           cache-from: type=gha
           cache-to: type=gha,mode=max
