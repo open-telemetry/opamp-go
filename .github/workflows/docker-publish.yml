@@ -29,7 +29,7 @@ jobs:
           - dockerfile: internal/examples/Dockerfile.server
             image-name: opamp-server-example
             context: .
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -59,6 +59,13 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Read Go version from internal/examples/go.mod
+        id: go-version
+        shell: bash
+        run: |
+          GO_VERSION="$(awk '$1=="go"{ split($2,v, "."); print v[1]"."v[2]; exit}' internal/examples/go.mod)"
+          echo "version=${GO_VERSION}" >> "${GITHUB_OUTPUT}"
+
       - name: Build and push Docker image
         id: build
         uses: docker/build-push-action@v6
@@ -68,6 +75,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          buildArgs: "GO_VERSION=${{ steps.go-version.outputs.version }}"
           platforms: linux/amd64
           cache-from: type=gha
           cache-to: type=gha,mode=max
