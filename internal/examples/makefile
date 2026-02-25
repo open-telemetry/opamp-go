@@ -5,6 +5,9 @@ GOCMD?= go
 # SRC_ROOT is the top of the source tree (project root)
 SRC_ROOT := $(shell git rev-parse --show-toplevel)
 
+# GO_VERSION checks go.mod and return's Go's version number
+GO_VERSION := $(shell awk '$$1=="go"{ split($$2,v,"."); print v[1]"."v[2]; exit }' go.mod)
+
 # Build targets
 .PHONY: build-examples
 build-examples: build-example-agent build-example-supervisor build-example-server
@@ -31,11 +34,11 @@ run-examples: build-examples
 
 .PHONY: build-docker-server
 build-docker-server:
-	cd $(SRC_ROOT) && docker build -f internal/examples/Dockerfile.server -t opamp-server-example:$(shell git rev-parse --short HEAD) .
+	cd $(SRC_ROOT) && docker build -f internal/examples/Dockerfile.server --build-arg GO_VERSION="${GO_VERSION}" -t opamp-server-example:$(shell git rev-parse --short HEAD) .
 
 .PHONY: build-docker-agent
 build-docker-agent:
-	cd $(SRC_ROOT) && docker build -f internal/examples/Dockerfile.agent -t opamp-agent-example:$(shell git rev-parse --short HEAD) .
+	cd $(SRC_ROOT) && docker build -f internal/examples/Dockerfile.agent --build-arg GO_VERSION="${GO_VERSION}" -t opamp-agent-example:$(shell git rev-parse --short HEAD) .
 
 .PHONY: run-docker-server
 run-docker-server: build-docker-server
