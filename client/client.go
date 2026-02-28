@@ -74,6 +74,12 @@ type OpAMPClient interface {
 	// nil values are not allowed and will return an error.
 	SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) error
 
+	// SetConnectionSettingsStatus sets the current ConnectionSettingsStatus.
+	// LastConnectionSettingsHash field must be non-nil.
+	// May be called anytime after Start(), including from OnMessage handler.
+	// nil values are not allowed and will return an error.
+	SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus) error
+
 	// SetPackageStatuses sets the current PackageStatuses.
 	// ServerProvidedAllPackagesHash must be non-nil.
 	// May be called anytime after Start(), including from OnMessage handler.
