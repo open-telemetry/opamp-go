@@ -14,7 +14,8 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/gorilla/websocket"
-	dialer "github.com/michel-laterman/proxy-connect-dialer-go"
+
+	dialer "github.com/elastic/proxy-connect-dialer-go"
 
 	"github.com/open-telemetry/opamp-go/client/internal"
 	"github.com/open-telemetry/opamp-go/client/types"

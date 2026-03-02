@@ -4,10 +4,10 @@ go 1.25.0
 
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0
+	github.com/elastic/proxy-connect-dialer-go v0.1.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/madflojo/testcerts v1.5.0
-	github.com/michel-laterman/proxy-connect-dialer-go v0.1.0
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/protobuf v1.36.11
 )
