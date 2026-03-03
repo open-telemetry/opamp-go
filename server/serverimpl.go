@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -422,7 +423,7 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 
 	// Send the response.
 	w.Header().Set(headerContentType, contentTypeProtobuf)
-	if req.Header.Get(headerAcceptEncoding) == contentEncodingGzip {
+	if acceptsEncoding(req, contentEncodingGzip) {
 		bodyBytes, err = s.compressGzip(bodyBytes)
 		if err != nil {
 			s.logger.Errorf(req.Context(), "Cannot compress response: %v", err)
@@ -435,4 +436,30 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	if err != nil {
 		s.logger.Debugf(req.Context(), "Cannot send HTTP response: %v", err)
 	}
+}
+
+// acceptsEncoding checks if the passed request accepts the specified encoding.
+// If the encoding is missing, or present with q=0 a false is returned
+// If the encoding is present, or a wildcard is passed true is returned.
+func acceptsEncoding(req *http.Request, encoding string) bool {
+	for _, headerVal := range req.Header.Values(headerAcceptEncoding) {
+		for _, encodingVal := range strings.Split(headerVal, ",") {
+			encodingVal = strings.TrimSpace(encodingVal)
+			if encodingVal == "" {
+				continue
+			}
+
+			name, params, _ := strings.Cut(encodingVal, ";")
+			params = strings.TrimSpace(params)
+			// q=0 means the encoding is not allowed
+			if params != "" && strings.EqualFold(params, "q=0") {
+				continue
+			}
+
+			if name == "*" || strings.EqualFold(name, encoding) {
+				return true
+			}
+		}
+	}
+	return false
 }

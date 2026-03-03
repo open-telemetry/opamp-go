@@ -1419,3 +1419,56 @@ func BenchmarkCompressGzip(b *testing.B) {
 		}
 	})
 }
+
+func TestAcceptsEncoding(t *testing.T) {
+	tests := []struct {
+		name   string
+		header http.Header
+		expect bool
+	}{{
+		name:   "exact match",
+		header: http.Header{headerAcceptEncoding: []string{contentEncodingGzip}},
+		expect: true,
+	}, {
+		name:   "matches from list",
+		header: http.Header{headerAcceptEncoding: []string{"deflate, gzip"}},
+		expect: true,
+	}, {
+		name:   "matches from header values",
+		header: http.Header{headerAcceptEncoding: []string{"deflate", contentEncodingGzip}},
+		expect: true,
+	}, {
+		name:   "matches with params",
+		header: http.Header{headerAcceptEncoding: []string{"deflate;q=1.0, gzip;q=0.5"}},
+		expect: true,
+	}, {
+		name:   "matches but disabled with q=0",
+		header: http.Header{headerAcceptEncoding: []string{"deflate;q=1.0, gzip;q=0"}},
+		expect: false,
+	}, {
+		name:   "no match",
+		header: http.Header{headerAcceptEncoding: []string{"deflate, br"}},
+		expect: false,
+	}, {
+		name:   "wildcard",
+		header: http.Header{headerAcceptEncoding: []string{"*"}},
+		expect: true,
+	}, {
+		name:   "case insensitive",
+		header: http.Header{headerAcceptEncoding: []string{"GZIP"}},
+		expect: true,
+	}, {
+		name:   "no header",
+		header: http.Header{},
+		expect: false,
+	}}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &http.Request{Header: tc.header}
+
+			result := acceptsEncoding(r, contentEncodingGzip)
+			assert.Equal(t, tc.expect, result)
+		})
+	}
+}
