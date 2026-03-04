@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -13,6 +14,11 @@ import (
 var logger = log.New(log.Default().Writer(), "[MAIN] ", log.Default().Flags()|log.Lmsgprefix|log.Lmicroseconds)
 
 func main() {
+	var emitMetrics bool
+	flag.BoolVar(&emitMetrics, "emit-metrics", false, "Emit metrics to stdout.")
+
+	flag.Parse()
+
 	curDir, err := os.Getwd()
 	if err != nil {
 		panic(err)
@@ -21,7 +27,7 @@ func main() {
 	logger.Println("OpAMP Server starting...")
 
 	uisrv.Start(curDir)
-	opampSrv := opampsrv.NewServer(&data.AllAgents)
+	opampSrv := opampsrv.NewServer(&data.AllAgents, emitMetrics)
 	opampSrv.Start()
 
 	logger.Println("OpAMP Server running...")
