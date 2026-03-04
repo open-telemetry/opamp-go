@@ -4,11 +4,10 @@ Agent provides provides and example agent implementation for the OpAMP protocol.
 
 Both HTTP and Websocket connections are supported by the agent, however the [examples/server](../examples/server) only supports Websocket.
 
-The example agent can be in a normal mode; where the binary starts a single agent, or in scale mode (when `-run-scale` is passed or `AGENT_RUN_SCALE=true` is set).
+The example agent can be in a normal mode; where the binary starts a single agent, or in scale mode (when `-scale-count` or `AGENT_SCALE__COUNT` is set to a number larger than one).
 
-When in scale mode the process will start multiple agents (up to `-agent-scale-count/AGENT_SCALE_COUNT`) in the same process.
+When in scale mode the process will start multiple agents in the same process.
 All agents will use the same scheme when connection to the OpAMP server (HTTP/Websocket).
-
 In scale mode, the agent orchestartor will log to stdout, and the agents to stderr.
 
 ## Usage
@@ -20,11 +19,9 @@ Usage of agent:
   -heartbeat duration
     	Heartbeat duration (env var: AGENT_HEARTBEAT). (default 30s)
   -quite-agent
-    	Disable agent logger (env var: AGENT_QUITE).
-  -run-scale
-    	Run in scale-test mode (env var: AGENT_RUN_SCALE).
+    	Disable agent logger (env var: AGENT_QUIET).
   -scale-count uint
-    	The number of agents to start in scale mode (env var: AGENT_SCALE_COUNT). (default 1000)
+    	The number of agents to start in scale mode (env var: AGENT_SCALE_COUNT). (default 1)
   -t string
     	Agent Type String (env var: AGENT_TYPE). (default "io.opentelemetry.collector")
   -tls-ca_file string
