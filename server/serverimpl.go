@@ -9,6 +9,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -422,7 +424,7 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 
 	// Send the response.
 	w.Header().Set(headerContentType, contentTypeProtobuf)
-	if req.Header.Get(headerAcceptEncoding) == contentEncodingGzip {
+	if acceptsEncoding(req, contentEncodingGzip) {
 		bodyBytes, err = s.compressGzip(bodyBytes)
 		if err != nil {
 			s.logger.Errorf(req.Context(), "Cannot compress response: %v", err)
@@ -435,4 +437,86 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	if err != nil {
 		s.logger.Debugf(req.Context(), "Cannot send HTTP response: %v", err)
 	}
+}
+
+// AcceptsEncoding reports whether `encoding` is explicitly allowed by
+// the request's Accept-Encoding header.
+//
+// Behavior mostly follows RFC 7231 §5.3.4, except that the encoding must be explicitly listed with q>0
+// or must have a wildcard "*" with q>0. Missing q params are treated as q=1 as per the RFC.
+func acceptsEncoding(req *http.Request, encoding string) bool {
+	encoding = strings.ToLower(strings.TrimSpace(encoding))
+	encodingFound := false
+	wildcardAllowed := false
+	for _, headerVal := range req.Header.Values(headerAcceptEncoding) {
+		for _, encodingVal := range strings.Split(headerVal, ",") {
+			name, q := parseEncoding(encodingVal)
+			if name == "" {
+				continue
+			}
+
+			switch name {
+			case "*":
+				if q > 0 {
+					wildcardAllowed = true
+				}
+			case encoding:
+				encodingFound = true
+				if q > 0 {
+					return true // encoding is explicitly allowed
+				}
+			}
+		}
+	}
+	if encodingFound {
+		// Encoding has been found with q=0
+		return false
+	}
+	return wildcardAllowed
+}
+
+// parseEncoding parses the parses an encoding value into a name and q value, discarding other params.
+// For example: "gzip; level=5; q=0.5" should return gzip, 0.5.
+// If no q value is passed, the default value of 1 is used
+// If q is specified, but fails to parse or is invalid 0 is returned.
+// If there is no name, an empty string and -1 is returned.
+func parseEncoding(val string) (string, float64) {
+	parts := strings.Split(val, ";")
+	name := strings.ToLower(strings.TrimSpace(parts[0]))
+	if name == "" {
+		return "", -1
+	}
+
+	// Default qvalue is 1.0
+	q := 1.0
+
+	for _, p := range parts[1:] {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		kv := strings.SplitN(p, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		k := strings.ToLower(strings.TrimSpace(kv[0]))
+		v := strings.TrimSpace(kv[1])
+
+		if k != "q" {
+			continue
+		}
+
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			// Invalid q value: treat as 0 (disallowed token)
+			return name, 0
+		}
+		if f < 0 || f > 1 {
+			return name, 0
+		}
+		q = f
+		break // use the 1st q val if multiple are specified
+	}
+
+	return name, q
 }
