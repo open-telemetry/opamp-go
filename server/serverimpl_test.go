@@ -1446,6 +1446,22 @@ func TestAcceptsEncoding(t *testing.T) {
 		header: http.Header{headerAcceptEncoding: []string{"deflate;q=1.0, gzip;q=0"}},
 		expect: false,
 	}, {
+		name:   "explicitly disabled despite wildcard",
+		header: http.Header{headerAcceptEncoding: []string{"gzip;q=0, *;q=1"}},
+		expect: false,
+	}, {
+		name:   "disabled with whitespace",
+		header: http.Header{headerAcceptEncoding: []string{"gzip ; q = 0"}},
+		expect: false,
+	}, {
+		name:   "disabled with q=0.0",
+		header: http.Header{headerAcceptEncoding: []string{"gzip;q=0.0"}},
+		expect: false,
+	}, {
+		name:   "disabled with multiple params",
+		header: http.Header{headerAcceptEncoding: []string{"gzip;level=1;q=0"}},
+		expect: false,
+	}, {
 		name:   "no match",
 		header: http.Header{headerAcceptEncoding: []string{"deflate, br"}},
 		expect: false,
@@ -1469,6 +1485,78 @@ func TestAcceptsEncoding(t *testing.T) {
 
 			result := acceptsEncoding(r, contentEncodingGzip)
 			assert.Equal(t, tc.expect, result)
+		})
+	}
+}
+
+func TestParseEncoding(t *testing.T) {
+	tests := []struct {
+		name     string
+		val      string
+		wantName string
+		wantQ    float64
+	}{{
+		name:     "encoding only defaults q to 1",
+		val:      "gzip",
+		wantName: "gzip",
+		wantQ:    1,
+	}, {
+		name:     "trims and lowercases name",
+		val:      "  GZIP  ",
+		wantName: "gzip",
+		wantQ:    1,
+	}, {
+		name:     "parses explicit q value",
+		val:      "gzip;q=0.5",
+		wantName: "gzip",
+		wantQ:    0.5,
+	}, {
+		name:     "parses q among other params",
+		val:      "gzip;level=5;q=0.75",
+		wantName: "gzip",
+		wantQ:    0.75,
+	}, {
+		name:     "uses first q when repeated",
+		val:      "gzip;q=0.6;q=0.2",
+		wantName: "gzip",
+		wantQ:    0.6,
+	}, {
+		name:     "invalid q parses as disallowed",
+		val:      "gzip;q=bad",
+		wantName: "gzip",
+		wantQ:    0,
+	}, {
+		name:     "out of range q greater than 1 disallowed",
+		val:      "gzip;q=1.1",
+		wantName: "gzip",
+		wantQ:    0,
+	}, {
+		name:     "out of range q less than 0 disallowed",
+		val:      "gzip;q=-0.1",
+		wantName: "gzip",
+		wantQ:    0,
+	}, {
+		name:     "supports uppercase q key",
+		val:      "gzip;Q=0.4",
+		wantName: "gzip",
+		wantQ:    0.4,
+	}, {
+		name:     "ignores malformed params and keeps default q",
+		val:      "gzip;foo;bar=baz",
+		wantName: "gzip",
+		wantQ:    1,
+	}, {
+		name:     "empty name returns sentinel values",
+		val:      " ;q=0.8",
+		wantName: "",
+		wantQ:    -1,
+	}}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			name, q := parseEncoding(tc.val)
+			assert.Equal(t, tc.wantName, name)
+			assert.Equal(t, tc.wantQ, q)
 		})
 	}
 }
