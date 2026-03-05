@@ -27,7 +27,7 @@ jobs:
         uses: WillAbides/setup-go-faster@v1.14.0
         with:
           go-version-file: "go.mod"
-      - uses: dominikh/staticcheck-action@v1.4.0
+      - uses: dominikh/staticcheck-action@v1.4.1
         with:
           install-go: false
           version: "2025.1.1"
