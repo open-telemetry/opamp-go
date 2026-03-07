@@ -14,15 +14,16 @@ import (
 )
 
 var (
-	ErrAgentDescriptionMissing      = errors.New("AgentDescription is nil")
-	ErrAgentDescriptionNoAttributes = errors.New("AgentDescription has no attributes defined")
-	ErrHealthMissing                = errors.New("health is nil")
-	ErrReportsEffectiveConfigNotSet = errors.New("ReportsEffectiveConfig capability is not set")
-	ErrReportsRemoteConfigNotSet    = errors.New("ReportsRemoteConfig capability is not set")
-	ErrPackagesStateProviderNotSet  = errors.New("PackagesStateProvider must be set")
-	ErrCapabilitiesNotSet           = errors.New("Capabilities is not set")
-	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
-	ErrAvailableComponentsMissing   = errors.New("AvailableComponents is nil")
+	ErrAgentDescriptionMissing               = errors.New("AgentDescription is nil")
+	ErrAgentDescriptionNoAttributes          = errors.New("AgentDescription has no attributes defined")
+	ErrHealthMissing                         = errors.New("health is nil")
+	ErrReportsEffectiveConfigNotSet          = errors.New("ReportsEffectiveConfig capability is not set")
+	ErrReportsRemoteConfigNotSet             = errors.New("ReportsRemoteConfig capability is not set")
+	ErrReportsConnectionSettingsStatusNotSet = errors.New("ReportsConnectionSettingsStatus capability is not set")
+	ErrPackagesStateProviderNotSet           = errors.New("PackagesStateProvider must be set")
+	ErrCapabilitiesNotSet                    = errors.New("Capabilities is not set")
+	ErrAcceptsPackagesNotSet                 = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
+	ErrAvailableComponentsMissing            = errors.New("AvailableComponents is nil")
 
 	errAlreadyStarted               = errors.New("already started")
 	errCannotStopNotStarted         = errors.New("cannot stop because not started")
@@ -392,6 +393,40 @@ func (c *ClientCommon) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatu
 		c.sender.NextMessage().Update(
 			func(msg *protobufs.AgentToServer) {
 				msg.RemoteConfigStatus = c.ClientSyncedState.RemoteConfigStatus()
+			},
+		)
+		// TODO: if this call is coming from OnMessage callback don't schedule the send
+		// immediately, wait until the end of OnMessage to send one message only.
+		c.sender.ScheduleSend()
+	}
+
+	return nil
+}
+
+// SetConnectionSettingsStatus sends a status update to the Server if the new ConnectionSettingsStatus
+// is different from the status we already have in the state.
+// It also remembers the new ConnectionSettingsStatus in the client state so that it can be
+// sent to the Server when the Server asks for it.
+func (c *ClientCommon) SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus) error {
+	if !c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings) {
+		return ErrReportsConnectionSettingsStatusNotSet
+	}
+	if status.LastConnectionSettingsHash == nil {
+		return errLastConnectionSettingsHashNil
+	}
+
+	statusChanged := !proto.Equal(c.ClientSyncedState.ConnectionSettingsStatus(), status)
+
+	// Remember the new status.
+	if err := c.ClientSyncedState.SetConnectionSettingsStatus(status); err != nil {
+		return err
+	}
+
+	if statusChanged {
+		// Let the Server know about the new status.
+		c.sender.NextMessage().Update(
+			func(msg *protobufs.AgentToServer) {
+				msg.ConnectionSettingsStatus = c.ClientSyncedState.ConnectionSettingsStatus()
 			},
 		)
 		// TODO: if this call is coming from OnMessage callback don't schedule the send
