@@ -24,7 +24,7 @@ jobs:
         with:
           fetch-depth: 1
       - id: install_go
-        uses: WillAbides/setup-go-faster@v1.14.0
+        uses: WillAbides/setup-go-faster@v1.15.0
         with:
           go-version-file: "go.mod"
       - uses: dominikh/staticcheck-action@v1.4.1
