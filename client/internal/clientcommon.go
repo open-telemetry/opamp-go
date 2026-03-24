@@ -547,8 +547,17 @@ func (c *ClientCommon) SetCapabilities(capabilities *protobufs.AgentCapabilities
 	}
 	// According to OpAMP spec this capability MUST be set, since all Agents MUST report status.
 	*capabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
-	if validateErr := c.validateCapabilities(*capabilities); validateErr != nil {
-		return validateErr
+
+	// validate capabilities only if the client has been started as validation logic depends on
+	// StartSettings being set.
+	// validateCapabilities is called in PrepareStart() before Start() is called.
+	if c.isStarted {
+		// TODO: return an error instead of running validation to ensure SetCapabilities cannot be called
+		// after Start().
+		// https://github.com/open-telemetry/opamp-go/issues/407
+		if err := c.validateCapabilities(*capabilities); err != nil {
+			return err
+		}
 	}
 	// store the capabilities to send
 	if err := c.ClientSyncedState.SetCapabilities(capabilities); err != nil {
