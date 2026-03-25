@@ -247,12 +247,17 @@ func TestStartNoCapabilities(t *testing.T) {
 	})
 }
 
-func TestSetCapabilitiesErrorsBeforeStart(t *testing.T) {
+func TestSetCapabilitiesBeforeStartSkipsValidation(t *testing.T) {
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		capabilities := coreCapabilities | protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents
 		setCapabilityErr := client.SetCapabilities(&capabilities)
-		assert.Error(t, setCapabilityErr)
-		assert.Contains(t, setCapabilityErr.Error(), "AvailableComponents is nil")
+		require.NoError(t, setCapabilityErr, "SetCapabilities before Start does not run validateCapabilities")
+
+		require.NoError(t, client.SetAgentDescription(createAgentDescr()))
+		settings := createNoServerSettings()
+		prepareSettings(t, &settings, client)
+		startErr := client.Start(context.Background(), settings)
+		assert.ErrorIs(t, startErr, internal.ErrAvailableComponentsMissing)
 	})
 }
 
@@ -2703,12 +2708,31 @@ func TestValidateCapabilities(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			testClients(t, func(t *testing.T, client OpAMPClient) {
-				// Setup the client state as per the test case
-				tc.setupFunc(t, client)
+				srv := internal.StartMockServer(t)
+				defer srv.Close()
 
-				// Validate capabilities
-				err := client.SetCapabilities(&tc.capabilities)
+				tc.setupFunc(t, client)
+				require.NoError(t, client.SetAgentDescription(createAgentDescr()))
+
+				// Minimal caps for PrepareStart; validateCapabilities on SetCapabilities runs only once started.
+				initialCaps := coreCapabilities
+				err := client.SetCapabilities(&initialCaps)
+				require.NoError(t, err)
+
+				settings := types.StartSettings{
+					OpAMPServerURL: "ws://" + srv.Endpoint,
+					Callbacks: types.Callbacks{
+						OnMessage: func(ctx context.Context, msg *types.MessageData) {},
+					},
+				}
+				prepareSettings(t, &settings, client)
+				require.NoError(t, client.Start(context.Background(), settings))
+
+				caps := tc.capabilities
+				err = client.SetCapabilities(&caps)
 				assert.Equal(t, tc.expectedError, err)
+
+				assert.NoError(t, client.Stop(context.Background()))
 			})
 		})
 	}
