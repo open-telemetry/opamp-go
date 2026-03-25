@@ -552,9 +552,6 @@ func (c *ClientCommon) SetCapabilities(capabilities *protobufs.AgentCapabilities
 	// StartSettings being set.
 	// validateCapabilities is called in PrepareStart() before Start() is called.
 	if c.isStarted {
-		// TODO: return an error instead of running validation to ensure SetCapabilities cannot be called
-		// after Start().
-		// https://github.com/open-telemetry/opamp-go/issues/407
 		if err := c.validateCapabilities(*capabilities); err != nil {
 			return err
 		}
