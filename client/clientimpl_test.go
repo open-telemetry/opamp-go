@@ -1928,9 +1928,8 @@ func TestSetCapabilities(t *testing.T) {
 			}
 		})
 
-		newCapabilities = protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand |
-			protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
-			protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
+		// Remove AcceptsRemoteConfig
+		newCapabilities = protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
 			protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
 		newSetErr := client.SetCapabilities(&newCapabilities)
 		assert.NoError(t, newSetErr)
@@ -1941,10 +1940,8 @@ func TestSetCapabilities(t *testing.T) {
 			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus != 0)
 			// ReportsEffectiveConfig should  present.
 			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig != 0)
-			// AcceptsRemoteConfig should now be present
-			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig != 0)
-			// AcceptsRestartCommand should now be present
-			assert.True(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand != 0)
+			// AcceptsRemoteConfig should not be present
+			assert.False(t, protobufs.AgentCapabilities(msg.Capabilities)&protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig != 0)
 			// Send a custom message response and ask client for full state again.
 			return &protobufs.ServerToAgent{
 				InstanceUid: msg.InstanceUid,
@@ -2630,7 +2627,7 @@ func TestSetAvailableComponents(t *testing.T) {
 	}
 }
 
-func TestValidateCapabilities(t *testing.T) {
+func TestValidateCapabilitiesBeforeStart(t *testing.T) {
 	testCases := []struct {
 		name          string
 		capabilities  protobufs.AgentCapabilities
@@ -2714,7 +2711,89 @@ func TestValidateCapabilities(t *testing.T) {
 				tc.setupFunc(t, client)
 				require.NoError(t, client.SetAgentDescription(createAgentDescr()))
 
-				// Minimal caps for PrepareStart; validateCapabilities on SetCapabilities runs only once started.
+				caps := tc.capabilities
+				err := client.SetCapabilities(&caps)
+				require.NoError(t, err)
+
+				settings := types.StartSettings{
+					OpAMPServerURL: "ws://" + srv.Endpoint,
+					Callbacks: types.Callbacks{
+						OnMessage: func(ctx context.Context, msg *types.MessageData) {},
+					},
+				}
+				prepareSettings(t, &settings, client)
+
+				err = client.Start(context.Background(), settings)
+				assert.Equal(t, tc.expectedError, err)
+
+				if err == nil {
+					assert.NoError(t, client.Stop(context.Background()))
+				}
+			})
+		})
+	}
+}
+
+func TestSetCapabilitiesAfterStart(t *testing.T) {
+	testCases := []struct {
+		name          string
+		capabilities  protobufs.AgentCapabilities
+		setupFunc     func(t *testing.T, client OpAMPClient)
+		expectedError error
+	}{
+		{
+			// These are the only capabilities that are permitted to be changed after Start()
+			name: "Change AcceptsRemoteConfig and ReportsRemoteConfig",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsRemoteConfig,
+			setupFunc: func(t *testing.T, client OpAMPClient) {
+			},
+			expectedError: nil,
+		},
+		{
+			name:         "No capabilities set",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_Unspecified,
+			setupFunc: func(t *testing.T, client OpAMPClient) {
+				// No setup needed
+			},
+			expectedError: nil,
+		},
+		// Test a few other attempts to change capabilities that must fail. We will create
+		// the correct condition for ErrCapabilityChangeNotPermitted to be returned
+		// instead of some other specific validation error. Those specific validation errors
+		// are checked by corresponding test cases in TestValidateCapabilitiesBeforeStart.
+		{
+			name:         "Change ReportsHealth",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsHealth,
+			setupFunc: func(t *testing.T, client OpAMPClient) {
+				// Need to SetHealth otherwise will get ErrHealthMissing
+				err := client.SetHealth(&protobufs.ComponentHealth{})
+				require.NoError(t, err)
+			},
+			expectedError: internal.ErrCapabilityChangeNotPermitted,
+		},
+		{
+			name:         "Change ReportsAvailableComponents",
+			capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents,
+			setupFunc: func(t *testing.T, client OpAMPClient) {
+				// Need to SetAvailableComponents otherwise will get ErrAvailableComponentsMissing
+				err := client.SetAvailableComponents(generateTestAvailableComponents())
+				require.NoError(t, err)
+			},
+			expectedError: internal.ErrCapabilityChangeNotPermitted,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			testClients(t, func(t *testing.T, client OpAMPClient) {
+				srv := internal.StartMockServer(t)
+				defer srv.Close()
+
+				tc.setupFunc(t, client)
+				require.NoError(t, client.SetAgentDescription(createAgentDescr()))
+
+				// Minimal caps for PrepareStart; validateCapabilities runs only once started.
 				initialCaps := coreCapabilities
 				err := client.SetCapabilities(&initialCaps)
 				require.NoError(t, err)
