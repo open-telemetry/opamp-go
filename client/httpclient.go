@@ -108,6 +108,11 @@ func (c *httpClient) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus)
 	return c.common.SetRemoteConfigStatus(status)
 }
 
+// SetConnectionSettingsStatus implements OpAMPClient.SetConnectionSettingsStatus.
+func (c *httpClient) SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus) error {
+	return c.common.SetConnectionSettingsStatus(status)
+}
+
 // SetPackageStatuses implements OpAMPClient.SetPackageStatuses.
 func (c *httpClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) error {
 	return c.common.SetPackageStatuses(statuses)
