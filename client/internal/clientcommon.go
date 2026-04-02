@@ -331,6 +331,10 @@ func (c *ClientCommon) SetConnectionSettingsStatus(status *protobufs.ConnectionS
 		return ErrReportsConnectionSettingsStatusNotSet
 	}
 
+	if status == nil {
+		return errConnectionSettingsStatusMissing
+	}
+
 	if len(status.LastConnectionSettingsHash) == 0 {
 		return errLastConnectionSettingsHashEmpty
 	}

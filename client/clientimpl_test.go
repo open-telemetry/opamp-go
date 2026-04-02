@@ -2775,6 +2775,13 @@ func TestSetConnectionSettingsStatus(t *testing.T) {
 			require.ErrorIs(t, err, internal.ErrReportsConnectionSettingsStatusNotSet)
 		},
 	}, {
+		name:         "nil status returns error",
+		capabilities: coreCapabilities | protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus,
+		testFunc: func(t *testing.T, client OpAMPClient, _ *internal.MockServer) {
+			err := client.SetConnectionSettingsStatus(nil)
+			require.Error(t, err)
+		},
+	}, {
 		name:         "nil hash returns error",
 		capabilities: coreCapabilities | protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus,
 		testFunc: func(t *testing.T, client OpAMPClient, _ *internal.MockServer) {
