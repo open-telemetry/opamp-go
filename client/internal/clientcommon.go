@@ -14,19 +14,21 @@ import (
 )
 
 var (
-	ErrAgentDescriptionMissing      = errors.New("AgentDescription is nil")
-	ErrAgentDescriptionNoAttributes = errors.New("AgentDescription has no attributes defined")
-	ErrHealthMissing                = errors.New("health is nil")
-	ErrReportsEffectiveConfigNotSet = errors.New("ReportsEffectiveConfig capability is not set")
-	ErrReportsRemoteConfigNotSet    = errors.New("ReportsRemoteConfig capability is not set")
-	ErrPackagesStateProviderNotSet  = errors.New("PackagesStateProvider must be set")
-	ErrCapabilitiesNotSet           = errors.New("Capabilities is not set")
-	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
-	ErrAvailableComponentsMissing   = errors.New("AvailableComponents is nil")
+	ErrAgentDescriptionMissing               = errors.New("AgentDescription is nil")
+	ErrAgentDescriptionNoAttributes          = errors.New("AgentDescription has no attributes defined")
+	ErrHealthMissing                         = errors.New("health is nil")
+	ErrReportsEffectiveConfigNotSet          = errors.New("ReportsEffectiveConfig capability is not set")
+	ErrReportsRemoteConfigNotSet             = errors.New("ReportsRemoteConfig capability is not set")
+	ErrPackagesStateProviderNotSet           = errors.New("PackagesStateProvider must be set")
+	ErrCapabilitiesNotSet                    = errors.New("Capabilities is not set")
+	ErrAcceptsPackagesNotSet                 = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
+	ErrAvailableComponentsMissing            = errors.New("AvailableComponents is nil")
+	ErrReportsConnectionSettingsStatusNotSet = errors.New("ReportsConnectionSettingsStatus capability is not set")
 
-	errAlreadyStarted               = errors.New("already started")
-	errCannotStopNotStarted         = errors.New("cannot stop because not started")
-	errReportsPackageStatusesNotSet = errors.New("ReportsPackageStatuses capability is not set")
+	errAlreadyStarted                  = errors.New("already started")
+	errCannotStopNotStarted            = errors.New("cannot stop because not started")
+	errReportsPackageStatusesNotSet    = errors.New("ReportsPackageStatuses capability is not set")
+	errLastConnectionSettingsHashEmpty = errors.New("LastConnectionSettingsHash is empty")
 )
 
 // ClientCommon contains the OpAMP logic that is common between WebSocket and
@@ -318,6 +320,39 @@ func (c *ClientCommon) RequestConnectionSettings(request *protobufs.ConnectionSe
 		},
 	)
 	c.sender.ScheduleSend()
+	return nil
+}
+
+// SetConnectionSettingsStatus sends a status update to the Server with the new ConnectionSettingsStatus.
+// It also remembers the new status in the client state so that it can be sent
+// to the Server when the Server asks for it.
+func (c *ClientCommon) SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus) error {
+	if !c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) {
+		return ErrReportsConnectionSettingsStatusNotSet
+	}
+
+	if status == nil {
+		return errConnectionSettingsStatusMissing
+	}
+
+	if len(status.LastConnectionSettingsHash) == 0 {
+		return errLastConnectionSettingsHashEmpty
+	}
+
+	oldStatus := c.ClientSyncedState.ConnectionSettingsStatus()
+	if !updateStoredConnectionSettingsStatus(oldStatus, status) {
+		return nil
+	}
+
+	if err := c.ClientSyncedState.SetConnectionSettingsStatus(status); err != nil {
+		return err
+	}
+
+	c.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.ConnectionSettingsStatus = c.ClientSyncedState.ConnectionSettingsStatus()
+	})
+	c.sender.ScheduleSend()
+
 	return nil
 }
 
