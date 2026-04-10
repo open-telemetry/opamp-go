@@ -23,6 +23,7 @@ var (
 	ErrCapabilitiesNotSet           = errors.New("Capabilities is not set")
 	ErrAcceptsPackagesNotSet        = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 	ErrAvailableComponentsMissing   = errors.New("AvailableComponents is nil")
+	ErrCapabilityChangeNotPermitted = errors.New("only changes to AcceptsRemoteConfig and ReportsRemoteConfig capabilities are permitted after Start")
 
 	errAlreadyStarted               = errors.New("already started")
 	errCannotStopNotStarted         = errors.New("cannot stop because not started")
@@ -554,6 +555,11 @@ func (c *ClientCommon) SetCapabilities(capabilities *protobufs.AgentCapabilities
 	if c.isStarted {
 		if err := c.validateCapabilities(*capabilities); err != nil {
 			return err
+		}
+		// Verify that only permitted capabilities are changing.
+		changedCapabilities := c.ClientSyncedState.Capabilities() ^ *capabilities
+		if (changedCapabilities & ^permittedCapabilityChanges) != 0 {
+			return ErrCapabilityChangeNotPermitted
 		}
 	}
 	// store the capabilities to send
