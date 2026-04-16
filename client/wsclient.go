@@ -161,6 +161,9 @@ func (c *wsClient) SetRemoteConfigStatus(status *protobufs.RemoteConfigStatus) e
 	return c.common.SetRemoteConfigStatus(status)
 }
 
+// SetConnectionSettingsStatus sets the current ConnectionSettingsStatus and sends
+// it to the Server. Must be called after processing connection settings offers to
+// report APPLIED or FAILED status.
 func (c *wsClient) SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus) error {
 	return c.common.SetConnectionSettingsStatus(status)
 }

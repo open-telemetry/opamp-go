@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"sync"
@@ -345,17 +344,4 @@ func (r *receivedProcessor) rcvCommand(ctx context.Context, command *protobufs.S
 	if command != nil {
 		r.callbacks.OnCommand(ctx, command)
 	}
-}
-
-// updateStoredConnectionSettingsStatus returns a bool of if status should replace oldStatus.
-// It's true if:
-// - no oldStatus
-// - hash changes
-// - status changes from APPLYING or UNSET
-// - status changes to FAILED
-func updateStoredConnectionSettingsStatus(oldStatus, status *protobufs.ConnectionSettingsStatus) bool {
-	return oldStatus == nil || !bytes.Equal(oldStatus.LastConnectionSettingsHash, status.LastConnectionSettingsHash) ||
-		oldStatus.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLYING ||
-		oldStatus.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_UNSET ||
-		status.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED
 }

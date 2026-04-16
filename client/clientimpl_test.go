@@ -2841,6 +2841,58 @@ func TestSetConnectionSettingsStatus(t *testing.T) {
 
 			eventually(t, func() bool { return appliedCount.Load() == 1 })
 		},
+	}, {
+		name:         "sends FAILED status to server",
+		capabilities: coreCapabilities | protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus,
+		needsServer:  true,
+		testFunc: func(t *testing.T, client OpAMPClient, srv *internal.MockServer) {
+			gotFailed := new(atomic.Bool)
+			srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				if msg.ConnectionSettingsStatus != nil &&
+					msg.ConnectionSettingsStatus.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED {
+					gotFailed.Store(true)
+				}
+				return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+			}
+
+			err := client.SetConnectionSettingsStatus(&protobufs.ConnectionSettingsStatus{
+				LastConnectionSettingsHash: []byte{1, 2, 3},
+				Status:                     protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED,
+				ErrorMessage:               "TLS verification failed",
+			})
+			require.NoError(t, err)
+			eventually(t, func() bool { return gotFailed.Load() })
+		},
+	}, {
+		name:         "different hash triggers send",
+		capabilities: coreCapabilities | protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus,
+		needsServer:  true,
+		testFunc: func(t *testing.T, client OpAMPClient, srv *internal.MockServer) {
+			var appliedCount atomic.Int64
+			srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				if msg.ConnectionSettingsStatus != nil &&
+					msg.ConnectionSettingsStatus.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLIED {
+					appliedCount.Add(1)
+				}
+				return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+			}
+
+			// First call with hash A.
+			err := client.SetConnectionSettingsStatus(&protobufs.ConnectionSettingsStatus{
+				LastConnectionSettingsHash: []byte{1, 2, 3},
+				Status:                     protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLIED,
+			})
+			require.NoError(t, err)
+			eventually(t, func() bool { return appliedCount.Load() == 1 })
+
+			// Second call with different hash B should still send.
+			err = client.SetConnectionSettingsStatus(&protobufs.ConnectionSettingsStatus{
+				LastConnectionSettingsHash: []byte{4, 5, 6},
+				Status:                     protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLIED,
+			})
+			require.NoError(t, err)
+			eventually(t, func() bool { return appliedCount.Load() == 2 })
+		},
 	}}
 
 	for _, tc := range testCases {
