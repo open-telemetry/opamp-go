@@ -92,7 +92,11 @@ type Callbacks struct {
 	//
 	// The Agent should process the offer by reconnecting the client using the new
 	// settings or return an error if the Agent does not want to accept the settings
-	// (e.g. if the TSL certificate in the settings cannot be verified).
+	// (e.g. if the TLS certificate in the settings cannot be verified).
+	//
+	// The caller is responsible for reporting the outcome via
+	// OpAMPClient.SetConnectionSettingsStatus with APPLIED or FAILED status.
+	// The client automatically sets APPLYING when the offer is received.
 	//
 	// Only one OnOpampConnectionSettings call can be active at any time.
 	// See OnRemoteConfig for the behavior.
@@ -138,12 +142,16 @@ type Callbacks struct {
 	// The callback must return a non-nil HTTP client or an error.
 	DownloadHTTPClient func(ctx context.Context, file *protobufs.DownloadableFile) (*http.Client, error)
 
-	// OnConnectionSettings is called when the agent recieves any non OpAMP
+	// OnConnectionSettings is called when the agent receives any non-OpAMP
 	// connection settings.
 	//
-	// The Agent should process the offer by reconnecting the client using the new
-	// settings or return an error if the Agent does not want to accept the settings
-	// (e.g. if the TSL certificate in the settings cannot be verified).
+	// The Agent should process the offer by applying the new settings or return
+	// an error if the Agent does not want to accept the settings (e.g. if the
+	// TLS certificate in the settings cannot be verified).
+	//
+	// The caller is responsible for reporting the outcome via
+	// OpAMPClient.SetConnectionSettingsStatus with APPLIED or FAILED status.
+	// The client automatically sets APPLYING when the offer is received.
 	//
 	// Only one OnConnectionSettings call can be active at any time.
 	// See OnRemoteConfig for the behavior.

@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"errors"
 	"sync"
 
@@ -246,4 +247,17 @@ func (s *ClientSyncedState) SetCapabilities(capabilities *protobufs.AgentCapabil
 	s.agentCapabilities = *capabilities
 
 	return nil
+}
+
+// updateStoredConnectionSettingsStatus returns true if status should replace oldStatus.
+// It's true if:
+// - no oldStatus
+// - hash changes
+// - status changes from APPLYING or UNSET
+// - status changes to FAILED
+func updateStoredConnectionSettingsStatus(oldStatus, status *protobufs.ConnectionSettingsStatus) bool {
+	return oldStatus == nil || !bytes.Equal(oldStatus.LastConnectionSettingsHash, status.LastConnectionSettingsHash) ||
+		oldStatus.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLYING ||
+		oldStatus.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_UNSET ||
+		status.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED
 }
