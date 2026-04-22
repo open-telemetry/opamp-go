@@ -57,7 +57,7 @@ type wsClient struct {
 	connShutdownTimeout time.Duration
 
 	// responseChain is used for the "via" argument in CheckRedirect.
-	// It is appended to with every redirect followed, and zeroed on a succesful
+	// It is appended to with every redirect followed, and zeroed on a successful
 	// connection. responseChain should only be referred to by the goroutine that
 	// runs tryConnectOnce and its synchronous callees.
 	responseChain []*http.Response

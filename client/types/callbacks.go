@@ -138,7 +138,7 @@ type Callbacks struct {
 	// The callback must return a non-nil HTTP client or an error.
 	DownloadHTTPClient func(ctx context.Context, file *protobufs.DownloadableFile) (*http.Client, error)
 
-	// OnConnectionSettings is called when the agent recieves any non OpAMP
+	// OnConnectionSettings is called when the agent receives any non OpAMP
 	// connection settings.
 	//
 	// The Agent should process the offer by reconnecting the client using the new

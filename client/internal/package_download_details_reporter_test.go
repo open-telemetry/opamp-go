@@ -37,7 +37,7 @@ func Test_DownloadReporter_Report(t *testing.T) {
 	select {
 	case details = <-ch:
 	case <-time.After(time.Millisecond * 100):
-		t.Fatal("Did not recieve report after 100ms")
+		t.Fatal("Did not receive report after 100ms")
 	}
 
 	require.Equal(t, 50, int(details.DownloadPercent))
