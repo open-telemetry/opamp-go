@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -741,4 +742,80 @@ func TestHTTPSenderOpAMPInstanceUIDHeader(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	srv.Close()
+}
+
+// TestHTTPSenderHeaderFuncInvokedOnRetry verifies that HeaderFunc is invoked
+// for every HTTP request actually put on the wire, including retry attempts.
+// See #297 / PR #298: HeaderFunc was introduced to let callers regenerate
+// time-sensitive headers (e.g. short-lived JWTs in Authorization) per request.
+// The retry loop historically reused a pre-built *requestWrapper so retries
+// carried the same Authorization header as the first attempt — negating the
+// feature's stated intent under any retry that spans longer than the token TTL.
+func TestHTTPSenderHeaderFuncInvokedOnRetry(t *testing.T) {
+	var headerFuncCalls int64
+	var observedAuthHeaders []string
+	var mu sync.Mutex
+
+	// HeaderFunc embeds the call count in the Authorization header so we can
+	// prove each outgoing request carried a fresh-at-call-time value.
+	headerFunc := func(h http.Header) http.Header {
+		n := atomic.AddInt64(&headerFuncCalls, 1)
+		h.Set("Authorization", fmt.Sprintf("Bearer token-%d", n))
+		return h
+	}
+
+	var connectionAttempts int64
+	srv := StartMockServer(t)
+	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		observedAuthHeaders = append(observedAuthHeaders, r.Header.Get("Authorization"))
+		mu.Unlock()
+		attempt := atomic.AddInt64(&connectionAttempts, 1)
+		// Fail the first two attempts with a retryable status, then succeed.
+		if attempt < 3 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusServiceUnavailable)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	}
+
+	url := "http://" + srv.Endpoint
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender.SetRequestHeader(nil, headerFunc)
+	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.AgentDescription = &protobufs.AgentDescription{
+			IdentifyingAttributes: []*protobufs.KeyValue{{
+				Key: "service.name",
+				Value: &protobufs.AnyValue{
+					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
+				},
+			}},
+		}
+	})
+	sender.callbacks = types.Callbacks{
+		OnConnect:       func(ctx context.Context) {},
+		OnConnectFailed: func(ctx context.Context, _ error) {},
+	}
+	sender.url = url
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resp, err := sender.sendRequestWithRetries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	srv.Close()
+
+	// HeaderFunc must have been invoked once per outgoing HTTP request.
+	require.Equal(t, int64(3), atomic.LoadInt64(&connectionAttempts), "expected 3 HTTP attempts")
+	require.Equal(t, int64(3), atomic.LoadInt64(&headerFuncCalls), "HeaderFunc must be invoked once per attempt (#297 contract)")
+
+	// The three attempts must have carried three distinct Authorization values —
+	// proving retries did not reuse the header captured on attempt 1.
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, observedAuthHeaders, 3)
+	require.Equal(t, "Bearer token-1", observedAuthHeaders[0])
+	require.Equal(t, "Bearer token-2", observedAuthHeaders[1])
+	require.Equal(t, "Bearer token-3", observedAuthHeaders[2])
 }
