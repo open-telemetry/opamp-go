@@ -417,3 +417,38 @@ func (h *HTTPSender) AddTLSConfig(config *tls.Config) {
 		h.client.Transport = tlsTransport
 	}
 }
+
+// SetHTTP2Config applies caller-provided HTTP/2 keepalive + response-header
+// timeout configuration to the sender's underlying *http.Transport. Nil
+// config is a no-op (transport is untouched). Zero-valued fields on the
+// config leave that specific mechanism disabled.
+//
+// Setting http.Transport.HTTP2 (Go 1.24+) is the architecturally correct
+// surface here: configFromTransport() in x/net/http2 reads h2.t1.HTTP2 via
+// fillNetHTTPConfig() on every newClientConn(), so the settings propagate
+// regardless of whether the transport is later cloned by AddTLSConfig or
+// SetProxy. (Setting http2.Transport.ReadIdleTimeout directly via
+// http2.ConfigureTransports does NOT plumb through http.Transport.Clone().)
+//
+// This method is not thread-safe and must be called before h.client is used.
+func (h *HTTPSender) SetHTTP2Config(cfg *types.HTTP2ClientConfig) {
+	if cfg == nil {
+		return
+	}
+	tr := &http.Transport{}
+	if h.client.Transport != nil {
+		if transport, ok := h.client.Transport.(*http.Transport); ok {
+			tr = transport.Clone()
+		}
+	}
+	if cfg.ResponseHeaderTimeout > 0 {
+		tr.ResponseHeaderTimeout = cfg.ResponseHeaderTimeout
+	}
+	if cfg.SendPingTimeout > 0 || cfg.PingTimeout > 0 {
+		tr.HTTP2 = &http.HTTP2Config{
+			SendPingTimeout: cfg.SendPingTimeout,
+			PingTimeout:     cfg.PingTimeout,
+		}
+	}
+	h.client.Transport = tr
+}
