@@ -51,6 +51,11 @@ func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) er
 	// Add TLS configuration into httpClient
 	c.sender.AddTLSConfig(settings.TLSConfig)
 
+	// Apply HTTP/2 keepalive + response-header timeout configuration, if any.
+	// Nil HTTP2Config leaves the transport at Go defaults (byte-identical
+	// behavior to pre-HTTP2Config versions of this library).
+	c.sender.SetHTTP2Config(settings.HTTP2Config)
+
 	if settings.EnableCompression {
 		c.sender.EnableCompression()
 	}
