@@ -293,6 +293,17 @@ func (h *HTTPSender) attemptRequest(ctx context.Context, req *requestWrapper, cu
 			interval: retryInterval,
 		}
 
+	case http.StatusUnauthorized:
+		// 401 means our credentials are no longer valid. Retry with backoff
+		// so the application's OnConnectFailed callback can trigger re-auth.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		return requestResult{
+			resp:  nil,
+			err:   fmt.Errorf("server response code=%d (unauthorized)", resp.StatusCode),
+			retry: true,
+		}
+
 	default:
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
