@@ -37,7 +37,8 @@ const (
 type requestWrapper struct {
 	*http.Request
 
-	bodyReader func() io.ReadCloser
+	bodyReader  func() io.ReadCloser
+	instanceUID string
 }
 
 func bodyReader(buf []byte) func() io.ReadCloser {
@@ -350,14 +351,12 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 		req.bodyReader = bodyReader(data)
 	}
 
-	req.Header = h.getHeader()
-
 	if msgToSend.InstanceUid != nil {
 		uid, err := uuid.FromBytes(msgToSend.InstanceUid)
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set(headerOpAMPInstanceUID, uid.String())
+		req.instanceUID = uid.String()
 	}
 
 	return &req, nil
