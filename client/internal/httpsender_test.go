@@ -711,6 +711,77 @@ func setupTestSender(_ *testing.T, url string) *HTTPSender {
 	return sender
 }
 
+func TestHTTPSenderSetHTTP2ConfigNilIsNoOp(t *testing.T) {
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	before := sender.client.Transport
+	sender.SetHTTP2Config(nil)
+	assert.Same(t, before, sender.client.Transport, "nil config must not touch the transport")
+}
+
+func TestHTTPSenderSetHTTP2ConfigAppliesValues(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *types.HTTP2ClientConfig
+		// Validators return true if the transport is shaped as expected.
+		validate func(t *testing.T, tr *http.Transport)
+	}{
+		{
+			name: "all three fields set",
+			cfg: &types.HTTP2ClientConfig{
+				SendPingTimeout:       30 * time.Second,
+				PingTimeout:           10 * time.Second,
+				ResponseHeaderTimeout: 90 * time.Second,
+			},
+			validate: func(t *testing.T, tr *http.Transport) {
+				assert.Equal(t, 90*time.Second, tr.ResponseHeaderTimeout)
+				require.NotNil(t, tr.HTTP2)
+				assert.Equal(t, 30*time.Second, tr.HTTP2.SendPingTimeout)
+				assert.Equal(t, 10*time.Second, tr.HTTP2.PingTimeout)
+			},
+		},
+		{
+			name: "ping fields only",
+			cfg: &types.HTTP2ClientConfig{
+				SendPingTimeout: 30 * time.Second,
+				PingTimeout:     10 * time.Second,
+			},
+			validate: func(t *testing.T, tr *http.Transport) {
+				assert.Zero(t, tr.ResponseHeaderTimeout, "unset ResponseHeaderTimeout stays zero")
+				require.NotNil(t, tr.HTTP2)
+				assert.Equal(t, 30*time.Second, tr.HTTP2.SendPingTimeout)
+				assert.Equal(t, 10*time.Second, tr.HTTP2.PingTimeout)
+			},
+		},
+		{
+			name: "ResponseHeaderTimeout only",
+			cfg: &types.HTTP2ClientConfig{
+				ResponseHeaderTimeout: 90 * time.Second,
+			},
+			validate: func(t *testing.T, tr *http.Transport) {
+				assert.Equal(t, 90*time.Second, tr.ResponseHeaderTimeout)
+				assert.Nil(t, tr.HTTP2, "no ping fields set => HTTP2 stays nil")
+			},
+		},
+		{
+			name: "zero-valued struct applies nothing",
+			cfg:  &types.HTTP2ClientConfig{},
+			validate: func(t *testing.T, tr *http.Transport) {
+				assert.Zero(t, tr.ResponseHeaderTimeout)
+				assert.Nil(t, tr.HTTP2)
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sender := NewHTTPSender(&sharedinternal.NopLogger{})
+			sender.SetHTTP2Config(tc.cfg)
+			tr, ok := sender.client.Transport.(*http.Transport)
+			require.True(t, ok, "transport must be *http.Transport after SetHTTP2Config")
+			tc.validate(t, tr)
+		})
+	}
+}
+
 func TestHTTPSenderOpAMPInstanceUIDHeader(t *testing.T) {
 	// Create instance UID
 	uidBytes := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
