@@ -266,6 +266,7 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 // whether to retry or return.
 func (h *HTTPSender) attemptRequest(ctx context.Context, req *requestWrapper, currentInterval time.Duration) requestResult {
 	req.rewind(ctx)
+	h.applyHeaders(req)
 
 	resp, err := h.client.Do(req.Request)
 	if err != nil {
@@ -360,6 +361,19 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 	}
 
 	return &req, nil
+}
+
+// applyHeaders sets the outgoing request headers by invoking the configured
+// HeaderFunc and layering the per-request instance UID on top. Called from
+// attemptRequest before each HTTP request actually goes on the wire, so that
+// time-sensitive headers (e.g. short-lived JWTs in Authorization) are
+// regenerated per attempt — honoring the contract set by
+// StartSettings.HeaderFunc (see #297 / PR #298).
+func (h *HTTPSender) applyHeaders(req *requestWrapper) {
+	req.Header = h.getHeader()
+	if req.instanceUID != "" {
+		req.Header.Set(headerOpAMPInstanceUID, req.instanceUID)
+	}
 }
 
 func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
