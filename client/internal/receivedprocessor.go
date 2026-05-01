@@ -273,6 +273,11 @@ func (r *receivedProcessor) rcvOpampConnectionSettings(ctx context.Context, sett
 		err := r.callbacks.OnOpampConnectionSettings(ctx, settings.Opamp)
 		if err != nil {
 			r.logger.Errorf(ctx, "Failed to process OpAMPConnectionSettings: %v", err)
+			r.clientSyncedState.SetConnectionSettingsStatus(&protobufs.ConnectionSettingsStatus{
+				LastConnectionSettingsHash: settings.Hash,
+				Status:                     protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED,
+				ErrorMessage:               "failed to process OpAMP connection settings",
+			})
 		}
 	} else {
 		r.logger.Debugf(ctx, "Ignoring Opamp, agent does not have AcceptsOpAMPConnectionSettings capability")

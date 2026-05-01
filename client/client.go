@@ -90,11 +90,12 @@ type OpAMPClient interface {
 	RequestConnectionSettings(request *protobufs.ConnectionSettingsRequest) error
 
 	// SetConnectionSettingsStatus sets the current ConnectionSettingsStatus.
-	// LastConnectionSettingsHash field must be non-nil.
+	// LastConnectionSettingsHash field must be non-empty.
 	// May be called anytime after Start(), including from OnMessage handler.
 	// nil values are not allowed and will return an error.
-	// Must be explicitly used after OnOpampConnectionSettings/OnConnectionSettings
-	// has completed with APPLIED or FAILED.
+	// Must be explicitly used to report APPLIED or FAILED after
+	// OnOpampConnectionSettings/OnConnectionSettings completes, including
+	// asynchronously after the callback returns.
 	SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus) error
 
 	// SetCustomCapabilities modifies the set of customCapabilities supported by the client.

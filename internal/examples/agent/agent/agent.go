@@ -682,11 +682,13 @@ func (agent *Agent) tryChangeOpAMP(ctx context.Context, cert *tls.Certificate, t
 
 	if err := agent.connect(withTLSConfig(tlsConfig), withProxy(proxy)); err != nil {
 		agent.logger.Errorf(ctx, "Cannot connect after using new tls config: %s. Ignoring the offer\n", err)
-		if statusErr := agent.client.SetConnectionSettingsStatus(&protobufs.ConnectionSettingsStatus{
+		status := &protobufs.ConnectionSettingsStatus{
 			LastConnectionSettingsHash: hash,
 			Status:                     protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED,
 			ErrorMessage:               err.Error(),
-		}); statusErr != nil {
+		}
+
+		if statusErr := agent.client.SetConnectionSettingsStatus(status); statusErr != nil {
 			agent.logger.Errorf(ctx, "Failed to report connection settings status: %v", statusErr)
 		}
 		if err := agent.connect(withTLSConfig(oldCfg), withProxy(oldProxy)); err != nil {
@@ -702,7 +704,7 @@ func (agent *Agent) tryChangeOpAMP(ctx context.Context, cert *tls.Certificate, t
 	}); statusErr != nil {
 		agent.logger.Errorf(ctx, "Failed to report connection settings status: %v", statusErr)
 	}
-	// TODO: we can also persist the successfully accepted settigns and use it when the
+	// TODO: we can also persist the successfully accepted settings and use it when the
 	// agent connects to the server after the restart.
 }
 
@@ -765,6 +767,9 @@ func (agent *Agent) onOpampConnectionSettings(ctx context.Context, settings *pro
 		}
 	}
 	// TODO: also use settings.DestinationEndpoint and settings.Headers for future connections.
+	if len(agent.lastConnectionSettingsHash) == 0 {
+		return errors.New("cannot apply OpAMP connection settings without connection settings hash")
+	}
 	hash := make([]byte, len(agent.lastConnectionSettingsHash))
 	copy(hash, agent.lastConnectionSettingsHash)
 	go agent.tryChangeOpAMP(ctx, cert, tlsConfig, proxy, hash)
@@ -848,7 +853,7 @@ func toHeaders(ph *protobufs.Headers) http.Header {
 }
 
 func (agent *Agent) onConnectionSettings(ctx context.Context, settings *protobufs.ConnectionSettingsOffers) error {
-	agent.logger.Debugf(context.Background(), "Received connection settings offers from server, hash=%x.", settings.Hash)
+	agent.logger.Debugf(ctx, "Received connection settings offers from server, hash=%x.", settings.Hash)
 	// TODO handle traces, logs, and other connection settings
 	if settings.OwnMetrics != nil {
 		err := agent.initMeter(settings.OwnMetrics)
@@ -863,7 +868,7 @@ func (agent *Agent) onConnectionSettings(ctx context.Context, settings *protobuf
 			Status:                     status,
 			ErrorMessage:               errMsg,
 		}); statusErr != nil {
-			agent.logger.Errorf(context.Background(), "Failed to report connection settings status: %v", statusErr)
+			agent.logger.Errorf(ctx, "Failed to report connection settings status: %v", statusErr)
 		}
 		return err
 	}
