@@ -88,9 +88,10 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 		}
 	}
 
-	processConnectionSettings := msg.ConnectionSettings != nil && r.connectionsSettingsHashChanged(ctx, msg.ConnectionSettings.Hash)
+	processConnectionSettings := msg.ConnectionSettings != nil && r.connectionSettingsHashChanged(ctx, msg.ConnectionSettings.Hash)
 	if processConnectionSettings {
 		msgData.OfferedConnectionsSettingsHash = msg.ConnectionSettings.Hash
+		r.clientSyncedState.SetLastConnectionSettingsHash(msg.ConnectionSettings.Hash)
 		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) {
 			connectionStatus := &protobufs.ConnectionSettingsStatus{
 				LastConnectionSettingsHash: msg.ConnectionSettings.Hash,
@@ -215,19 +216,14 @@ func (r *receivedProcessor) hasCapability(capability protobufs.AgentCapabilities
 	return r.clientSyncedState.Capabilities()&capability != 0
 }
 
-// connectionsSettingsHashChanged returns true if the offered connection settings should
-// be processed. It returns false only when the hash matches the last applied hash,
-// indicating there is no need to reprocess the settings.
-func (r *receivedProcessor) connectionsSettingsHashChanged(ctx context.Context, hash []byte) bool {
+// connectionSettingsHashChanged returns true if the offered connection settings
+// should be processed. It returns false when the offered hash matches the last
+// processed hash, indicating there is no need to reprocess the settings.
+func (r *receivedProcessor) connectionSettingsHashChanged(ctx context.Context, hash []byte) bool {
 	if len(hash) == 0 {
 		return true
 	}
-	status := r.clientSyncedState.ConnectionSettingsStatus()
-	if status == nil {
-		return true
-	}
-	if status.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLIED &&
-		bytes.Equal(status.LastConnectionSettingsHash, hash) {
+	if bytes.Equal(r.clientSyncedState.LastConnectionSettingsHash(), hash) {
 		r.logger.Debugf(ctx, "Skipping ConnectionSettings processing, hash unchanged")
 		return false
 	}

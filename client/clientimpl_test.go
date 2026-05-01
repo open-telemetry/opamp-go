@@ -2915,9 +2915,16 @@ func TestConnectionSettingsSkippedWhenHashUnchanged(t *testing.T) {
 			}
 		})
 
-		// The callback should have been invoked exactly once (from the first offer).
-		assert.Equal(t, int64(1), callbackCount.Load(),
-			"Callback should only be invoked once for unchanged hash")
+		// The callback should have been invoked exactly once (from the first offer),
+		// and should remain stable after the repeated offer is processed.
+		require.Eventually(t, func() bool {
+			return callbackCount.Load() == 1
+		}, time.Second, 10*time.Millisecond,
+			"Callback should be invoked once for unchanged hash")
+		assert.Never(t, func() bool {
+			return callbackCount.Load() > 1
+		}, 200*time.Millisecond, 10*time.Millisecond,
+			"Callback should not be invoked again for unchanged hash")
 
 		srv.Close()
 		err := client.Stop(t.Context())
