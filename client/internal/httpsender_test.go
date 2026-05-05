@@ -766,6 +766,7 @@ func TestHTTPSenderHeaderFuncInvokedOnRetry(t *testing.T) {
 
 	var connectionAttempts atomic.Int64
 	srv := StartMockServer(t)
+	t.Cleanup(srv.Close)
 	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		observedAuthHeaders = append(observedAuthHeaders, r.Header.Get("Authorization"))
@@ -802,7 +803,6 @@ func TestHTTPSenderHeaderFuncInvokedOnRetry(t *testing.T) {
 	resp, err := sender.sendRequestWithRetries(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	srv.Close()
 
 	// HeaderFunc must have been invoked once per outgoing HTTP request.
 	require.Equal(t, int64(3), connectionAttempts.Load(), "expected 3 HTTP attempts")
