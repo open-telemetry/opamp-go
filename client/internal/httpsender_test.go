@@ -799,9 +799,7 @@ func TestHTTPSenderHeaderFuncInvokedOnRetry(t *testing.T) {
 	}
 	sender.url = url
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	resp, err := sender.sendRequestWithRetries(ctx)
+	resp, err := sender.sendRequestWithRetries(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	srv.Close()
