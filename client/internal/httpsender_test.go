@@ -752,14 +752,14 @@ func TestHTTPSenderOpAMPInstanceUIDHeader(t *testing.T) {
 // carried the same Authorization header as the first attempt — negating the
 // feature's stated intent under any retry that spans longer than the token TTL.
 func TestHTTPSenderHeaderFuncInvokedOnRetry(t *testing.T) {
-	var headerFuncCalls int64
+	var headerFuncCalls atomic.Int64
 	var observedAuthHeaders []string
 	var mu sync.Mutex
 
 	// HeaderFunc embeds the call count in the Authorization header so we can
 	// prove each outgoing request carried a fresh-at-call-time value.
 	headerFunc := func(h http.Header) http.Header {
-		n := atomic.AddInt64(&headerFuncCalls, 1)
+		n := headerFuncCalls.Add(1)
 		h.Set("Authorization", fmt.Sprintf("Bearer token-%d", n))
 		return h
 	}
@@ -808,7 +808,7 @@ func TestHTTPSenderHeaderFuncInvokedOnRetry(t *testing.T) {
 
 	// HeaderFunc must have been invoked once per outgoing HTTP request.
 	require.Equal(t, int64(3), atomic.LoadInt64(&connectionAttempts), "expected 3 HTTP attempts")
-	require.Equal(t, int64(3), atomic.LoadInt64(&headerFuncCalls), "HeaderFunc must be invoked once per attempt (#297 contract)")
+	require.Equal(t, int64(3), headerFuncCalls.Load(), "HeaderFunc must be invoked once per attempt (#297 contract)")
 
 	// The three attempts must have carried three distinct Authorization values —
 	// proving retries did not reuse the header captured on attempt 1.
