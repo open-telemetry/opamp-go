@@ -1,14 +1,16 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
-	"google.golang.org/protobuf/proto"
 )
 
 // receivedProcessor handles the processing of messages received from the Server.
