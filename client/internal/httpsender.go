@@ -349,6 +349,9 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 	} else {
 		req.bodyReader = bodyReader(data)
 	}
+	// Set GetBody so the standard library can replay the body when following
+	// 307/308 redirects (which preserve the request method).
+	r.GetBody = func() (io.ReadCloser, error) { return req.bodyReader(), nil }
 
 	req.Header = h.getHeader()
 

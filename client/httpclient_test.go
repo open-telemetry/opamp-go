@@ -250,16 +250,16 @@ func TestRedirectHTTP(t *testing.T) {
 	}{
 		{
 			Name:       "simple redirect",
-			Redirector: redirectServer("http://"+redirectee.Endpoint, 302),
+			Redirector: redirectServer("http://"+redirectee.Endpoint, http.StatusTemporaryRedirect),
 		},
 		{
 			Name:         "check redirect",
-			Redirector:   redirectServer("http://"+redirectee.Endpoint, 302),
+			Redirector:   redirectServer("http://"+redirectee.Endpoint, http.StatusTemporaryRedirect),
 			MockRedirect: mockRedirectHTTP(t, 1, nil),
 		},
 		{
 			Name:         "check redirect returns error",
-			Redirector:   redirectServer("http://"+redirectee.Endpoint, 302),
+			Redirector:   redirectServer("http://"+redirectee.Endpoint, http.StatusTemporaryRedirect),
 			MockRedirect: mockRedirectHTTP(t, 1, errors.New("hello")),
 			ExpError:     true,
 		},

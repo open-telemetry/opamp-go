@@ -328,7 +328,7 @@ func TestVerifyWSCompress(t *testing.T) {
 
 func redirectServer(to string, status int) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		http.Redirect(w, req, to, http.StatusSeeOther)
+		http.Redirect(w, req, to, status)
 	}))
 }
 
