@@ -329,7 +329,7 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 	defer detailsReporter.stop()
 
 	tr := io.TeeReader(resp.Body, detailsReporter)
-	err = s.localState.UpdateContent(ctx, pkgName, tr, file.ContentHash, file.Signature)
+	err = s.localState.UpdateContent(ctx, pkgName, file.GetDownloadUrl(), tr, file.ContentHash, file.Signature)
 	if err != nil {
 		return fmt.Errorf("failed to install/update the package %s downloaded from %s: %v", pkgName, file.DownloadUrl, err)
 	}
