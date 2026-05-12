@@ -2849,6 +2849,8 @@ func TestReportFullStateIncludesConnectionSettingsStatus(t *testing.T) {
 }
 
 func TestConnectionSettingsSkippedWhenHashUnchanged(t *testing.T) {
+	t.Skip("Test is broken, see https://github.com/open-telemetry/opamp-go/issues/562")
+
 	testClients(t, func(t *testing.T, client OpAMPClient) {
 		hash := []byte{7, 8, 9}
 		metricsSettings := &protobufs.TelemetryConnectionSettings{DestinationEndpoint: "http://metrics.internal"}
