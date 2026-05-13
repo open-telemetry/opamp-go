@@ -2862,7 +2862,10 @@ func TestConnectionSettingsSkippedWhenHashUnchanged(t *testing.T) {
 			Callbacks: types.Callbacks{
 				OnConnectionSettings: func(ctx context.Context, offers *protobufs.ConnectionSettingsOffers) error {
 					callbackCount.Add(1)
-					return nil
+					return client.SetConnectionSettingsStatus(&protobufs.ConnectionSettingsStatus{
+						LastConnectionSettingsHash: offers.Hash,
+						Status:                     protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLIED,
+					})
 				},
 			},
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
