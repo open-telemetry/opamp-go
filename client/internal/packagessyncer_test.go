@@ -164,6 +164,49 @@ func TestPackageSyncerSync(t *testing.T) {
 	}
 }
 
+func TestPackageSyncerClearsPreviousErrorMessageAfterSuccessfulSync(t *testing.T) {
+	content := []byte("test package content")
+	_, serverURL := createTestHTTPServer(t, content)
+	hash := sha256.Sum256(content)
+	status := &protobufs.PackageStatus{
+		Status:       protobufs.PackageStatusEnum_PackageStatusEnum_InstallFailed,
+		ErrorMessage: "previous install failed",
+	}
+	file := &protobufs.DownloadableFile{DownloadUrl: serverURL, ContentHash: hash[:]}
+	store := NewInMemPackagesStore()
+	require.NoError(t, store.SetPackageState("", types.PackageState{
+		Exists:  true,
+		Type:    protobufs.PackageType_PackageType_TopLevel,
+		Hash:    []byte("old package hash"),
+		Version: "1.0.0",
+	}))
+
+	s := &packagesSyncer{
+		logger:            &internal.NopLogger{},
+		localState:        store,
+		sender:            NewMockSender(),
+		clientSyncedState: &ClientSyncedState{},
+		statuses:          &protobufs.PackageStatuses{Packages: map[string]*protobufs.PackageStatus{"": status}},
+		httpClientFactory: func(context.Context, *protobufs.DownloadableFile) (*http.Client, error) {
+			return &http.Client{}, nil
+		},
+	}
+
+	require.NoError(t, s.downloadFile(context.Background(), "", file))
+	assert.Equal(t, protobufs.PackageStatusEnum_PackageStatusEnum_Downloading, status.Status)
+	assert.Empty(t, status.ErrorMessage)
+
+	require.NoError(t, s.syncPackage(context.Background(), "", &protobufs.PackageAvailable{
+		Type:    protobufs.PackageType_PackageType_TopLevel,
+		Version: "1.0.1",
+		Hash:    hash[:],
+		File:    file,
+	}))
+	assert.Equal(t, protobufs.PackageStatusEnum_PackageStatusEnum_Installed, status.Status)
+	assert.Equal(t, "1.0.1", status.AgentHasVersion)
+	assert.Empty(t, status.ErrorMessage)
+}
+
 // createTestHTTPServer creates a test HTTP server that serves the given file content
 // and returns the server and its URL. The server will be automatically closed
 // when the test completes.
