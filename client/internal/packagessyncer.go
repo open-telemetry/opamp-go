@@ -231,6 +231,7 @@ func (s *packagesSyncer) syncPackage(
 		pkgLocal.Version = pkgAvail.Version
 		if err := s.localState.SetPackageState(pkgName, pkgLocal); err == nil {
 			status.Status = protobufs.PackageStatusEnum_PackageStatusEnum_Installed
+			status.ErrorMessage = ""
 			status.AgentHasHash = pkgAvail.Hash
 			status.AgentHasVersion = pkgAvail.Version
 		}
