@@ -285,6 +285,7 @@ func (s *packagesSyncer) shouldDownloadFile(ctx context.Context,
 func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file *protobufs.DownloadableFile) error {
 	status := s.statuses.Packages[pkgName]
 	status.Status = protobufs.PackageStatusEnum_PackageStatusEnum_Downloading
+	status.ErrorMessage = ""
 	_ = s.reportStatuses(ctx, true)
 
 	s.logger.Debugf(ctx, "Downloading package %s file from %s", pkgName, file.DownloadUrl)
