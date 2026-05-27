@@ -1,6 +1,8 @@
 package internal
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"io"
@@ -325,6 +327,137 @@ func TestHTTPSenderResponseBodySizeLimit(t *testing.T) {
 			assert.ErrorContains(t, err, "response body too large")
 		})
 	}
+}
+
+func TestHTTPSenderGzipResponseBody(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      io.ReadCloser
+		limit     int64
+		read      func(*HTTPSender, *http.Response) ([]byte, error)
+		want      []byte
+		assertErr assert.ErrorAssertionFunc
+	}{
+		{
+			name:  "read within limit",
+			body:  gzipBody(t, "ok"),
+			limit: 2,
+			read: func(sender *HTTPSender, resp *http.Response) ([]byte, error) {
+				return sender.readResponseBody(resp)
+			},
+			want:      []byte("ok"),
+			assertErr: assert.NoError,
+		},
+		{
+			name:  "read exceeds limit after decompression",
+			body:  gzipBody(t, "toolarge"),
+			limit: 2,
+			read: func(sender *HTTPSender, resp *http.Response) ([]byte, error) {
+				return sender.readResponseBody(resp)
+			},
+			assertErr: assert.Error,
+		},
+		{
+			name:  "discard within limit",
+			body:  gzipBody(t, "ok"),
+			limit: 2,
+			read: func(sender *HTTPSender, resp *http.Response) ([]byte, error) {
+				return nil, sender.discardResponseBody(resp)
+			},
+			assertErr: assert.NoError,
+		},
+		{
+			name:  "discard exceeds limit after decompression",
+			body:  gzipBody(t, "toolarge"),
+			limit: 2,
+			read: func(sender *HTTPSender, resp *http.Response) ([]byte, error) {
+				return nil, sender.discardResponseBody(resp)
+			},
+			assertErr: assert.Error,
+		},
+		{
+			name:  "read invalid gzip",
+			body:  io.NopCloser(strings.NewReader("not gzip")),
+			limit: 2,
+			read: func(sender *HTTPSender, resp *http.Response) ([]byte, error) {
+				return sender.readResponseBody(resp)
+			},
+			assertErr: assert.Error,
+		},
+		{
+			name:  "discard invalid gzip",
+			body:  io.NopCloser(strings.NewReader("not gzip")),
+			limit: 2,
+			read: func(sender *HTTPSender, resp *http.Response) ([]byte, error) {
+				return nil, sender.discardResponseBody(resp)
+			},
+			assertErr: assert.Error,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sender := NewHTTPSender(&sharedinternal.NopLogger{})
+			sender.SetMaxMessageSize(tc.limit)
+			resp := &http.Response{
+				Header: http.Header{headerContentEncoding: []string{encodingTypeGZip}},
+				Body:   tc.body,
+			}
+
+			got, err := tc.read(sender, resp)
+			tc.assertErr(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestHTTPSenderResponseBodySizeLimitFromServer(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+	}{
+		{
+			name:   "retryable response",
+			status: http.StatusServiceUnavailable,
+		},
+		{
+			name:   "non-retryable response",
+			status: http.StatusBadRequest,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int64
+			srv := StartMockServer(t)
+			t.Cleanup(srv.Close)
+			srv.OnRequest = func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte("too large body"))
+			}
+
+			sender := NewHTTPSender(&sharedinternal.NopLogger{})
+			sender.SetMaxMessageSize(10)
+			sender.url = "http://" + srv.Endpoint
+			sender.callbacks.SetDefaults()
+			sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+				msg.SequenceNum = 1
+			})
+
+			resp, err := sender.sendRequestWithRetries(context.Background())
+			assert.Nil(t, resp)
+			assert.ErrorContains(t, err, "response body too large")
+			assert.Equal(t, int64(1), calls.Load(), "oversized response body must not be retried")
+		})
+	}
+}
+
+func gzipBody(t *testing.T, body string) io.ReadCloser {
+	var buf bytes.Buffer
+	w := gzip.NewWriter(&buf)
+	_, err := w.Write([]byte(body))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	return io.NopCloser(bytes.NewReader(buf.Bytes()))
 }
 
 func TestRequestInstanceUidFlagReset(t *testing.T) {
