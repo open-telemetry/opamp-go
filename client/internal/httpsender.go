@@ -64,6 +64,7 @@ type HTTPSender struct {
 	callbacks          types.Callbacks
 	pollingIntervalMs  atomic.Int64
 	compressionEnabled bool
+	maxMessageSize     int64
 
 	// Headers to send with all requests.
 	getHeader func() http.Header
@@ -81,6 +82,7 @@ func NewHTTPSender(logger types.Logger) *HTTPSender {
 		client:       utils.NewHttpClient(),
 	}
 	h.pollingIntervalMs.Store(defaultPollingIntervalMs)
+	h.maxMessageSize = internal.DefaultMaxMessageSize
 	// initialize the headers with no additional headers
 	h.SetRequestHeader(nil, nil)
 	return h
@@ -284,8 +286,9 @@ func (h *HTTPSender) attemptRequest(ctx context.Context, req *requestWrapper, cu
 
 	case http.StatusTooManyRequests, http.StatusServiceUnavailable:
 		retryInterval := recalculateInterval(currentInterval, resp)
-		_, _ = io.Copy(io.Discard, resp.Body) // to allow connection reuse.
-		_ = resp.Body.Close()
+		if err := h.discardResponseBody(resp); err != nil {
+			return requestResult{resp: nil, err: err, retry: false}
+		}
 		return requestResult{
 			resp:     nil,
 			err:      fmt.Errorf("server response code=%d", resp.StatusCode),
@@ -294,8 +297,9 @@ func (h *HTTPSender) attemptRequest(ctx context.Context, req *requestWrapper, cu
 		}
 
 	default:
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
+		if err := h.discardResponseBody(resp); err != nil {
+			return requestResult{resp: nil, err: err, retry: false}
+		}
 		return requestResult{
 			resp:  nil,
 			err:   fmt.Errorf("invalid response from server: %d", resp.StatusCode),
@@ -325,6 +329,10 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 
 	data, err := proto.Marshal(msgToSend)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := internal.CheckSizeLimit(int64(len(data)), h.maxMessageSize, "request body"); err != nil {
 		return nil, err
 	}
 
@@ -363,14 +371,51 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 	return &req, nil
 }
 
-func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
-	msgBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
+func (h *HTTPSender) responseBodyReader(resp *http.Response) (io.Reader, func(), error) {
+	closeBody := func() {
 		_ = resp.Body.Close()
+	}
+	if resp.Header.Get(headerContentEncoding) != encodingTypeGZip {
+		return resp.Body, closeBody, nil
+	}
+
+	gzipReader, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		closeBody()
+		return nil, func() {}, err
+	}
+	return gzipReader, func() {
+		_ = gzipReader.Close()
+		_ = resp.Body.Close()
+	}, nil
+}
+
+func (h *HTTPSender) readResponseBody(resp *http.Response) ([]byte, error) {
+	body, closeBody, err := h.responseBodyReader(resp)
+	if err != nil {
+		return nil, err
+	}
+	defer closeBody()
+
+	return internal.ReadAllLimited(body, h.maxMessageSize, "response body")
+}
+
+func (h *HTTPSender) discardResponseBody(resp *http.Response) error {
+	body, closeBody, err := h.responseBodyReader(resp)
+	if err != nil {
+		return err
+	}
+	defer closeBody()
+
+	return internal.CopyDiscardLimited(body, h.maxMessageSize, "response body")
+}
+
+func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
+	msgBytes, err := h.readResponseBody(resp)
+	if err != nil {
 		h.logger.Errorf(ctx, "cannot read response body: %v", err)
 		return
 	}
-	_ = resp.Body.Close()
 
 	var response protobufs.ServerToAgent
 	if err := proto.Unmarshal(msgBytes, &response); err != nil {
@@ -403,6 +448,10 @@ func (h *HTTPSender) SetPollingInterval(duration time.Duration) {
 // Should not be called concurrently with Run.
 func (h *HTTPSender) EnableCompression() {
 	h.compressionEnabled = true
+}
+
+func (h *HTTPSender) SetMaxMessageSize(maxMessageSize int64) {
+	h.maxMessageSize = internal.ResolveMaxMessageSize(maxMessageSize)
 }
 
 func (h *HTTPSender) AddTLSConfig(config *tls.Config) {

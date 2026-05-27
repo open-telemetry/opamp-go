@@ -19,6 +19,14 @@ type Settings struct {
 	// The data will be compressed in both directions.
 	EnableCompression bool
 
+	// MaxMessageSize is the maximum size in bytes of OpAMP transport messages
+	// that the server sends or receives. For HTTP this applies to the complete
+	// request or response body before compression and after decompression. For
+	// WebSocket this applies to the complete OpAMP WebSocket message, including
+	// header and data, before compression and after decompression.
+	// If zero, the default limit of 64 MiB is used. If negative, no limit is applied.
+	MaxMessageSize int64
+
 	// Defines the custom capabilities of the Server. Each capability is a reverse FQDN with
 	// optional version information that uniquely identifies the custom capability and
 	// should match a capability specified in a supported CustomMessage.

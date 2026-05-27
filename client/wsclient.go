@@ -48,6 +48,9 @@ type wsClient struct {
 	// The sender is responsible for sending portion of the OpAMP protocol.
 	sender *internal.WSSender
 
+	// Max size of received OpAMP WebSocket messages after decompression.
+	maxMessageSize int64
+
 	// last non-nil internal error that was encountered in the conn retry loop,
 	// currently used only for testing.
 	lastInternalErr atomic.Pointer[error]
@@ -99,6 +102,8 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 	}
 
 	c.dialer.EnableCompression = settings.EnableCompression
+	c.maxMessageSize = sharedinternal.ResolveMaxMessageSize(settings.MaxMessageSize)
+	c.sender.SetMaxMessageSize(settings.MaxMessageSize)
 
 	if settings.TLSConfig != nil {
 		c.url.Scheme = "wss"
@@ -286,6 +291,9 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinterna
 	}
 
 	// Successfully connected.
+	if c.maxMessageSize >= 0 {
+		conn.SetReadLimit(c.maxMessageSize)
+	}
 	c.connMutex.Lock()
 	c.conn = conn
 	c.connMutex.Unlock()

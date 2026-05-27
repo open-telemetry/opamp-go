@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -272,6 +273,58 @@ func TestHTTPSenderRetryForFailedRequests(t *testing.T) {
 	assert.Contains(t, string(buf), "test-service")
 	cancel()
 	srv.Close()
+}
+
+func TestHTTPSenderRequestBodySizeLimit(t *testing.T) {
+	var calls atomic.Int64
+	srv := StartMockServer(t)
+	t.Cleanup(srv.Close)
+	srv.OnRequest = func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}
+
+	sender := setupTestSender(t, "http://"+srv.Endpoint)
+	sender.SetMaxMessageSize(1)
+
+	resp, err := sender.sendRequestWithRetries(context.Background())
+	assert.Nil(t, resp)
+	assert.ErrorContains(t, err, "request body too large")
+	assert.Equal(t, int64(0), calls.Load(), "oversized request must fail before sending")
+}
+
+func TestHTTPSenderResponseBodySizeLimit(t *testing.T) {
+	tests := []struct {
+		name string
+		read func(*HTTPSender, *http.Response) error
+	}{
+		{
+			name: "read",
+			read: func(sender *HTTPSender, resp *http.Response) error {
+				_, err := sender.readResponseBody(resp)
+				return err
+			},
+		},
+		{
+			name: "discard",
+			read: func(sender *HTTPSender, resp *http.Response) error {
+				return sender.discardResponseBody(resp)
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sender := NewHTTPSender(&sharedinternal.NopLogger{})
+			sender.SetMaxMessageSize(1)
+			resp := &http.Response{
+				Header: http.Header{},
+				Body:   io.NopCloser(strings.NewReader("xx")),
+			}
+
+			err := tc.read(sender, resp)
+			assert.ErrorContains(t, err, "response body too large")
+		})
+	}
 }
 
 func TestRequestInstanceUidFlagReset(t *testing.T) {

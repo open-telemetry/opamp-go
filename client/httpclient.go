@@ -47,6 +47,7 @@ func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) er
 
 	// Prepare Server connection settings.
 	c.sender.SetRequestHeader(settings.Header, settings.HeaderFunc)
+	c.sender.SetMaxMessageSize(settings.MaxMessageSize)
 
 	// Add TLS configuration into httpClient
 	c.sender.AddTLSConfig(settings.TLSConfig)

@@ -37,21 +37,25 @@ func DecodeWSMessage(bytes []byte, msg proto.Message) error {
 	return nil
 }
 
-func WriteWSMessage(conn *websocket.Conn, msg proto.Message) error {
+func WriteWSMessage(conn *websocket.Conn, msg proto.Message, maxMessageSize int64) error {
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("marshal message: %w", err)
-	}
-
-	writer, err := conn.NextWriter(websocket.BinaryMessage)
-	if err != nil {
-		return fmt.Errorf("next writer: %w", err)
 	}
 
 	// Encode header as a varint.
 	hdrBuf := make([]byte, binary.MaxVarintLen64)
 	n := binary.PutUvarint(hdrBuf, wsMsgHeader)
 	hdrBuf = hdrBuf[:n]
+
+	if err := CheckSizeLimit(int64(len(hdrBuf)+len(data)), maxMessageSize, "websocket message"); err != nil {
+		return err
+	}
+
+	writer, err := conn.NextWriter(websocket.BinaryMessage)
+	if err != nil {
+		return fmt.Errorf("next writer: %w", err)
+	}
 
 	// Write the header bytes.
 	_, err = writer.Write(hdrBuf)

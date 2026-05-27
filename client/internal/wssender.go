@@ -22,8 +22,9 @@ const (
 // WSSender implements the WebSocket client's sending portion of OpAMP protocol.
 type WSSender struct {
 	SenderCommon
-	conn   *websocket.Conn
-	logger types.Logger
+	conn           *websocket.Conn
+	logger         types.Logger
+	maxMessageSize int64
 
 	// Indicates that the sender has fully stopped.
 	stopped chan struct{}
@@ -44,6 +45,7 @@ func NewSender(logger types.Logger) *WSSender {
 		SenderCommon:             NewSenderCommon(),
 	}
 	s.heartbeatIntervalMs.Store(defaultHeartbeatIntervalMs)
+	s.maxMessageSize = internal.DefaultMaxMessageSize
 
 	return s
 }
@@ -86,6 +88,10 @@ func (s *WSSender) SetHeartbeatInterval(d time.Duration) error {
 	default:
 	}
 	return nil
+}
+
+func (s *WSSender) SetMaxMessageSize(maxMessageSize int64) {
+	s.maxMessageSize = internal.ResolveMaxMessageSize(maxMessageSize)
 }
 
 func (s *WSSender) shouldSendHeartbeat() <-chan time.Time {
@@ -165,7 +171,7 @@ func (s *WSSender) sendNextMessage(ctx context.Context) error {
 }
 
 func (s *WSSender) sendMessage(ctx context.Context, msg *protobufs.AgentToServer) error {
-	if err := internal.WriteWSMessage(s.conn, msg); err != nil {
+	if err := internal.WriteWSMessage(s.conn, msg, s.maxMessageSize); err != nil {
 		s.logger.Errorf(ctx, "Cannot write WS message: %v", err)
 		return err
 	}

@@ -220,3 +220,14 @@ func TestWSSenderSetHeartbeatInterval(t *testing.T) {
 	assert.NoError(t, sender.SetHeartbeatInterval(time.Duration(expected)*time.Millisecond))
 	assert.Equal(t, expected, sender.heartbeatIntervalMs.Load())
 }
+
+func TestWSSenderMessageSizeLimit(t *testing.T) {
+	sender := NewSender(&sharedinternal.NopLogger{})
+	sender.SetMaxMessageSize(1)
+
+	err := sender.sendMessage(context.Background(), &protobufs.AgentToServer{
+		InstanceUid: []byte("test-instance-uid-16b"),
+	})
+
+	assert.ErrorContains(t, err, "websocket message too large")
+}
