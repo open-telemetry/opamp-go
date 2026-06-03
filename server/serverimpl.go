@@ -301,7 +301,6 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			continue
 		}
 
-		s.logger.Debugf(msgContext, "AgentToServer message: %v", &request)
 		response := connectionCallbacks.OnMessage(msgContext, agentConn, &request)
 		if response == nil { // No send message when 'response' is empty
 			continue
@@ -324,7 +323,6 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			connectionCallbacks.OnMessageResponseError(agentConn, response, err)
 			break
 		}
-		s.logger.Debugf(msgContext, "ServerToAgent message: %v", response)
 	}
 }
 
