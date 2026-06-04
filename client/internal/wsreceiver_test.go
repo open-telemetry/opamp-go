@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -195,12 +195,14 @@ func TestDecodeMessage(t *testing.T) {
 func TestReceiverLoopStop(t *testing.T) {
 	srv := StartMockServer(t)
 
-	conn, _, err := websocket.DefaultDialer.DialContext(
+	conn, _, err := websocket.Dial(
 		context.Background(),
 		"ws://"+srv.Endpoint,
 		nil,
 	)
 	require.NoError(t, err)
+	conn.SetReadLimit(-1)
+	t.Cleanup(func() { _ = conn.CloseNow() })
 
 	var receiverLoopStopped atomic.Bool
 
@@ -316,9 +318,9 @@ func TestRecieveMessage(t *testing.T) {
 		name: "binary message",
 		server: func(t *testing.T) *httptest.Server {
 			return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				upgrader := websocket.Upgrader{}
-				conn, err := upgrader.Upgrade(w, r, nil)
+				conn, err := websocket.Accept(w, r, nil)
 				require.NoError(t, err)
+				defer conn.CloseNow()
 
 				uid, err := uuid.NewV7()
 				require.NoError(t, err)
@@ -329,8 +331,9 @@ func TestRecieveMessage(t *testing.T) {
 				}
 				msg, err := proto.Marshal(response)
 				require.NoError(t, err)
-				err = conn.WriteMessage(websocket.BinaryMessage, msg)
+				err = conn.Write(r.Context(), websocket.MessageBinary, msg)
 				require.NoError(t, err)
+				conn.Close(websocket.StatusNormalClosure, "")
 			}))
 		},
 		hasError: false,
@@ -338,12 +341,13 @@ func TestRecieveMessage(t *testing.T) {
 		name: "text message",
 		server: func(t *testing.T) *httptest.Server {
 			return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				upgrader := websocket.Upgrader{}
-				conn, err := upgrader.Upgrade(w, r, nil)
+				conn, err := websocket.Accept(w, r, nil)
 				require.NoError(t, err)
+				defer conn.CloseNow()
 
-				err = conn.WriteMessage(websocket.TextMessage, []byte(`Hello, World!`))
+				err = conn.Write(r.Context(), websocket.MessageText, []byte(`Hello, World!`))
 				require.NoError(t, err)
+				conn.Close(websocket.StatusNormalClosure, "")
 			}))
 		},
 		hasError: true,
@@ -357,12 +361,13 @@ func TestRecieveMessage(t *testing.T) {
 			u, err := url.Parse(srv.URL)
 			require.NoError(t, err)
 
-			conn, _, err := websocket.DefaultDialer.DialContext(
+			conn, _, err := websocket.Dial(
 				t.Context(),
 				"ws://"+u.Host,
 				nil,
 			)
 			require.NoError(t, err)
+			conn.SetReadLimit(-1)
 
 			callbacks := types.Callbacks{}
 			callbacks.SetDefaults()
@@ -371,7 +376,7 @@ func TestRecieveMessage(t *testing.T) {
 			state.SetCapabilities(&capabilities)
 			rec := NewWSReceiver(&internal.NopLogger{}, callbacks, conn, NewSender(&internal.NopLogger{}), state, nil, new(sync.Mutex), time.Second)
 
-			err = rec.receiveMessage(&protobufs.ServerToAgent{})
+			err = rec.receiveMessage(t.Context(), &protobufs.ServerToAgent{})
 			if tc.hasError {
 				assert.Error(t, err)
 			} else {

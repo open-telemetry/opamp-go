@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
 
@@ -133,11 +133,9 @@ func (m *MockServer) EnableCompression() {
 }
 
 func (m *MockServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{
-		EnableCompression: m.enableCompression,
-	}
-
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		CompressionMode: websocket.CompressionContextTakeover,
+	})
 	if err != nil {
 		return
 	}
@@ -145,12 +143,12 @@ func (m *MockServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		m.OnWSConnect(conn)
 	}
 	for {
-		var messageType int
+		var messageType websocket.MessageType
 		var msgBytes []byte
-		if messageType, msgBytes, err = conn.ReadMessage(); err != nil {
+		if messageType, msgBytes, err = conn.Read(r.Context()); err != nil {
 			return
 		}
-		assert.EqualValues(m.t, websocket.BinaryMessage, messageType)
+		assert.EqualValues(m.t, websocket.MessageBinary, messageType)
 
 		if len(msgBytes) > 0 && msgBytes[0] == 0 {
 			// New message format. The Protobuf message is preceded by a zero byte header.
@@ -165,7 +163,7 @@ func (m *MockServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			// Prepend zero-byte header.
 			msgBytes = append([]byte{0}, msgBytes...)
 
-			err = conn.WriteMessage(websocket.BinaryMessage, msgBytes)
+			err = conn.Write(r.Context(), websocket.MessageBinary, msgBytes)
 			if err != nil {
 				log.Fatal("cannot send:", err)
 			}

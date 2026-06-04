@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/types"
@@ -128,31 +128,20 @@ out:
 
 		case <-ctx.Done():
 			select {
-			// If there is a pending message, we will try to send it before closing the connection.
+			// If there is a pending message, we will try to send it before the connection is closed.
 			case <-s.hasPendingMessage:
 				stopCtx, cancel := context.WithTimeout(context.Background(), defaultSendCloseMessageTimeout)
 				defer cancel()
 				_ = s.sendNextMessage(stopCtx)
 			default:
 			}
-
-			if err := s.sendCloseMessage(); err != nil && err != websocket.ErrCloseSent {
-				s.err = err
-			}
+			// The connection close handshake is driven by runOneCycle after the sender stops.
 			break out
 		}
 	}
 
 	s.heartbeatTimer.Stop()
 	close(s.stopped)
-}
-
-func (s *WSSender) sendCloseMessage() error {
-	return s.conn.WriteControl(
-		websocket.CloseMessage,
-		websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Normal closure"),
-		time.Now().Add(defaultSendCloseMessageTimeout),
-	)
 }
 
 func (s *WSSender) sendNextMessage(ctx context.Context) error {
@@ -165,8 +154,25 @@ func (s *WSSender) sendNextMessage(ctx context.Context) error {
 }
 
 func (s *WSSender) sendMessage(ctx context.Context, msg *protobufs.AgentToServer) error {
-	if err := internal.WriteWSMessage(s.conn, msg); err != nil {
+	// Use a dedicated write context so that a cancelled senderCtx (from
+	// client.Stop()) does not prevent the final message from being sent.
+	// coder's Writer/Write APIs respect context cancellation and would fail
+	// immediately if we passed the already-cancelled senderCtx here.
+	writeCtx, writeCancel := context.WithTimeout(context.Background(), defaultSendCloseMessageTimeout)
+	defer writeCancel()
+
+	w, err := s.conn.Writer(writeCtx, websocket.MessageBinary)
+	if err != nil {
+		s.logger.Errorf(ctx, "Cannot open WS writer: %v", err)
+		return err
+	}
+	if err := internal.EncodeWSMessage(w, msg); err != nil {
+		_ = w.Close()
 		s.logger.Errorf(ctx, "Cannot write WS message: %v", err)
+		return err
+	}
+	if err := w.Close(); err != nil {
+		s.logger.Errorf(ctx, "Cannot close WS writer: %v", err)
 		return err
 	}
 	return nil
