@@ -38,6 +38,23 @@ This repository is work-in-progress of an OpAMP implementation in Go.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+### WebSocket client transport
+
+The WebSocket client defaults to [`gorilla/websocket`](https://github.com/gorilla/websocket).
+An experimental [`coder/websocket`](https://github.com/coder/websocket) transport is available
+behind the `cwebsocket` build tag.
+
+To build or test with `coder/websocket`:
+
+```sh
+go build -tags cwebsocket ./...
+go test -tags cwebsocket ./...
+# or via the Makefile
+make test-cwebsocket
+```
+
+The server always uses `gorilla/websocket` regardless of this tag.
+
 ### Maintainers
 
 - [Andy Keller](https://github.com/andykellr), Bindplane
