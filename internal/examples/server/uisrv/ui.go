@@ -284,7 +284,7 @@ func opampConnectionSettings(w http.ResponseWriter, r *http.Request) {
 
 	select {
 	case <-timer.C:
-		logger.Printf("Time out waiting for agent %s to reconnect\n", instanceId)
+		logger.Printf("Time out waiting for agent %x to reconnect\n", instanceId)
 	}
 
 	http.Redirect(w, r, "/agent?instanceid="+uid.String(), http.StatusSeeOther)

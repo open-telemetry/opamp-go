@@ -152,7 +152,7 @@ func formatAgentToServer(msg *protobufs.AgentToServer) string {
 			parts = append(parts, fmt.Sprintf("RemoteConfigStatusHash=%x", msg.RemoteConfigStatus.LastRemoteConfigHash))
 		}
 		if msg.RemoteConfigStatus.ErrorMessage != "" {
-			parts = append(parts, fmt.Sprintf("RemoteConfigStatusErrorMessage=%x", msg.RemoteConfigStatus.ErrorMessage))
+			parts = append(parts, fmt.Sprintf("RemoteConfigStatusErrorMessage=%q", msg.RemoteConfigStatus.ErrorMessage))
 		}
 	}
 	if msg.PackageStatuses != nil {
@@ -160,7 +160,7 @@ func formatAgentToServer(msg *protobufs.AgentToServer) string {
 			parts = append(parts, fmt.Sprintf("ServerProvidedAllPackagesHash=%x", msg.PackageStatuses.ServerProvidedAllPackagesHash))
 		}
 		if msg.PackageStatuses.ErrorMessage != "" {
-			parts = append(parts, fmt.Sprintf("PackageStatusesErrorMessage=%x", msg.PackageStatuses.ErrorMessage))
+			parts = append(parts, fmt.Sprintf("PackageStatusesErrorMessage=%q", msg.PackageStatuses.ErrorMessage))
 		}
 	}
 	if msg.AgentDisconnect != nil {
@@ -189,7 +189,7 @@ func formatAgentToServer(msg *protobufs.AgentToServer) string {
 			parts = append(parts, fmt.Sprintf("ConnectionSettingsStatusHash=%x", msg.ConnectionSettingsStatus.LastConnectionSettingsHash))
 		}
 		if msg.ConnectionSettingsStatus.ErrorMessage != "" {
-			parts = append(parts, fmt.Sprintf("ConnectionSettingsStatusErrorMessage=%x", msg.ConnectionSettingsStatus.ErrorMessage))
+			parts = append(parts, fmt.Sprintf("ConnectionSettingsStatusErrorMessage=%q", msg.ConnectionSettingsStatus.ErrorMessage))
 		}
 	}
 	return strings.Join(parts, ", ")
