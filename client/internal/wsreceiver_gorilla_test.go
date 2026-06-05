@@ -56,7 +56,7 @@ func TestReceiverLoopStop(t *testing.T) {
 	}, 2*time.Second, 100*time.Millisecond, "ReceiverLoop should stop when context is cancelled")
 }
 
-func TestRecieveMessage(t *testing.T) {
+func TestReceiveMessage(t *testing.T) {
 	tests := []struct {
 		name     string
 		server   func(t *testing.T) *httptest.Server

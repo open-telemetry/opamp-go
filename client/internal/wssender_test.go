@@ -1,6 +1,10 @@
 package internal
 
 import (
+	"net"
+	"runtime"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -8,6 +12,36 @@ import (
 
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
 )
+
+const (
+	senderStopTimeout = 3 * time.Second
+	largeMessageSize  = 1024 * 1024
+)
+
+// connErr wraps a net.Conn to inject a configurable error on Write.
+// Used by both gorilla and coder sender tests to simulate connection failures.
+type connErr struct {
+	net.Conn
+	failWrite atomic.Bool
+	writeErr  error
+}
+
+func (c *connErr) Write(b []byte) (n int, err error) {
+	if c.failWrite.Load() {
+		return 0, c.writeErr
+	}
+	return c.Conn.Write(b)
+}
+
+func newConnAbortedErrConn(c net.Conn) *connErr {
+	var errno syscall.Errno
+	if runtime.GOOS == "windows" {
+		errno = syscall.Errno(wsaECONNABORTED)
+	} else {
+		errno = syscall.ECONNABORTED
+	}
+	return &connErr{Conn: c, writeErr: &net.OpError{Op: "write", Err: errno}}
+}
 
 func TestWSSenderSetHeartbeatInterval(t *testing.T) {
 	sender := NewSender(&sharedinternal.NopLogger{})

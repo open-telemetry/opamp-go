@@ -6,8 +6,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"runtime"
-	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -61,7 +59,7 @@ func TestWSSenderWriteWSMessageFailure_BrokenPipe(t *testing.T) {
 	select {
 	case err := <-connCloseCh:
 		require.NoError(t, err)
-	case <-time.After(3 * time.Second):
+	case <-time.After(senderStopTimeout):
 		t.Fatal("failed to close the tcp connection to simulate failure")
 	}
 	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
@@ -73,7 +71,7 @@ func TestWSSenderWriteWSMessageFailure_BrokenPipe(t *testing.T) {
 	select {
 	case <-sender.IsStopped():
 		// Expected: sender stopped and closed s.stopped
-	case <-time.After(3 * time.Second):
+	case <-time.After(senderStopTimeout):
 		t.Fatal("sender did not close s.stopped within 3s after WriteWSMessage failure")
 	}
 
@@ -107,14 +105,14 @@ func TestWSSenderWriteWSMessageFailure_ConnectionTimeout(t *testing.T) {
 	_ = conn.SetWriteDeadline(time.Now().Add(-1 * time.Second))
 
 	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
-		msg.InstanceUid = make([]byte, 1024*1024)
+		msg.InstanceUid = make([]byte, largeMessageSize)
 	})
 	sender.ScheduleSend()
 
 	select {
 	case <-sender.IsStopped():
 		t.Log("Sender stopped successfully")
-	case <-time.After(3 * time.Second):
+	case <-time.After(senderStopTimeout):
 		t.Fatal("sender did not stop within 3s")
 	}
 
@@ -134,13 +132,13 @@ func TestWSSenderWriteWSMessageFailure_ConnAborted(t *testing.T) {
 	// Custom dialer to inject our wrapped connection to simulate this case, since this case is usually hit when
 	// some local software in the system messes with the connection
 	dialer := *websocket.DefaultDialer
-	var connShim *connAbortedErrConn
+	var connShim *connErr
 	dialer.NetDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		c, err := (&net.Dialer{}).DialContext(ctx, network, addr)
 		if err != nil {
 			return nil, err
 		}
-		connShim = &connAbortedErrConn{Conn: c}
+		connShim = newConnAbortedErrConn(c)
 		return connShim, nil
 	}
 
@@ -170,7 +168,7 @@ func TestWSSenderWriteWSMessageFailure_ConnAborted(t *testing.T) {
 	select {
 	case <-sender.IsStopped():
 		// Expected: sender stopped
-	case <-time.After(3 * time.Second):
+	case <-time.After(senderStopTimeout):
 		t.Fatal("sender did not stop within 3s")
 	}
 
@@ -179,27 +177,4 @@ func TestWSSenderWriteWSMessageFailure_ConnAborted(t *testing.T) {
 	var opErr *net.OpError
 	require.True(t, errors.As(stoppingErr, &opErr))
 	require.True(t, opErr.Err == syscall.ECONNABORTED || opErr.Err == syscall.Errno(wsaECONNABORTED))
-}
-
-type connAbortedErrConn struct {
-	net.Conn
-	failWrite atomic.Bool
-}
-
-func (c *connAbortedErrConn) Write(b []byte) (n int, err error) {
-	if c.failWrite.Load() {
-		switch runtime.GOOS {
-		case "windows":
-			return 0, &net.OpError{
-				Op:  "write",
-				Err: syscall.Errno(wsaECONNABORTED),
-			}
-		default:
-			return 0, &net.OpError{
-				Op:  "write",
-				Err: syscall.Errno(syscall.ECONNABORTED),
-			}
-		}
-	}
-	return c.Conn.Write(b)
 }

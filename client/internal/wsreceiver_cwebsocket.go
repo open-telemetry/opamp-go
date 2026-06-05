@@ -94,5 +94,5 @@ func (r *wsReceiver) receiveMessage(ctx context.Context, msg *protobufs.ServerTo
 	if err != nil {
 		return fmt.Errorf("cannot decode received message: %w", err)
 	}
-	return err
+	return nil
 }

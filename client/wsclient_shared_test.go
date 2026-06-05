@@ -195,7 +195,7 @@ func TestVerifyWSCompress(t *testing.T) {
 
 			proxy.Stop()
 
-			fmt.Printf("sent %d, received %d\n", proxy.ClientToServerBytes(), proxy.ServerToClientBytes())
+			t.Logf("sent %d, received %d", proxy.ClientToServerBytes(), proxy.ServerToClientBytes())
 
 			if withCompression {
 				// With compression the entire bytes exchanged should be less than the config body.

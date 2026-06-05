@@ -38,7 +38,7 @@ func DecodeWSMessage(bytes []byte, msg proto.Message) error {
 	return nil
 }
 
-// EncodeWSMessage encodes msg into the OpAMP wire format (varint header + protobuf bytes)
+// EncodeWSMessage encodes msg into the OpAMP wire format (single zero-valued header byte + protobuf bytes)
 // and writes it to w in a single Write call. It does not close w.
 //
 // Writing the header and payload together is important for writers that decide
@@ -51,18 +51,18 @@ func EncodeWSMessage(w io.Writer, msg proto.Message) error {
 		return fmt.Errorf("marshal message: %w", err)
 	}
 
-	// Encode header as a varint (wsMsgHeader == 0, always 1 byte).
-	hdrBuf := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutUvarint(hdrBuf, wsMsgHeader)
+	// wsMsgHeader encodes to a single zero byte. Build header+payload in
+	// one allocation to avoid an intermediate hdrBuf + append.
+	payload := make([]byte, 1+len(data))
+	payload[0] = byte(wsMsgHeader)
+	copy(payload[1:], data)
 
-	// Combine header and payload into one slice so a single Write carries the
-	// full message size.
-	payload := make([]byte, 0, n+len(data))
-	payload = append(payload, hdrBuf[:n]...)
-	payload = append(payload, data...)
-
-	if _, err = w.Write(payload); err != nil {
+	n, err := w.Write(payload)
+	if err != nil {
 		return fmt.Errorf("write message: %w", err)
+	}
+	if n != len(payload) {
+		return fmt.Errorf("write message: %w (%d/%d bytes)", io.ErrShortWrite, n, len(payload))
 	}
 	return nil
 }

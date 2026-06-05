@@ -31,9 +31,11 @@ type MockServer struct {
 }
 
 func (m *MockServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		CompressionMode: websocket.CompressionContextTakeover,
-	})
+	var acceptOpts *websocket.AcceptOptions
+	if m.enableCompression {
+		acceptOpts = &websocket.AcceptOptions{CompressionMode: websocket.CompressionContextTakeover}
+	}
+	conn, err := websocket.Accept(w, r, acceptOpts)
 	if err != nil {
 		return
 	}

@@ -26,14 +26,7 @@ import (
 func TestReceiverLoopStop(t *testing.T) {
 	srv := StartMockServer(t)
 
-	conn, _, err := websocket.Dial(
-		context.Background(),
-		"ws://"+srv.Endpoint,
-		nil,
-	)
-	require.NoError(t, err)
-	conn.SetReadLimit(-1)
-	t.Cleanup(func() { _ = conn.CloseNow() })
+	conn := dialCoder(context.Background(), t, "ws://"+srv.Endpoint, nil)
 
 	var receiverLoopStopped atomic.Bool
 
@@ -58,7 +51,7 @@ func TestReceiverLoopStop(t *testing.T) {
 	}, 2*time.Second, 100*time.Millisecond, "ReceiverLoop should stop when context is cancelled")
 }
 
-func TestRecieveMessage(t *testing.T) {
+func TestReceiveMessage(t *testing.T) {
 	tests := []struct {
 		name     string
 		server   func(t *testing.T) *httptest.Server
@@ -110,13 +103,7 @@ func TestRecieveMessage(t *testing.T) {
 			u, err := url.Parse(srv.URL)
 			require.NoError(t, err)
 
-			conn, _, err := websocket.Dial(
-				t.Context(),
-				"ws://"+u.Host,
-				nil,
-			)
-			require.NoError(t, err)
-			conn.SetReadLimit(-1)
+			conn := dialCoder(t.Context(), t, "ws://"+u.Host, nil)
 
 			callbacks := types.Callbacks{}
 			callbacks.SetDefaults()

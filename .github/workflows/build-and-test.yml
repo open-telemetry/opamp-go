@@ -66,9 +66,7 @@ jobs:
       - name: Build and Test
         run: make
       - name: Build and Test (cwebsocket)
-        run: |
-          go build -tags cwebsocket ./...
-          make test-cwebsocket
+        run: make test-cwebsocket
 
   test-coverage:
     runs-on: ubuntu-latest

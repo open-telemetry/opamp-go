@@ -100,6 +100,9 @@ func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 	}
 }
 
+// receiveMessage reads and decodes the next WebSocket message.
+// It does not accept a context because gorilla/websocket reads are not
+// context-aware; callers stop the receiver by closing the connection.
 func (r *wsReceiver) receiveMessage(msg *protobufs.ServerToAgent) error {
 	mt, bytes, err := r.conn.ReadMessage()
 	if err != nil {
@@ -112,5 +115,5 @@ func (r *wsReceiver) receiveMessage(msg *protobufs.ServerToAgent) error {
 	if err != nil {
 		return fmt.Errorf("cannot decode received message: %w", err)
 	}
-	return err
+	return nil
 }

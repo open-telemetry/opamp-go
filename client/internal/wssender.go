@@ -18,7 +18,9 @@ import (
 
 const (
 	defaultSendCloseMessageTimeout = 5 * time.Second
-	defaultHeartbeatIntervalMs     = 30 * 1000
+	// defaultHeartbeatIntervalMs is the default heartbeat interval in milliseconds.
+	// 30 seconds, as required by the OpAMP specification §4.1.
+	defaultHeartbeatIntervalMs = 30 * 1000
 )
 
 // WSSender implements the WebSocket client's sending portion of OpAMP protocol.
@@ -133,8 +135,8 @@ out:
 			// If there is a pending message, we will try to send it before closing the connection.
 			case <-s.hasPendingMessage:
 				stopCtx, cancel := context.WithTimeout(context.Background(), defaultSendCloseMessageTimeout)
-				defer cancel()
 				_ = s.sendNextMessage(stopCtx)
+				cancel()
 			default:
 			}
 
@@ -157,9 +159,11 @@ func (s *WSSender) sendCloseMessage() error {
 	)
 }
 
+var emptyAgentToServer = &protobufs.AgentToServer{}
+
 func (s *WSSender) sendNextMessage(ctx context.Context) error {
 	msgToSend := s.nextMessage.PopPending()
-	if msgToSend != nil && !proto.Equal(msgToSend, &protobufs.AgentToServer{}) {
+	if msgToSend != nil && !proto.Equal(msgToSend, emptyAgentToServer) {
 		// There is a pending message and the message has some fields populated.
 		return s.sendMessage(ctx, msgToSend)
 	}
