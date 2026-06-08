@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"time"
 
 	opampinternal "github.com/open-telemetry/opamp-go/internal"
@@ -39,6 +40,7 @@ type flagConfig struct {
 	endpoint              string
 	heartbeat             time.Duration
 	quietAgent            bool
+	extraAttributes       map[string]string
 	// scaleCount = 1 runs a normal agent
 	// scaleCount > 1 runs scale test agents (pre-assigned IDs, no initial cert request)
 	scaleCount uint64
@@ -98,7 +100,7 @@ func (cfg flagConfig) verifyArgs() error {
 
 // loadEnv will attempt to load config options from environment variables.
 // used to specifiy options when running the agent in a container.
-func loadEnv(cfg *flagConfig) {
+func loadEnv(cfg *flagConfig) error {
 	if s, ok := os.LookupEnv("AGENT_TYPE"); ok {
 		cfg.agentType = s
 	}
@@ -151,16 +153,46 @@ func loadEnv(cfg *flagConfig) {
 		}
 	}
 
+	if s, ok := os.LookupEnv("AGENT_EXTRA_ATTRIBUTES"); ok {
+		for _, attr := range strings.Split(s, ",") {
+			if err := addExtraAttribute(cfg.extraAttributes, attr); err != nil {
+				return err
+			}
+		}
+	}
+
 	if s, ok := os.LookupEnv("AGENT_SCALE_COUNT"); ok {
 		count, err := strconv.ParseUint(s, 10, 64)
 		if err == nil {
 			cfg.scaleCount = count
 		}
 	}
+	return nil
+}
+
+func addExtraAttribute(attrs map[string]string, raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	key, value, ok := strings.Cut(raw, "=")
+	if !ok {
+		return fmt.Errorf("extra attribute %q must use key=value format", raw)
+	}
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if key == "" {
+		return fmt.Errorf("extra attribute %q has an empty key", raw)
+	}
+	attrs[key] = value
+	return nil
 }
 
 func main() {
-	var cfg flagConfig
+	cfg := flagConfig{
+		extraAttributes: map[string]string{},
+	}
 	flag.StringVar(&cfg.agentType, "t", "io.opentelemetry.collector", "Agent Type String (env var: AGENT_TYPE).")
 	flag.StringVar(&cfg.agentVersion, "v", "1.0.0", "Agent Version String (env var: AGENT_VERSION).")
 	flag.BoolVar(&cfg.tlsInsecure, "tls-insecure", false, "Disable the client transport security (env var: AGENT_TLS_INSECURE).")
@@ -171,12 +203,17 @@ func main() {
 	flag.StringVar(&cfg.endpoint, "endpoint", "wss://127.0.0.1:4320/v1/opamp", "OpAMP server endpoint URL (env var: AGENT_ENDPOINT).")
 	flag.DurationVar(&cfg.heartbeat, "heartbeat", time.Second*30, "Heartbeat duration (env var: AGENT_HEARTBEAT).")
 	flag.BoolVar(&cfg.quietAgent, "quite-agent", false, "Disable agent logger (env var: AGENT_QUIET).")
+	flag.Func("extra-attribute", "Additional non-identifying AgentDescription attribute in key=value format. May be specified multiple times (env var: AGENT_EXTRA_ATTRIBUTES).", func(value string) error {
+		return addExtraAttribute(cfg.extraAttributes, value)
+	})
 	flag.Uint64Var(&cfg.scaleCount, "scale-count", 1, "The number of agents to start in scale mode (env var: AGENT_SCALE_COUNT).")
 
 	flag.Parse()
-	loadEnv(&cfg)
 
 	logger := log.Default()
+	if err := loadEnv(&cfg); err != nil {
+		logger.Fatalf("Env verification error: %v", err)
+	}
 	if err := cfg.verifyArgs(); err != nil {
 		logger.Fatalf("Arg verification error: %v", err)
 	}
@@ -238,6 +275,7 @@ func runScale(ctx context.Context, cfg flagConfig) ([]*agent.Agent, error) {
 		opts := []agent.Option{
 			agent.WithAgentType(cfg.agentType),
 			agent.WithAgentVersion(cfg.agentVersion),
+			agent.WithExtraAttributes(cfg.extraAttributes),
 		}
 		if cfg.quietAgent {
 			opts = append(opts, agent.WithLogger(nopLogger))

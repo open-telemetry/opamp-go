@@ -12,9 +12,10 @@ import (
 )
 
 type Agents struct {
-	mux         sync.RWMutex
-	agentsById  map[InstanceId]*Agent
-	connections map[types.Connection]map[InstanceId]bool
+	mux               sync.RWMutex
+	agentsById        map[InstanceId]*Agent
+	connections       map[types.Connection]map[InstanceId]bool
+	configCalculators []ConfigCalculator
 }
 
 var logger = log.New(log.Default().Writer(), "[AGENTS] ", log.Default().Flags()|log.Lmsgprefix|log.Lmicroseconds)
@@ -23,12 +24,13 @@ var logger = log.New(log.Default().Writer(), "[AGENTS] ", log.Default().Flags()|
 // connection.
 func (agents *Agents) RemoveConnection(conn types.Connection) {
 	agents.mux.Lock()
-	defer agents.mux.Unlock()
-
 	for instanceId := range agents.connections[conn] {
 		delete(agents.agentsById, instanceId)
 	}
 	delete(agents.connections, conn)
+	agents.mux.Unlock()
+
+	agents.AgentsChanged(nil, nil)
 }
 
 func (agents *Agents) SendCustomMessageToAgent(
@@ -50,6 +52,61 @@ func (agents *Agents) SetCustomConfigForAgent(
 	if agent != nil {
 		agent.SetCustomConfig(config, notifyNextStatusUpdate)
 	}
+}
+
+func (agents *Agents) AgentsChanged(
+	currentAgent *Agent,
+	currentResponse *protobufs.ServerToAgent,
+) {
+	allAgents := agents.getAllAgents()
+
+	changedAgents := map[InstanceId]bool{}
+	for _, calculator := range agents.configCalculators {
+		for instanceID := range calculator.AgentsChanged(allAgents) {
+			changedAgents[instanceID] = true
+		}
+	}
+
+	agents.recalculateRemoteConfigs(changedAgents, allAgents, currentAgent, currentResponse)
+}
+
+func (agents *Agents) recalculateRemoteConfigs(
+	changedAgents map[InstanceId]bool,
+	allAgents map[InstanceId]*Agent,
+	currentAgent *Agent,
+	currentResponse *protobufs.ServerToAgent,
+) {
+	var updates []remoteConfigUpdate
+	for instanceID := range changedAgents {
+		agent := allAgents[instanceID]
+		if agent == nil {
+			continue
+		}
+
+		remoteConfig, changed := agent.RecalculateRemoteConfig()
+		if !changed {
+			continue
+		}
+		if agent == currentAgent && currentResponse != nil {
+			currentResponse.RemoteConfig = remoteConfig
+			continue
+		}
+		updates = append(updates, remoteConfigUpdate{
+			agent:        agent,
+			remoteConfig: remoteConfig,
+		})
+	}
+
+	for _, update := range updates {
+		update.agent.SendToAgent(&protobufs.ServerToAgent{
+			RemoteConfig: update.remoteConfig,
+		})
+	}
+}
+
+type remoteConfigUpdate struct {
+	agent        *Agent
+	remoteConfig *protobufs.AgentRemoteConfig
 }
 
 func isEqualAgentDescr(d1, d2 *protobufs.AgentDescription) bool {
@@ -90,6 +147,9 @@ func (agents *Agents) FindOrCreateAgent(agentId InstanceId, conn types.Connectio
 	agent := agents.agentsById[agentId]
 	if agent == nil {
 		agent = NewAgent(agentId, conn)
+		for _, calculator := range agents.configCalculators {
+			agent.WithConfigCalculator(calculator)
+		}
 		agents.agentsById[agentId] = agent
 
 		// Ensure the Agent's instance id is associated with the connection.
@@ -113,19 +173,23 @@ func (agents *Agents) GetAgentReadonlyClone(agentId InstanceId) *Agent {
 }
 
 func (agents *Agents) GetAllAgentsReadonlyClone() map[InstanceId]*Agent {
-	agents.mux.RLock()
-
-	// Clone the map first
-	m := map[InstanceId]*Agent{}
-	for id, agent := range agents.agentsById {
-		m[id] = agent
-	}
-	agents.mux.RUnlock()
+	m := agents.getAllAgents()
 
 	// Clone agents in the map
 	for id, agent := range m {
 		// Return a clone to allow safe access after returning.
 		m[id] = agent.CloneReadonly()
+	}
+	return m
+}
+
+func (agents *Agents) getAllAgents() map[InstanceId]*Agent {
+	agents.mux.RLock()
+	defer agents.mux.RUnlock()
+
+	m := map[InstanceId]*Agent{}
+	for id, agent := range agents.agentsById {
+		m[id] = agent
 	}
 	return m
 }
@@ -150,10 +214,15 @@ func (a *Agents) OfferAgentConnectionSettings(
 	}
 }
 
-var AllAgents = Agents{
-	agentsById:  map[InstanceId]*Agent{},
-	connections: map[types.Connection]map[InstanceId]bool{},
+func NewAgents(configCalculators ...ConfigCalculator) *Agents {
+	return &Agents{
+		agentsById:        map[InstanceId]*Agent{},
+		connections:       map[types.Connection]map[InstanceId]bool{},
+		configCalculators: configCalculators,
+	}
 }
+
+var AllAgents = NewAgents()
 
 // toHash computes a sha256 hash from fields within ConnectionSettingsOffers
 func toHash(c *protobufs.ConnectionSettingsOffers) []byte {
