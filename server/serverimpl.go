@@ -330,7 +330,25 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 	}
 }
 
-func (s *server) readReqBody(req *http.Request) ([]byte, error) {
+func readAllLimited(w http.ResponseWriter, r io.ReadCloser, limit int64, kind string) ([]byte, error) {
+	if limit < 0 {
+		return io.ReadAll(r)
+	}
+	data, err := io.ReadAll(http.MaxBytesReader(w, r, limit))
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return nil, &internal.SizeLimitError{
+				Kind:  kind,
+				Limit: maxBytesErr.Limit,
+			}
+		}
+		return nil, err
+	}
+	return data, nil
+}
+
+func (s *server) readReqBody(req *http.Request, w http.ResponseWriter) ([]byte, error) {
 	// Do not drain oversized requests after the limit is hit. net/http may drain
 	// a small unread tail for keep-alive after the handler returns; otherwise the
 	// connection is closed. Draining the entire body here would weaken
@@ -341,9 +359,9 @@ func (s *server) readReqBody(req *http.Request) ([]byte, error) {
 			return nil, err
 		}
 		defer r.Close()
-		return internal.ReadAllLimited(r, s.settings.MaxMessageSize, "request body")
+		return readAllLimited(w, r, s.settings.MaxMessageSize, "request body")
 	}
-	return internal.ReadAllLimited(req.Body, s.settings.MaxMessageSize, "request body")
+	return readAllLimited(w, req.Body, s.settings.MaxMessageSize, "request body")
 }
 
 func (s *server) compressGzip(data []byte) ([]byte, error) {
@@ -364,7 +382,7 @@ func (s *server) compressGzip(data []byte) ([]byte, error) {
 }
 
 func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter, connectionCallbacks *serverTypes.ConnectionCallbacks) {
-	bodyBytes, err := s.readReqBody(req)
+	bodyBytes, err := s.readReqBody(req, w)
 	if err != nil {
 		s.logger.Debugf(req.Context(), "Cannot read HTTP body: %v", err)
 		var sizeErr *internal.SizeLimitError
