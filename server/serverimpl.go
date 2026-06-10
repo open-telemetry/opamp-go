@@ -331,6 +331,10 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 }
 
 func (s *server) readReqBody(req *http.Request) ([]byte, error) {
+	// Do not drain oversized requests after the limit is hit. net/http may drain
+	// a small unread tail for keep-alive after the handler returns; otherwise the
+	// connection is closed. Draining the entire body here would weaken
+	// MaxMessageSize as a server-side resource bound.
 	if req.Header.Get(headerContentEncoding) == contentEncodingGzip {
 		r, err := gzip.NewReader(req.Body)
 		if err != nil {

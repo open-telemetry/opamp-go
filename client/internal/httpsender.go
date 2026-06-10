@@ -397,6 +397,9 @@ func (h *HTTPSender) readResponseBody(resp *http.Response) ([]byte, error) {
 	}
 	defer closeBody()
 
+	// Do not drain oversized responses after the limit is hit. Reading to EOF
+	// would preserve HTTP/1 keep-alive, but would also let a peer force
+	// unbounded network and decompression work after MaxMessageSize is exceeded.
 	return internal.ReadAllLimited(body, h.maxMessageSize, "response body")
 }
 
