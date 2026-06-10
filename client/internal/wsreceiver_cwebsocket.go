@@ -1,4 +1,4 @@
-//go:build !cwebsocket
+//go:build cwebsocket
 
 package internal
 
@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -61,54 +61,33 @@ func (r *wsReceiver) IsStopped() <-chan struct{} {
 }
 
 // ReceiverLoop runs the receiver loop.
-// To stop the receiver cancel the context and close the websocket connection
+// To stop the receiver cancel the context.
 func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
-	type receivedMessage struct {
-		message *protobufs.ServerToAgent
-		err     error
-	}
-
 	defer func() { close(r.stopped) }()
 
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			result := make(chan receivedMessage, 1)
-
-			// To stop this goroutine, close the websocket connection
-			go func() {
-				var message protobufs.ServerToAgent
-				err := r.receiveMessage(&message)
-				result <- receivedMessage{&message, err}
-			}()
-
-			select {
-			case <-ctx.Done():
+		var message protobufs.ServerToAgent
+		err := r.receiveMessage(ctx, &message)
+		if err != nil {
+			if ctx.Err() != nil {
+				// Context was cancelled — clean stop.
 				return
-			case res := <-result:
-				if res.err != nil {
-					if !websocket.IsCloseError(res.err, websocket.CloseNormalClosure) {
-						r.logger.Errorf(ctx, "Unexpected error while receiving: %v", res.err)
-					}
-					return
-				}
-				r.processor.ProcessReceivedMessage(ctx, res.message)
 			}
+			if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
+				r.logger.Errorf(ctx, "Unexpected error while receiving: %v", err)
+			}
+			return
 		}
+		r.processor.ProcessReceivedMessage(ctx, &message)
 	}
 }
 
-// receiveMessage reads and decodes the next WebSocket message.
-// It does not accept a context because gorilla/websocket reads are not
-// context-aware; callers stop the receiver by closing the connection.
-func (r *wsReceiver) receiveMessage(msg *protobufs.ServerToAgent) error {
-	mt, bytes, err := r.conn.ReadMessage()
+func (r *wsReceiver) receiveMessage(ctx context.Context, msg *protobufs.ServerToAgent) error {
+	mt, bytes, err := r.conn.Read(ctx)
 	if err != nil {
 		return err
 	}
-	if mt != websocket.BinaryMessage {
+	if mt != websocket.MessageBinary {
 		return fmt.Errorf("unsupported message type: %v", mt)
 	}
 	err = internal.DecodeWSMessage(bytes, msg)

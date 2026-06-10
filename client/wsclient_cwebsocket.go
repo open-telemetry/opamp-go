@@ -1,21 +1,17 @@
-//go:build !cwebsocket
+//go:build cwebsocket
 
 package client
 
 import (
 	"context"
-	"crypto/tls"
-	"net"
+	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
-
-	dialer "github.com/elastic/proxy-connect-dialer-go"
+	"github.com/coder/websocket"
 
 	"github.com/open-telemetry/opamp-go/client/internal"
 	"github.com/open-telemetry/opamp-go/client/types"
@@ -36,8 +32,13 @@ type wsClient struct {
 	// HTTP request headers to use when connecting to OpAMP Server.
 	getHeader func() http.Header
 
-	// Websocket dialer and connection.
-	dialer    websocket.Dialer
+	// transport is the underlying HTTP transport used for dialing.
+	// dialOpts references it via dialOpts.HTTPClient.Transport.
+	transport *http.Transport
+	// dialOpts holds options for each websocket.Dial call.
+	dialOpts *websocket.DialOptions
+
+	// Websocket connection.
 	conn      *websocket.Conn
 	connMutex sync.RWMutex
 
@@ -64,13 +65,41 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 		return err
 	}
 
-	// Prepare connection settings.
-	c.dialer = *websocket.DefaultDialer
+	// Clone the default transport to inherit timeouts, connection pooling,
+	// HTTP/2 settings, and ProxyFromEnvironment.
+	c.transport = http.DefaultTransport.(*http.Transport).Clone()
+	c.transport.TLSClientConfig = settings.TLSConfig
+	c.transport.ProxyConnectHeader = settings.ProxyHeaders
 
 	if settings.ProxyURL != "" {
-		if err := c.useProxy(settings.ProxyURL, settings.ProxyHeaders, settings.TLSConfig); err != nil {
-			return err
+		proxyURL, err := url.Parse(settings.ProxyURL)
+		if err != nil {
+			return fmt.Errorf("unable to parse proxy url setting %q: %w", settings.ProxyURL, err)
 		}
+		c.transport.Proxy = http.ProxyURL(proxyURL)
+	}
+
+	// The HTTP client must not follow redirects itself; we handle them manually
+	// so that we can invoke the CheckRedirect callback with the right types.
+	httpClient := &http.Client{
+		Transport: c.transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	// Compression mode. CompressionContextTakeover matches gorilla/websocket's
+	// EnableCompression behaviour (context takeover, efficient for repeated
+	// content). If the server only supports no-context-takeover, coder falls
+	// back automatically.
+	compressionMode := websocket.CompressionDisabled
+	if settings.EnableCompression {
+		compressionMode = websocket.CompressionContextTakeover
+	}
+
+	c.dialOpts = &websocket.DialOptions{
+		HTTPClient:      httpClient,
+		CompressionMode: compressionMode,
 	}
 
 	var err error
@@ -79,12 +108,9 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 		return err
 	}
 
-	c.dialer.EnableCompression = settings.EnableCompression
-
 	if settings.TLSConfig != nil {
 		c.url.Scheme = "wss"
 	}
-	c.dialer.TLSClientConfig = settings.TLSConfig
 
 	headerFunc := settings.HeaderFunc
 	if headerFunc == nil {
@@ -121,14 +147,18 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinterna
 			}
 		}
 	}()
-	conn, resp, err := c.dialer.DialContext(ctx, c.url.String(), c.getHeader())
+
+	// Refresh headers on every attempt so HeaderFunc changes take effect.
+	c.dialOpts.HTTPHeader = c.getHeader()
+
+	conn, resp, err := websocket.Dial(ctx, c.url.String(), c.dialOpts)
 	if err != nil {
 		if resp != nil {
 			duration := sharedinternal.ExtractRetryAfterHeader(resp)
 			if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 				redirecting = true
-				if err := c.handleRedirect(ctx, resp); err != nil {
-					return duration, err
+				if redirectErr := c.handleRedirect(ctx, resp); redirectErr != nil {
+					return duration, redirectErr
 				}
 			} else {
 				c.common.Logger.Errorf(ctx, "Server responded with status=%v", resp.Status)
@@ -137,6 +167,9 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinterna
 		}
 		return sharedinternal.OptionalDuration{Defined: false}, err
 	}
+
+	// Disable coder's default 32 KB read limit; the OpAMP spec does not impose one.
+	conn.SetReadLimit(-1)
 
 	// Successfully connected.
 	c.connMutex.Lock()
@@ -155,19 +188,22 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinterna
 //  4. start the receiver to receive and process messages until an error happens.
 //  5. wait until both the sender and receiver are stopped.
 //
-// runOneCycle will close the connection it created before it return.
+// runOneCycle will close the connection it created before it returns.
 //
-// When Stop() is called (ctx is cancelled, isStopping is set), wsClient will shutdown gracefully:
-//  1. sender will be cancelled by the ctx, send the close message to server and return the error via sender.Err().
-//  2. runOneCycle will handle that error and wait for the close message from server until timeout.
+// When Stop() is called (ctx is cancelled, isStopping is set), wsClient shuts down gracefully:
+//  1. The sender context is cancelled; the sender flushes any pending message
+//     (including AgentDisconnect) and signals IsStopped.
+//  2. runOneCycle stops the receiver, then performs the WebSocket close handshake
+//     via conn.Close, which sends a close frame and waits for the server's close frame.
+//  3. conn.CloseNow (deferred) ensures the socket is released in all paths.
 func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 	if err := c.ensureConnected(ctx); err != nil {
 		// Can't connect, so can't move forward. This currently happens when we
 		// are being stopped.
 		return
 	}
-	// Close the underlying connection.
-	defer c.conn.Close()
+	// Safety-net: always release the socket when runOneCycle returns.
+	defer c.conn.CloseNow()
 
 	if c.common.IsStopping() {
 		return
@@ -209,89 +245,86 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 		c.common.DownloadReporterInterval,
 	)
 
-	// When the wsclient is closed, the context passed to runOneCycle will be canceled.
-	// The receiver should keep running and processing messages
-	// until it received a Close message from the server which means the server has no more messages.
+	// The receiver runs until it sees a close or an error.
 	receiverCtx, stopReceiver := context.WithCancel(context.Background())
 	defer stopReceiver()
 	r.Start(receiverCtx)
 
 	select {
 	case <-c.sender.IsStopped():
-		// sender will send close message to initiate the close handshake
+		// Sender stopped (either because ctx was cancelled for a graceful shutdown,
+		// or because of an unrecoverable write error).
 		if err := c.sender.StoppingErr(); err != nil {
 			c.common.Logger.Debugf(ctx, "Error stopping the sender: %v", err)
-
 			stopReceiver()
 			<-r.IsStopped()
 			break
 		}
 
-		c.common.Logger.Debugf(ctx, "Waiting for receiver to stop.")
+		// Clean sender stop — perform the WebSocket close handshake.
+		//
+		// IMPORTANT: We must call conn.Close BEFORE stopping the receiver. In
+		// coder/websocket, cancelling the context passed to Read triggers
+		// context.AfterFunc which calls c.close(), permanently closing the
+		// underlying connection. conn.Close would then be unable to send the
+		// close frame.
+		//
+		// Instead, we start conn.Close while the receiver is still running.
+		// conn.Close sends a close frame then waits for the read mutex (held by
+		// the receiver). When the server responds with a close ack, the
+		// receiver's Read returns a CloseError and releases the mutex;
+		// conn.Close acquires it, sees the close was received, and returns.
+		//
+		// If the server does not respond within connShutdownTimeout, we call
+		// stopReceiver(), which cancels receiverCtx. Coder's context.AfterFunc
+		// then calls c.close(), closing the underlying TCP connection. This
+		// unblocks conn.Close's mutex wait and allows it to return quickly.
 		shutdownTimer := time.NewTimer(c.connShutdownTimeout)
 		defer shutdownTimer.Stop()
+
+		closeDone := make(chan struct{})
+		go func() {
+			defer close(closeDone)
+			_ = c.conn.Close(websocket.StatusNormalClosure, "Normal closure")
+		}()
+		select {
+		case <-closeDone:
+			c.common.Logger.Debugf(ctx, "Close handshake completed.")
+		case <-shutdownTimer.C:
+			c.common.Logger.Debugf(ctx, "Timeout waiting for close handshake, forcing close.")
+			// Cancel the receiver's context; coder's setupReadTimeout AfterFunc
+			// calls c.close() which closes the underlying conn and unblocks
+			// conn.Close's internal read-lock wait.
+			stopReceiver()
+			<-closeDone
+		}
+
+		// Stop the receiver if it hasn't already stopped (it will have stopped
+		// if the server's close ack triggered a CloseError, or after a timeout).
+		c.common.Logger.Debugf(ctx, "Waiting for receiver to stop.")
+		stopReceiver() // idempotent if already called above
+
+		// Re-arm the timer for the receiver-stop wait.
+		if !shutdownTimer.Stop() {
+			select {
+			case <-shutdownTimer.C:
+			default:
+			}
+		}
+		shutdownTimer.Reset(c.connShutdownTimeout)
+
 		select {
 		case <-r.IsStopped():
 			c.common.Logger.Debugf(ctx, "Receiver stopped.")
 		case <-shutdownTimer.C:
+			// Receiver did not stop within the timeout; defer conn.CloseNow() will
+			// close the underlying connection and unblock any in-flight Read call.
 			c.common.Logger.Debugf(ctx, "Timeout waiting for receiver to stop.")
-			stopReceiver()
-			<-r.IsStopped()
 		}
-	case <-r.IsStopped():
-		// If we exited receiverLoop it means there is a connection error, we cannot
-		// read messages anymore. We need to start over.
 
+	case <-r.IsStopped():
+		// Receiver stopped — connection error or server closed. Start over.
 		stopSender()
 		<-c.sender.IsStopped()
 	}
-}
-
-// useProxy sets the websocket dialer to use the passed proxy URL.
-// If the proxy has no schema http is used.
-// This method is not thread safe and must be called before c.dialer is used.
-func (c *wsClient) useProxy(proxy string, headers http.Header, cfg *tls.Config) error {
-	proxyURL, err := url.Parse(proxy)
-	if err != nil || proxyURL.Scheme == "" || proxyURL.Host == "" { // error or bad URL - try to use http as scheme to resolve
-		proxyURL, err = url.Parse("http://" + proxy)
-		if err != nil {
-			return err
-		}
-	}
-	if proxyURL.Hostname() == "" {
-		return url.InvalidHostError(proxy)
-	}
-
-	// Clear previous settings
-	c.dialer.Proxy = nil
-	c.dialer.NetDialContext = nil
-	c.dialer.NetDialTLSContext = nil
-
-	switch strings.ToLower(proxyURL.Scheme) {
-	case "http":
-		// FIXME: dialer.NetDialContext is currently used as a work around instead of setting dialer.Proxy as gorilla/websockets does not have 1st class support for setting proxy connect headers
-		// Once http://github.com/gorilla/websocket/issues/479 is complete, we should use dialer.Proxy, and dialer.ProxyConnectHeader
-		if len(headers) > 0 {
-			dialer, err := dialer.NewProxyConnectDialer(proxyURL, &net.Dialer{}, dialer.WithProxyConnectHeaders(headers))
-			if err != nil {
-				return err
-			}
-			c.dialer.NetDialContext = dialer.DialContext
-			return nil
-		}
-		c.dialer.Proxy = http.ProxyURL(proxyURL) // No connect headers, use a regular proxy
-	case "https":
-		if len(headers) > 0 {
-			dialer, err := dialer.NewProxyConnectDialer(proxyURL, &net.Dialer{}, dialer.WithTLS(cfg), dialer.WithProxyConnectHeaders(headers))
-			if err != nil {
-				return err
-			}
-			c.dialer.NetDialTLSContext = dialer.DialContext
-			return nil
-		}
-		c.dialer.Proxy = http.ProxyURL(proxyURL) // No connect headers, use a regular proxy
-	default: // catches socks5
-		c.dialer.Proxy = http.ProxyURL(proxyURL)
-	}
-	return nil
 }

@@ -665,7 +665,7 @@ func TestExcludesDetailsOnReconnect(t *testing.T) {
 
 	// close the Agent connection. expect it to reconnect without sending details.
 	require.NotNil(t, client.conn)
-	err := client.conn.Close()
+	err := forceCloseClientConn(client)
 	assert.NoError(t, err)
 
 	eventually(t, func() bool { return atomic.LoadInt64(&connected) == 2 })

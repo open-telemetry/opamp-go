@@ -65,6 +65,8 @@ jobs:
           git diff --exit-code || (echo 'Code base is not Go formatted, please run "make fmt" and commit the changes in this PR.' && exit 1)
       - name: Build and Test
         run: make
+      - name: Build and Test (cwebsocket)
+        run: make test-cwebsocket
 
   test-coverage:
     runs-on: ubuntu-latest
