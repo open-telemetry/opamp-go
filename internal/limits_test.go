@@ -2,6 +2,7 @@ package internal
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -135,6 +136,12 @@ func TestReadAllLimited(t *testing.T) {
 		assert.Equal(t, []byte("ab"), data)
 	})
 
+	t.Run("max int64 limit", func(t *testing.T) {
+		data, err := ReadAllLimited(strings.NewReader("abc"), math.MaxInt64, "message")
+		require.NoError(t, err)
+		assert.Equal(t, []byte("abc"), data)
+	})
+
 	t.Run("read error", func(t *testing.T) {
 		data, err := ReadAllLimited(errorReader{}, 2, "message")
 		assert.Nil(t, data)
@@ -162,6 +169,13 @@ func TestCopyDiscardLimited(t *testing.T) {
 	t.Run("within limit", func(t *testing.T) {
 		err := CopyDiscardLimited(strings.NewReader("ab"), 2, "message")
 		assert.NoError(t, err)
+	})
+
+	t.Run("max int64 limit", func(t *testing.T) {
+		r := strings.NewReader("abc")
+		err := CopyDiscardLimited(r, math.MaxInt64, "message")
+		require.NoError(t, err)
+		assert.Zero(t, r.Len())
 	})
 
 	t.Run("read error", func(t *testing.T) {

@@ -3,6 +3,7 @@ package internal
 import (
 	"fmt"
 	"io"
+	"math"
 )
 
 const DefaultMaxMessageSize int64 = 64 * 1024 * 1024
@@ -40,6 +41,9 @@ func ReadAllLimited(r io.Reader, limit int64, kind string) ([]byte, error) {
 	if limit < 0 {
 		return io.ReadAll(r)
 	}
+	if limit == math.MaxInt64 {
+		return io.ReadAll(r)
+	}
 	data, err := io.ReadAll(io.LimitReader(r, limit+1))
 	if err != nil {
 		return nil, err
@@ -55,6 +59,10 @@ func ReadAllLimited(r io.Reader, limit int64, kind string) ([]byte, error) {
 
 func CopyDiscardLimited(r io.Reader, limit int64, kind string) error {
 	if limit < 0 {
+		_, err := io.Copy(io.Discard, r)
+		return err
+	}
+	if limit == math.MaxInt64 {
 		_, err := io.Copy(io.Discard, r)
 		return err
 	}
