@@ -26,7 +26,7 @@ func TestWSSenderWriteWSMessageFailure_BrokenPipe(t *testing.T) {
 	// after a short delay so the client's send will hit the closed connection
 	// and fail with connection reset.
 	connCloseCh := make(chan error)
-	srv.OnWSConnect = func(conn *websocket.Conn) {
+	srv.SetOnWSConnect(func(conn *websocket.Conn) {
 		go func() {
 			if tcpConn, ok := conn.NetConn().(*net.TCPConn); ok {
 				// setting linger to 0 to prevent os from doing graceful close
@@ -37,7 +37,7 @@ func TestWSSenderWriteWSMessageFailure_BrokenPipe(t *testing.T) {
 			// we can be sure that connection is killed
 			connCloseCh <- conn.NetConn().Close()
 		}()
-	}
+	})
 
 	conn, _, err := websocket.DefaultDialer.DialContext(
 		context.Background(),

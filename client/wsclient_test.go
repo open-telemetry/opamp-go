@@ -44,12 +44,12 @@ func TestWSSenderReportsHeartbeat(t *testing.T) {
 
 		var firstMsg atomic.Bool
 		var conn atomic.Value
-		srv.OnWSConnect = func(c *websocket.Conn) {
+		srv.SetOnWSConnect(func(c *websocket.Conn) {
 			conn.Store(c)
 			firstMsg.Store(true)
-		}
+		})
 		var msgCount atomic.Int64
-		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+		srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			if firstMsg.Load() {
 				firstMsg.Store(false)
 				resp := &protobufs.ServerToAgent{
@@ -67,7 +67,7 @@ func TestWSSenderReportsHeartbeat(t *testing.T) {
 			}
 			msgCount.Add(1)
 			return nil
-		}
+		})
 
 		// Start an OpAMP/WebSocket client.
 		settings := types.StartSettings{
@@ -113,14 +113,14 @@ func TestWSClientStartWithHeartbeatInterval(t *testing.T) {
 			srv := internal.StartMockServer(t)
 
 			var conn atomic.Value
-			srv.OnWSConnect = func(c *websocket.Conn) {
+			srv.SetOnWSConnect(func(c *websocket.Conn) {
 				conn.Store(c)
-			}
+			})
 			var msgCount atomic.Int64
-			srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 				msgCount.Add(1)
 				return nil
-			}
+			})
 
 			// Start an OpAMP/WebSocket client.
 			heartbeat := 10 * time.Millisecond
@@ -159,9 +159,9 @@ func TestDisconnectWSByServer(t *testing.T) {
 	srv := internal.StartMockServer(t)
 
 	var conn atomic.Value
-	srv.OnWSConnect = func(c *websocket.Conn) {
+	srv.SetOnWSConnect(func(c *websocket.Conn) {
 		conn.Store(c)
-	}
+	})
 
 	// Start an OpAMP/WebSocket client.
 	var connected int64
@@ -416,9 +416,9 @@ func TestRedirectWS(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.Name, func(t *testing.T) {
 			var conn atomic.Value
-			redirectee.OnWSConnect = func(c *websocket.Conn) {
+			redirectee.SetOnWSConnect(func(c *websocket.Conn) {
 				conn.Store(c)
-			}
+			})
 
 			// Start an OpAMP/WebSocket client.
 			var connected int64
@@ -480,9 +480,9 @@ func TestRedirectWSFollowChain(t *testing.T) {
 	redirector := redirectServer("http://"+middleURL.Host, 302)
 
 	var conn atomic.Value
-	redirectee.OnWSConnect = func(c *websocket.Conn) {
+	redirectee.SetOnWSConnect(func(c *websocket.Conn) {
 		conn.Store(c)
-	}
+	})
 
 	// Start an OpAMP/WebSocket client.
 	var connected int64
@@ -535,10 +535,10 @@ func TestPerformsClosingHandshake(t *testing.T) {
 	closed := make(chan struct{})
 	acked := make(chan struct{})
 
-	srv.OnWSConnect = func(conn *websocket.Conn) {
+	srv.SetOnWSConnect(func(conn *websocket.Conn) {
 		wsConn = conn
 		connected <- struct{}{}
-	}
+	})
 
 	client := NewWebSocket(nil)
 	startClient(t, types.StartSettings{
@@ -596,10 +596,10 @@ func TestHandlesSlowCloseMessageFromServer(t *testing.T) {
 	connected := make(chan struct{})
 	closed := make(chan struct{})
 
-	srv.OnWSConnect = func(conn *websocket.Conn) {
+	srv.SetOnWSConnect(func(conn *websocket.Conn) {
 		wsConn = conn
 		connected <- struct{}{}
-	}
+	})
 
 	client := NewWebSocket(nil)
 	client.connShutdownTimeout = 100 * time.Millisecond
@@ -676,10 +676,10 @@ func TestHandlesNoCloseMessageFromServer(t *testing.T) {
 	connected := make(chan struct{})
 	closed := make(chan struct{})
 
-	srv.OnWSConnect = func(conn *websocket.Conn) {
+	srv.SetOnWSConnect(func(conn *websocket.Conn) {
 		wsConn = conn
 		connected <- struct{}{}
-	}
+	})
 
 	client := NewWebSocket(nil)
 	client.connShutdownTimeout = 100 * time.Millisecond
@@ -722,10 +722,10 @@ func TestHandlesConnectionError(t *testing.T) {
 	var wsConn *websocket.Conn
 	connected := make(chan struct{})
 
-	srv.OnWSConnect = func(conn *websocket.Conn) {
+	srv.SetOnWSConnect(func(conn *websocket.Conn) {
 		wsConn = conn
 		connected <- struct{}{}
-	}
+	})
 
 	client := NewWebSocket(nil)
 	startClient(t, types.StartSettings{
@@ -794,12 +794,12 @@ func TestWSSenderReportsAvailableComponents(t *testing.T) {
 			var firstMsg atomic.Bool
 			var conn atomic.Value
 			var availableComponentsMsgReceived atomic.Bool
-			srv.OnWSConnect = func(c *websocket.Conn) {
+			srv.SetOnWSConnect(func(c *websocket.Conn) {
 				conn.Store(c)
 				firstMsg.Store(true)
-			}
+			})
 			var msgCount atomic.Int64
-			srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 				if firstMsg.Load() {
 					msgCount.Add(1)
 					firstMsg.Store(false)
@@ -834,7 +834,7 @@ func TestWSSenderReportsAvailableComponents(t *testing.T) {
 				}
 
 				return nil
-			}
+			})
 
 			// Start an OpAMP/WebSocket client.
 			settings := types.StartSettings{
@@ -874,15 +874,15 @@ func TestReconnectDoesNotSendFirstMessage(t *testing.T) {
 		srv := internal.StartMockServer(t)
 
 		var serverConn atomic.Pointer[websocket.Conn]
-		srv.OnWSConnect = func(conn *websocket.Conn) {
+		srv.SetOnWSConnect(func(conn *websocket.Conn) {
 			serverConn.Store(conn)
-		}
+		})
 
 		firstMsgCh := make(chan *protobufs.AgentToServer, 1)
 		reconnectMsgCh := make(chan *protobufs.AgentToServer, 1)
 		var connectCount atomic.Int32
 
-		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+		srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			if connectCount.Load() == 1 {
 				select {
 				case firstMsgCh <- proto.Clone(msg).(*protobufs.AgentToServer):
@@ -895,7 +895,7 @@ func TestReconnectDoesNotSendFirstMessage(t *testing.T) {
 				}
 			}
 			return nil
-		}
+		})
 
 		client := NewWebSocket(nil)
 		reconnected := make(chan struct{}, 1)
@@ -958,15 +958,15 @@ func TestReconnectDoesNotSendFirstMessage(t *testing.T) {
 		srv := internal.StartMockServer(t)
 
 		var serverConn atomic.Pointer[websocket.Conn]
-		srv.OnWSConnect = func(conn *websocket.Conn) {
+		srv.SetOnWSConnect(func(conn *websocket.Conn) {
 			serverConn.Store(conn)
-		}
+		})
 
 		firstMsgCh := make(chan *protobufs.AgentToServer, 1)
 		reconnectMsgCh := make(chan *protobufs.AgentToServer, 1)
 		var connectCount atomic.Int32
 
-		srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+		srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 			if connectCount.Load() == 1 {
 				select {
 				case firstMsgCh <- proto.Clone(msg).(*protobufs.AgentToServer):
@@ -979,7 +979,7 @@ func TestReconnectDoesNotSendFirstMessage(t *testing.T) {
 				}
 			}
 			return nil
-		}
+		})
 
 		client := NewWebSocket(nil)
 		reconnected := make(chan struct{}, 1)
@@ -1150,10 +1150,10 @@ func TestWSClientUseHTTPProxy(t *testing.T) {
 	var serverConnected atomic.Bool
 	srv := internal.StartMockServer(t)
 	t.Cleanup(srv.Close)
-	srv.OnMessage = func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+	srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 		serverConnected.Store(true)
 		return nil
-	}
+	})
 	t.Logf("Server endpoint: %s", srv.Endpoint)
 
 	settings := types.StartSettings{

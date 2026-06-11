@@ -33,7 +33,7 @@ func newTestHTTPSender() *HTTPSender {
 func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
 	var connectionAttempts int64
 	srv := StartMockServer(t)
-	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
 		attempt := atomic.AddInt64(&connectionAttempts, 1)
 		// Return a Retry-After header with a value of 1 second for first attempt.
 		if attempt == 1 {
@@ -42,7 +42,7 @@ func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
 		} else {
 			w.WriteHeader(http.StatusOK)
 		}
-	}
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	url := "http://" + srv.Endpoint
 	sender := newTestHTTPSender()
@@ -219,7 +219,7 @@ func TestHTTPSenderRetryForFailedRequests(t *testing.T) {
 	var connectionAttempts int64
 
 	var buf []byte
-	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
 		attempt := atomic.AddInt64(&connectionAttempts, 1)
 		if attempt == 1 {
 			hj, ok := w.(http.Hijacker)
@@ -237,7 +237,7 @@ func TestHTTPSenderRetryForFailedRequests(t *testing.T) {
 			buf, _ = io.ReadAll(r.Body)
 			w.WriteHeader(http.StatusOK)
 		}
-	}
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	url := "http://" + address
 	sender := newTestHTTPSender()
@@ -555,9 +555,9 @@ func TestHTTPSenderSetProxy(t *testing.T) {
 
 		srv := StartTLSMockServer(t)
 		t.Cleanup(srv.Close)
-		srv.OnRequest = func(w http.ResponseWriter, _ *http.Request) {
+		srv.SetOnRequest(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
-		}
+		})
 
 		sender := newTestHTTPSender()
 		sender.client = proxyServer.Client()
@@ -627,7 +627,7 @@ func TestHTTPSenderClosesBody(t *testing.T) {
 			srv := StartMockServer(t)
 			t.Cleanup(srv.Close)
 
-			srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+			srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
 				attempt := atomic.AddInt64(&connectionAttempts, 1)
 				if tt.shouldRetry && attempt == 1 {
 					w.Header().Set("Retry-After", "0")
@@ -637,7 +637,7 @@ func TestHTTPSenderClosesBody(t *testing.T) {
 					w.WriteHeader(tt.eventualStatus)
 					w.Write([]byte("test"))
 				}
-			}
+			})
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -725,11 +725,11 @@ func TestHTTPSenderOpAMPInstanceUIDHeader(t *testing.T) {
 	require.NoError(t, err)
 
 	srv := StartMockServer(t)
-	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
 		// Verify that request header contains the correct OpAMP Instance UID
 		assert.EqualValues(t, r.Header.Get(headerOpAMPInstanceUID), uid.String())
 		w.WriteHeader(http.StatusOK)
-	}
+	})
 	url := "http://" + srv.Endpoint
 	sender := newTestHTTPSender()
 
