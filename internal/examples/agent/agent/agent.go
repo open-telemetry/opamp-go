@@ -60,9 +60,10 @@ type Agent struct {
 	client client.OpAMPClient
 	logger types.Logger
 
-	agentType    string
-	agentVersion string
-	instanceId   uuid.UUID
+	agentType       string
+	agentVersion    string
+	instanceId      uuid.UUID
+	extraAttributes map[string]string
 
 	agentConfig *config.AgentConfig
 
@@ -128,6 +129,13 @@ func WithAgentVersion(s string) Option {
 func WithInstanceID(id uuid.UUID) Option {
 	return func(agent *Agent) {
 		agent.instanceId = id
+	}
+}
+
+// WithExtraAttributes sets additional non-identifying attributes reported by the agent.
+func WithExtraAttributes(attrs map[string]string) Option {
+	return func(agent *Agent) {
+		agent.extraAttributes = attrs
 	}
 }
 
@@ -319,6 +327,29 @@ func (agent *Agent) createAgentIdentity() {
 				},
 			},
 		},
+	}
+	if len(agent.extraAttributes) > 0 {
+		keys := make([]string, 0, len(agent.extraAttributes))
+		for key := range agent.extraAttributes {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+
+		extraAttrs := make([]*protobufs.KeyValue, 0, len(keys))
+		for _, key := range keys {
+			extraAttrs = append(extraAttrs, &protobufs.KeyValue{
+				Key: key,
+				Value: &protobufs.AnyValue{
+					Value: &protobufs.AnyValue_StringValue{
+						StringValue: agent.extraAttributes[key],
+					},
+				},
+			})
+		}
+		agent.agentDescription.NonIdentifyingAttributes = append(
+			agent.agentDescription.NonIdentifyingAttributes,
+			extraAttrs...,
+		)
 	}
 }
 

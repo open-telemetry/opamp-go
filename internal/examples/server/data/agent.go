@@ -34,6 +34,8 @@ type Agent struct {
 	// Connection to the Agent.
 	conn types.Connection
 
+	configCalculators []ConfigCalculator
+
 	// mutex for the fields that follow it.
 	mux sync.RWMutex
 
@@ -69,7 +71,11 @@ func NewAgent(
 	instanceId InstanceId,
 	conn types.Connection,
 ) *Agent {
-	agent := &Agent{InstanceId: instanceId, InstanceIdStr: uuid.UUID(instanceId).String(), conn: conn}
+	agent := &Agent{
+		InstanceId:    instanceId,
+		InstanceIdStr: uuid.UUID(instanceId).String(),
+		conn:          conn,
+	}
 	tslConn, ok := conn.Connection().(*tls.Conn)
 	if ok {
 		// Client is using TLS connection.
@@ -83,6 +89,11 @@ func NewAgent(
 		}
 	}
 
+	return agent
+}
+
+func (agent *Agent) WithConfigCalculator(calculator ConfigCalculator) *Agent {
+	agent.configCalculators = append(agent.configCalculators, calculator)
 	return agent
 }
 
@@ -264,6 +275,26 @@ func (agent *Agent) hasCapability(capability protobufs.AgentCapabilities) bool {
 	return agent.Status.Capabilities&uint64(capability) != 0
 }
 
+func (agent *Agent) HasCapability(capability protobufs.AgentCapabilities) bool {
+	agent.mux.RLock()
+	defer agent.mux.RUnlock()
+
+	if agent.Status == nil {
+		return false
+	}
+	return agent.hasCapability(capability)
+}
+
+func (agent *Agent) AgentDescription() *protobufs.AgentDescription {
+	agent.mux.RLock()
+	defer agent.mux.RUnlock()
+
+	if agent.Status == nil || agent.Status.AgentDescription == nil {
+		return nil
+	}
+	return proto.Clone(agent.Status.AgentDescription).(*protobufs.AgentDescription)
+}
+
 func (agent *Agent) processStatusUpdate(
 	newStatus *protobufs.AgentToServer,
 	response *protobufs.ServerToAgent,
@@ -381,10 +412,15 @@ func (agent *Agent) calcRemoteConfig() bool {
 		},
 	}
 
+	configBody := agent.CustomInstanceConfig
+	for _, calculator := range agent.configCalculators {
+		configBody = calculator.Calculate(agent, configBody)
+	}
+
 	// Add the custom config for this particular Agent instance. Use empty
 	// string as the config file name.
 	cfg.Config.ConfigMap[""] = &protobufs.AgentConfigFile{
-		Body: []byte(agent.CustomInstanceConfig),
+		Body: []byte(configBody),
 	}
 
 	// Calculate the hash.
@@ -401,6 +437,19 @@ func (agent *Agent) calcRemoteConfig() bool {
 	agent.remoteConfig = &cfg
 
 	return configChanged
+}
+
+func (agent *Agent) RecalculateRemoteConfig() (*protobufs.AgentRemoteConfig, bool) {
+	agent.mux.Lock()
+	defer agent.mux.Unlock()
+
+	if agent.Status == nil || !agent.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig) {
+		return nil, false
+	}
+	if !agent.calcRemoteConfig() {
+		return nil, false
+	}
+	return proto.Clone(agent.remoteConfig).(*protobufs.AgentRemoteConfig), true
 }
 
 func isEqualRemoteConfig(c1, c2 *protobufs.AgentRemoteConfig) bool {
@@ -442,7 +491,7 @@ func isEqualConfigFile(f1, f2 *protobufs.AgentConfigFile) bool {
 	if f1 == nil || f2 == nil {
 		return false
 	}
-	return bytes.Compare(f1.Body, f2.Body) == 0 && f1.ContentType == f2.ContentType
+	return bytes.Equal(f1.Body, f2.Body) && f1.ContentType == f2.ContentType
 }
 
 func (agent *Agent) calcConnectionSettings(response *protobufs.ServerToAgent) {
@@ -515,7 +564,7 @@ func (agent *Agent) processConnectionSettingsRequest(
 		return
 	}
 
-	if csr.CheckSignature() != err {
+	if err := csr.CheckSignature(); err != nil {
 		agent.addErrorResponse("Certificate request signature check failed: "+err.Error(), response)
 		return
 	}

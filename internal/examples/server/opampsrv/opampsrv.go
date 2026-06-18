@@ -127,6 +127,7 @@ func (srv *Server) onMessage(ctx context.Context, conn types.Connection, msg *pr
 
 	// Process the status report and continue building the response.
 	agent.UpdateStatus(msg, response)
+	srv.agents.AgentsChanged(agent, response)
 
 	// Send the response back to the Agent.
 	srv.logger.Debugf(ctx, "ServerToAgent: InstanceUid=%x, %s", instanceId, formatServerToAgent(response))

@@ -26,8 +26,9 @@ func main() {
 
 	logger.Println("OpAMP Server starting...")
 
+	data.AllAgents = data.NewAgents(data.NewPrometheusShardingCalculator())
 	uisrv.Start(curDir)
-	opampSrv := opampsrv.NewServer(&data.AllAgents, emitMetrics)
+	opampSrv := opampsrv.NewServer(data.AllAgents, emitMetrics)
 	opampSrv.Start()
 
 	logger.Println("OpAMP Server running...")
