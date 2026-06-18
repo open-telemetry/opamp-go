@@ -288,10 +288,10 @@ func TestHTTPSenderRequestBodySizeLimit(t *testing.T) {
 	var calls atomic.Int64
 	srv := StartMockServer(t)
 	t.Cleanup(srv.Close)
-	srv.OnRequest = func(w http.ResponseWriter, _ *http.Request) {
+	srv.SetOnRequest(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		w.WriteHeader(http.StatusOK)
-	}
+	})
 
 	sender := setupTestSender(t, "http://"+srv.Endpoint)
 	sender.SetMaxMessageSize(1)
@@ -436,13 +436,13 @@ func TestHTTPSenderResponseBodySizeLimitFromServer(t *testing.T) {
 			var calls atomic.Int64
 			srv := StartMockServer(t)
 			t.Cleanup(srv.Close)
-			srv.OnRequest = func(w http.ResponseWriter, _ *http.Request) {
+			srv.SetOnRequest(func(w http.ResponseWriter, _ *http.Request) {
 				calls.Add(1)
 				w.WriteHeader(tc.status)
 				_, _ = w.Write([]byte("too large body"))
-			}
+			})
 
-			sender := NewHTTPSender(&sharedinternal.NopLogger{})
+			sender := newTestHTTPSender()
 			sender.SetMaxMessageSize(10)
 			sender.url = "http://" + srv.Endpoint
 			sender.callbacks.SetDefaults()
