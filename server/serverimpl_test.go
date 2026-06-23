@@ -89,6 +89,34 @@ func TestServerStartStopCloseNoLeakGoroutine(t *testing.T) {
 	srv.Stop(context.Background())
 }
 
+func TestServerSendsCloseFrameOnShutdown(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	startSettings := &StartSettings{}
+	srv := startServer(t, startSettings)
+
+	conn, _, err := dialClient(startSettings)
+	require.NoError(t, err)
+	require.NotNil(t, conn)
+	defer conn.Close()
+
+	// On shutdown the server should deliver a close frame, surfacing here as a
+	// *websocket.CloseError rather than an abrupt connection reset.
+	closeErrCh := make(chan error, 1)
+	go func() {
+		require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+		_, _, readErr := conn.ReadMessage()
+		closeErrCh <- readErr
+	}()
+
+	require.NoError(t, srv.Stop(context.Background()))
+
+	readErr := <-closeErrCh
+	var closeErr *websocket.CloseError
+	require.ErrorAs(t, readErr, &closeErr)
+	assert.Equal(t, websocket.CloseGoingAway, closeErr.Code)
+}
+
 func TestServerStartStopIdempotency(t *testing.T) {
 	endpoint := testhelpers.GetAvailableLocalAddress()
 	for i := 0; i < 10; i++ {

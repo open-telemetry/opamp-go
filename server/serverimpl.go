@@ -291,7 +291,10 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 
 	// Loop until fail to read from the WebSocket connection.
 	for {
-		msgContext := s.serverCtx
+		// Use the server context so callbacks and logs are cancelled on shutdown.
+		// reqContext is already cancelled once ServeHTTP returns, which for
+		// WebSocket connections happens before this loop starts.
+		msgContext := serverCtx
 		request := protobufs.AgentToServer{}
 
 		var mt int
@@ -301,7 +304,13 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 		// Wait for the message to be read or for the server to shut down.
 		select {
 		case <-serverCtx.Done():
-			s.logger.Debugf(msgContext, "Server is shutting down.: %v", s.serverCtx.Err())
+			s.logger.Debugf(msgContext, "Server is shutting down.: %v", serverCtx.Err())
+			// Tell the agent the server is going away instead of dropping the TCP connection.
+			if wsc, ok := agentConn.(*wsConnection); ok {
+				if err := wsc.SendClose(websocket.CloseGoingAway, "server shutting down"); err != nil {
+					s.logger.Debugf(msgContext, "Failed to send close frame on shutdown: %v", err)
+				}
+			}
 			return
 		case msg, ok := <-msgCh:
 			if !ok {
