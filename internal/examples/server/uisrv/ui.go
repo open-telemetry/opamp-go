@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"text/template"
+	"html/template"
 	"time"
 
 	"github.com/google/uuid"

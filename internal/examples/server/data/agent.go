@@ -154,7 +154,8 @@ func formatAnyValue(value *protobufs.AnyValue) string {
 	case *protobufs.AnyValue_BytesValue:
 		return fmt.Sprintf("%x", v.BytesValue)
 	default:
-		return value.String()
+		// nil oneof (unset value) - return empty string rather than the proto text representation.
+		return ""
 	}
 }
 
@@ -166,6 +167,18 @@ func valueOrPlaceholder(value string) string {
 	return value
 }
 
+// cloneProto safely clones a proto message, returning nil if the input is nil
+// (avoiding the nil type assertion panic that proto.Clone(nil).(*T) would cause).
+func cloneProto[T any, PT interface {
+	proto.Message
+	*T
+}](m PT) PT {
+	if m == nil {
+		return nil
+	}
+	return proto.Clone(m).(PT)
+}
+
 // CloneReadonly returns a copy of the Agent that is safe to read.
 // Functions that modify the Agent should not be called on the cloned copy.
 func (agent *Agent) CloneReadonly() *Agent {
@@ -174,10 +187,10 @@ func (agent *Agent) CloneReadonly() *Agent {
 	return &Agent{
 		InstanceId:                  agent.InstanceId,
 		InstanceIdStr:               uuid.UUID(agent.InstanceId).String(),
-		Status:                      proto.Clone(agent.Status).(*protobufs.AgentToServer),
+		Status:                      cloneProto[protobufs.AgentToServer](agent.Status),
 		EffectiveConfig:             agent.EffectiveConfig,
 		CustomInstanceConfig:        agent.CustomInstanceConfig,
-		remoteConfig:                proto.Clone(agent.remoteConfig).(*protobufs.AgentRemoteConfig),
+		remoteConfig:                cloneProto[protobufs.AgentRemoteConfig](agent.remoteConfig),
 		StartedAt:                   agent.StartedAt,
 		LastSeenAt:                  agent.LastSeenAt,
 		ClientCert:                  agent.ClientCert,
