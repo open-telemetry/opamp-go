@@ -43,6 +43,9 @@ type Agent struct {
 	// The time when the agent has started. Valid only if Status.Health.Up==true
 	StartedAt time.Time
 
+	// The time when the agent last reported status.
+	LastSeenAt time.Time
+
 	// Effective config reported by the Agent.
 	EffectiveConfig string
 
@@ -86,6 +89,83 @@ func NewAgent(
 	return agent
 }
 
+func (agent *Agent) ServiceName() string {
+	return valueOrPlaceholder(agent.displayAttribute("service.name"))
+}
+
+func (agent *Agent) ServiceVersion() string {
+	return valueOrPlaceholder(agent.displayAttribute("service.version"))
+}
+
+func (agent *Agent) HealthStatus() string {
+	if agent.Status == nil || agent.Status.Health == nil {
+		return "Unknown"
+	}
+
+	if agent.Status.Health.Healthy {
+		return "Up"
+	}
+
+	return "Down"
+}
+
+func (agent *Agent) LastSeen() string {
+	if agent.LastSeenAt.IsZero() {
+		return ""
+	}
+
+	return agent.LastSeenAt.Format(time.RFC3339)
+}
+
+func (agent *Agent) displayAttribute(key string) string {
+	if agent.Status == nil || agent.Status.AgentDescription == nil {
+		return ""
+	}
+
+	for _, attr := range agent.Status.AgentDescription.IdentifyingAttributes {
+		if attr.Key == key {
+			return formatAnyValue(attr.Value)
+		}
+	}
+
+	for _, attr := range agent.Status.AgentDescription.NonIdentifyingAttributes {
+		if attr.Key == key {
+			return formatAnyValue(attr.Value)
+		}
+	}
+
+	return ""
+}
+
+func formatAnyValue(value *protobufs.AnyValue) string {
+	if value == nil {
+		return ""
+	}
+
+	switch v := value.GetValue().(type) {
+	case *protobufs.AnyValue_StringValue:
+		return v.StringValue
+	case *protobufs.AnyValue_BoolValue:
+		return fmt.Sprint(v.BoolValue)
+	case *protobufs.AnyValue_IntValue:
+		return fmt.Sprint(v.IntValue)
+	case *protobufs.AnyValue_DoubleValue:
+		return fmt.Sprint(v.DoubleValue)
+	case *protobufs.AnyValue_BytesValue:
+		return fmt.Sprintf("%x", v.BytesValue)
+	default:
+		return value.String()
+	}
+}
+
+func valueOrPlaceholder(value string) string {
+	if value == "" {
+		return "Unknown"
+	}
+
+	return value
+}
+
 // CloneReadonly returns a copy of the Agent that is safe to read.
 // Functions that modify the Agent should not be called on the cloned copy.
 func (agent *Agent) CloneReadonly() *Agent {
@@ -99,6 +179,7 @@ func (agent *Agent) CloneReadonly() *Agent {
 		CustomInstanceConfig:        agent.CustomInstanceConfig,
 		remoteConfig:                proto.Clone(agent.remoteConfig).(*protobufs.AgentRemoteConfig),
 		StartedAt:                   agent.StartedAt,
+		LastSeenAt:                  agent.LastSeenAt,
 		ClientCert:                  agent.ClientCert,
 		ClientCertOfferError:        agent.ClientCertOfferError,
 		ClientCertSha256Fingerprint: agent.ClientCertSha256Fingerprint,
@@ -114,6 +195,7 @@ func (agent *Agent) UpdateStatus(
 	response *protobufs.ServerToAgent,
 ) {
 	agent.mux.Lock()
+	agent.LastSeenAt = time.Now().UTC()
 
 	agent.processStatusUpdate(statusMsg, response)
 

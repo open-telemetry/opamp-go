@@ -10,10 +10,18 @@
 
 <table width=100% border="1" style="border-collapse: collapse">
     <tr>
+        <th>Name</th>
+        <th>Version</th>
+        <th>Health</th>
+        <th>Last seen</th>
         <th>Instance ID</th>
     </tr>
 {{ range . }}
     <tr>
+        <td>{{ .ServiceName }}</td>
+        <td>{{ .ServiceVersion }}</td>
+        <td>{{ .HealthStatus }}</td>
+        <td>{{ .LastSeen }}</td>
         <td><a href="agent?instanceid={{ .InstanceIdStr }}">{{ .InstanceIdStr }}</a></td>
     </tr>
 {{ end }}
