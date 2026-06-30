@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"errors"
 	"sync"
 
@@ -40,11 +41,16 @@ type ClientSyncedState struct {
 	health                   *protobufs.ComponentHealth
 	remoteConfigStatus       *protobufs.RemoteConfigStatus
 	connectionSettingsStatus *protobufs.ConnectionSettingsStatus
-	packageStatuses          *protobufs.PackageStatuses
-	customCapabilities       *protobufs.CustomCapabilities
-	availableComponents      *protobufs.AvailableComponents
-	flags                    protobufs.AgentToServerFlags
-	agentCapabilities        protobufs.AgentCapabilities
+	// lastConnectionSettingsHash is the hash of the last ConnectionSettingsOffers
+	// the client processed. Tracked independently of connectionSettingsStatus so
+	// that hash-based skip logic works even when the ReportsConnectionSettingsStatus
+	// capability is not set.
+	lastConnectionSettingsHash []byte
+	packageStatuses            *protobufs.PackageStatuses
+	customCapabilities         *protobufs.CustomCapabilities
+	availableComponents        *protobufs.AvailableComponents
+	flags                      protobufs.AgentToServerFlags
+	agentCapabilities          protobufs.AgentCapabilities
 }
 
 func (s *ClientSyncedState) AgentDescription() *protobufs.AgentDescription {
@@ -69,6 +75,22 @@ func (s *ClientSyncedState) ConnectionSettingsStatus() *protobufs.ConnectionSett
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	return s.connectionSettingsStatus
+}
+
+// LastConnectionSettingsHash returns the hash of the last ConnectionSettingsOffers
+// the client processed, or nil if none has been processed yet.
+func (s *ClientSyncedState) LastConnectionSettingsHash() []byte {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	return s.lastConnectionSettingsHash
+}
+
+// SetLastConnectionSettingsHash records the hash of the most recently processed
+// ConnectionSettingsOffers.
+func (s *ClientSyncedState) SetLastConnectionSettingsHash(hash []byte) {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	s.lastConnectionSettingsHash = hash
 }
 
 func (s *ClientSyncedState) PackageStatuses() *protobufs.PackageStatuses {
@@ -246,4 +268,17 @@ func (s *ClientSyncedState) SetCapabilities(capabilities *protobufs.AgentCapabil
 	s.agentCapabilities = *capabilities
 
 	return nil
+}
+
+// updateStoredConnectionSettingsStatus returns true if status should replace oldStatus.
+// It's true if:
+// - no oldStatus
+// - hash changes
+// - status changes from APPLYING or UNSET
+// - status changes to FAILED
+func updateStoredConnectionSettingsStatus(oldStatus, status *protobufs.ConnectionSettingsStatus) bool {
+	return oldStatus == nil || !bytes.Equal(oldStatus.LastConnectionSettingsHash, status.LastConnectionSettingsHash) ||
+		oldStatus.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_APPLYING ||
+		oldStatus.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_UNSET ||
+		status.Status == protobufs.ConnectionSettingsStatuses_ConnectionSettingsStatuses_FAILED
 }

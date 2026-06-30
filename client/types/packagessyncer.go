@@ -77,7 +77,10 @@ type PackagesStateProvider interface {
 	// an error.
 	// Content hash must be updated if the data is updated without failure.
 	// The function must cancel and return an error if the context is cancelled.
-	UpdateContent(ctx context.Context, packageName string, data io.Reader, contentHash, signature []byte) error
+	// downloadURL is the URL the content was downloaded from. Implementations may
+	// inspect its path suffix (e.g. ".tar.gz", ".zip") to decide how to interpret or
+	// unpack the content.
+	UpdateContent(ctx context.Context, packageName, downloadURL string, data io.Reader, contentHash, signature []byte) error
 
 	// DeletePackage deletes the package from the Agent's local storage.
 	DeletePackage(packageName string) error

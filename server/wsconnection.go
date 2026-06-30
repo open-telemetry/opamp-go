@@ -21,12 +21,14 @@ type wsConnection struct {
 	connMutex sync.Mutex
 	wsConn    *websocket.Conn
 	closed    atomic.Bool
+
+	maxMessageSize int64
 }
 
 var _ types.Connection = (*wsConnection)(nil)
 
-func newWSConnection(wsConn *websocket.Conn) types.Connection {
-	return &wsConnection{wsConn: wsConn}
+func newWSConnection(wsConn *websocket.Conn, maxMessageSize int64) types.Connection {
+	return &wsConnection{wsConn: wsConn, maxMessageSize: maxMessageSize}
 }
 
 func (c *wsConnection) Connection() net.Conn {
@@ -37,7 +39,7 @@ func (c *wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent)
 	c.connMutex.Lock()
 	defer c.connMutex.Unlock()
 
-	return internal.WriteWSMessage(c.wsConn, message)
+	return internal.WriteWSMessage(c.wsConn, message, c.maxMessageSize)
 }
 
 func (c *wsConnection) Disconnect() error {

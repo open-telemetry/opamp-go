@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -196,6 +197,15 @@ func eventually(t *testing.T, f func() bool) {
 	assert.Eventually(t, f, 5*time.Second, 10*time.Millisecond)
 }
 
+func decompressGzip(data io.Reader) ([]byte, error) {
+	r, err := gzip.NewReader(data)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return io.ReadAll(r)
+}
+
 func TestServerStartAcceptConnection(t *testing.T) {
 	connectedCalled := int32(0)
 	connectionCloseCalled := int32(0)
@@ -273,7 +283,7 @@ func TestDisconnectClientWSConnection(t *testing.T) {
 	assert.True(t, atomic.LoadInt32(&connectionCloseCalled) == 0)
 
 	// Close connection from client side
-	clientConn := newWSConnection(conn)
+	clientConn := newWSConnection(conn, sharedinternal.DefaultMaxMessageSize)
 	err = clientConn.Disconnect()
 	assert.NoError(t, err)
 
@@ -472,6 +482,49 @@ func TestServerReceiveSendErrorMessage(t *testing.T) {
 	assert.NotNil(t, errInfo.err)
 }
 
+func TestServerWebSocketRequestMessageSizeLimit(t *testing.T) {
+	var onMessageCalled atomic.Bool
+	var onReadMessageErrorCalled atomic.Bool
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					onMessageCalled.Store(true)
+					return nil
+				},
+				OnReadMessageError: func(conn types.Connection, mt int, msgByte []byte, err error) {
+					onReadMessageErrorCalled.Store(true)
+				},
+			}}
+		},
+	}
+
+	settings := &StartSettings{Settings: Settings{
+		Callbacks:      callbacks,
+		MaxMessageSize: 1,
+	}}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	conn, _, err := dialClient(settings)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	sendMsg := protobufs.AgentToServer{
+		InstanceUid: testInstanceUid,
+	}
+	b, err := proto.Marshal(&sendMsg)
+	require.NoError(t, err)
+	require.NoError(t, conn.WriteMessage(websocket.BinaryMessage, b))
+
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, _, err = conn.ReadMessage()
+	require.Error(t, err)
+	assert.True(t, websocket.IsCloseError(err, websocket.CloseMessageTooBig), "expected close 1009, got %v", err)
+	assert.False(t, onMessageCalled.Load(), "oversized request must fail before OnMessage")
+	eventually(t, onReadMessageErrorCalled.Load)
+}
+
 func TestServerOnMessageResponseError(t *testing.T) {
 	var conn *websocket.Conn
 	var rcvMsg atomic.Value
@@ -528,6 +581,44 @@ func TestServerOnMessageResponseError(t *testing.T) {
 	// Wait until OnMessageResponseError is called and verify it was called.
 	eventually(t, func() bool { return onMessageResponseErrorCalled.Load() })
 	assert.True(t, onMessageResponseErrorCalled.Load())
+}
+
+func TestServerWebSocketResponseMessageSizeLimit(t *testing.T) {
+	var onMessageResponseErrorCalled atomic.Bool
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					return &protobufs.ServerToAgent{
+						RemoteConfig: &protobufs.AgentRemoteConfig{
+							Config: &protobufs.AgentConfigMap{
+								ConfigMap: map[string]*protobufs.AgentConfigFile{
+									"": {Body: []byte("too large")},
+								},
+							},
+						},
+					}
+				},
+				OnMessageResponseError: func(conn types.Connection, message *protobufs.ServerToAgent, err error) {
+					onMessageResponseErrorCalled.Store(true)
+				},
+			}}
+		},
+	}
+
+	settings := &StartSettings{Settings: Settings{
+		Callbacks:      callbacks,
+		MaxMessageSize: 1,
+	}}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	conn, _, err := dialClient(settings)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	require.NoError(t, conn.WriteMessage(websocket.BinaryMessage, nil))
+	eventually(t, onMessageResponseErrorCalled.Load)
 }
 
 func TestServerReceiveSendMessageWithCompression(t *testing.T) {
@@ -701,6 +792,84 @@ func TestServerReceiveSendMessagePlainHTTP(t *testing.T) {
 	assert.EqualValues(t, settings.CustomCapabilities, response.CustomCapabilities.Capabilities)
 
 	eventually(t, func() bool { return atomic.LoadInt32(&onCloseCalled) == 1 })
+}
+
+func TestServerPlainHTTPRequestBodySizeLimit(t *testing.T) {
+	var onMessageCalled atomic.Bool
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					onMessageCalled.Store(true)
+					return nil
+				},
+			}}
+		},
+	}
+
+	settings := &StartSettings{Settings: Settings{
+		Callbacks:      callbacks,
+		MaxMessageSize: 1,
+	}}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	sendMsg := protobufs.AgentToServer{
+		InstanceUid: testInstanceUid,
+	}
+	b, err := proto.Marshal(&sendMsg)
+	require.NoError(t, err)
+	b, err = srv.compressGzip(b)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("POST", "http://"+settings.ListenEndpoint+settings.ListenPath, bytes.NewReader(b))
+	require.NoError(t, err)
+	req.Header.Set(headerContentType, contentTypeProtobuf)
+	req.Header.Set(headerContentEncoding, contentEncodingGzip)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
+	assert.False(t, onMessageCalled.Load(), "oversized request must fail before OnMessage")
+}
+
+func TestServerPlainHTTPResponseBodySizeLimit(t *testing.T) {
+	var onMessageResponseErrorCalled atomic.Bool
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnMessage: func(ctx context.Context, conn types.Connection, message *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					return &protobufs.ServerToAgent{
+						RemoteConfig: &protobufs.AgentRemoteConfig{
+							Config: &protobufs.AgentConfigMap{
+								ConfigMap: map[string]*protobufs.AgentConfigFile{
+									"": {Body: []byte("too large")},
+								},
+							},
+						},
+					}
+				},
+				OnMessageResponseError: func(conn types.Connection, message *protobufs.ServerToAgent, err error) {
+					onMessageResponseErrorCalled.Store(true)
+				},
+			}}
+		},
+	}
+
+	settings := &StartSettings{Settings: Settings{
+		Callbacks:      callbacks,
+		MaxMessageSize: 1,
+	}}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	resp, err := http.Post("http://"+settings.ListenEndpoint+settings.ListenPath, contentTypeProtobuf, bytes.NewReader(nil))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	assert.True(t, onMessageResponseErrorCalled.Load(), "oversized response must be reported")
 }
 
 func TestServerAttachAcceptConnection(t *testing.T) {

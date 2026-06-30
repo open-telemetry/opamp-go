@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,18 +21,44 @@ import (
 type receivedMessageHandler func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent
 
 type MockServer struct {
-	t           *testing.T
-	Endpoint    string
-	OnRequest   func(w http.ResponseWriter, r *http.Request)
-	OnConnect   func(r *http.Request)
-	OnWSConnect func(conn *websocket.Conn)
-	OnMessage   func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent
-	srv         *httptest.Server
+	t        *testing.T
+	Endpoint string
+	srv      *httptest.Server
+
+	mu          sync.RWMutex
+	onRequest   func(w http.ResponseWriter, r *http.Request)
+	onConnect   func(r *http.Request)
+	onWSConnect func(conn *websocket.Conn)
+	onMessage   func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent
 
 	expectedHandlers  chan receivedMessageHandler
 	expectedComplete  chan struct{}
 	isExpectMode      bool
 	enableCompression bool
+}
+
+func (m *MockServer) SetOnRequest(f func(w http.ResponseWriter, r *http.Request)) {
+	m.mu.Lock()
+	m.onRequest = f
+	m.mu.Unlock()
+}
+
+func (m *MockServer) SetOnConnect(f func(r *http.Request)) {
+	m.mu.Lock()
+	m.onConnect = f
+	m.mu.Unlock()
+}
+
+func (m *MockServer) SetOnWSConnect(f func(conn *websocket.Conn)) {
+	m.mu.Lock()
+	m.onWSConnect = f
+	m.mu.Unlock()
+}
+
+func (m *MockServer) SetOnMessage(f func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent) {
+	m.mu.Lock()
+	m.onMessage = f
+	m.mu.Unlock()
 }
 
 func newMockServer(t *testing.T) (*MockServer, *http.ServeMux) {
@@ -44,13 +71,18 @@ func newMockServer(t *testing.T) (*MockServer, *http.ServeMux) {
 	m := http.NewServeMux()
 	m.HandleFunc(
 		"/", func(w http.ResponseWriter, r *http.Request) {
-			if srv.OnRequest != nil {
-				srv.OnRequest(w, r)
+			srv.mu.RLock()
+			onRequest := srv.onRequest
+			onConnect := srv.onConnect
+			srv.mu.RUnlock()
+
+			if onRequest != nil {
+				onRequest(w, r)
 				return
 			}
 
-			if srv.OnConnect != nil {
-				srv.OnConnect(r)
+			if onConnect != nil {
+				onConnect(r)
 			}
 
 			if r.Header.Get(headerContentType) == contentTypeProtobuf {
@@ -141,8 +173,11 @@ func (m *MockServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	if m.OnWSConnect != nil {
-		m.OnWSConnect(conn)
+	m.mu.RLock()
+	onWSConnect := m.onWSConnect
+	m.mu.RUnlock()
+	if onWSConnect != nil {
+		onWSConnect(conn)
 	}
 	for {
 		var messageType int
@@ -195,9 +230,13 @@ func (m *MockServer) handleReceivedBytes(msgBytes []byte, alwaysRespond bool) []
 		case <-t.C:
 			m.t.Error("Time out waiting for Expect() to handle the received message")
 		}
-	} else if m.OnMessage != nil {
-		// Not in expect mode, instead using OnMessage callback.
-		response = m.OnMessage(&request)
+	} else {
+		m.mu.RLock()
+		onMessage := m.onMessage
+		m.mu.RUnlock()
+		if onMessage != nil {
+			response = onMessage(&request)
+		}
 	}
 
 	if alwaysRespond && response == nil {

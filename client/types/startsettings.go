@@ -18,6 +18,10 @@ type StartSettings struct {
 	// Optional additional HTTP headers to send with all HTTP requests.
 	Header http.Header
 
+	// Optional HTTP client used by the plain HTTP transport for OpAMP requests.
+	// If nil, a default HTTP client will be used. WebSocket transport ignores this field.
+	Client *http.Client
+
 	// Optional function that can be used to modify the HTTP headers
 	// before each HTTP request.
 	// Can modify and return the argument or return the argument without modifying.
@@ -62,6 +66,14 @@ type StartSettings struct {
 	// the compression is only effectively enabled if the Server also supports compression.
 	// The data will be compressed in both directions.
 	EnableCompression bool
+
+	// MaxMessageSize is the maximum size in bytes of OpAMP transport messages
+	// that the client sends or receives. For HTTP this applies to the complete
+	// request or response body before compression and after decompression. For
+	// WebSocket this applies to the complete OpAMP WebSocket message, including
+	// header and data, before compression and after decompression.
+	// If zero, the default limit of 64 MiB is used. If negative, no limit is applied.
+	MaxMessageSize int64
 
 	// Optional HeartbeatInterval to configure the heartbeat interval for client.
 	// If nil, the default heartbeat interval (30s) will be used.

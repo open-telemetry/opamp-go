@@ -83,6 +83,7 @@ func New(logger types.Logger) *server {
 
 func (s *server) Attach(settings Settings) (HTTPHandlerFunc, ConnContext, error) {
 	s.settings = settings
+	s.settings.MaxMessageSize = internal.ResolveMaxMessageSize(settings.MaxMessageSize)
 	s.settings.Callbacks.SetDefaults()
 	s.wsUpgrader = websocket.Upgrader{
 		EnableCompression: settings.EnableCompression,
@@ -238,7 +239,10 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Conn, connectionCallbacks *serverTypes.ConnectionCallbacks) {
-	agentConn := newWSConnection(wsConn)
+	if s.settings.MaxMessageSize >= 0 {
+		wsConn.SetReadLimit(s.settings.MaxMessageSize)
+	}
+	agentConn := newWSConnection(wsConn, s.settings.MaxMessageSize)
 
 	defer func() {
 		// Close the connection when all is done.
@@ -326,28 +330,38 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 	}
 }
 
-func decompressGzip(data io.Reader) ([]byte, error) {
-	r, err := gzip.NewReader(data)
-	if err != nil {
-		return nil, err
+func readAllLimited(w http.ResponseWriter, r io.ReadCloser, limit int64, kind string) ([]byte, error) {
+	if limit < 0 {
+		return io.ReadAll(r)
 	}
-	defer r.Close()
-	return io.ReadAll(r)
-}
-
-func (s *server) readReqBody(req *http.Request) ([]byte, error) {
-	if req.Header.Get(headerContentEncoding) == contentEncodingGzip {
-		data, err := decompressGzip(req.Body)
-		if err != nil {
-			return nil, err
+	data, err := io.ReadAll(http.MaxBytesReader(w, r, limit))
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return nil, &internal.SizeLimitError{
+				Kind:  kind,
+				Limit: maxBytesErr.Limit,
+			}
 		}
-		return data, nil
-	}
-	data, err := io.ReadAll(req.Body)
-	if err != nil {
 		return nil, err
 	}
 	return data, nil
+}
+
+func (s *server) readReqBody(req *http.Request, w http.ResponseWriter) ([]byte, error) {
+	// Do not drain oversized requests after the limit is hit. net/http may drain
+	// a small unread tail for keep-alive after the handler returns; otherwise the
+	// connection is closed. Draining the entire body here would weaken
+	// MaxMessageSize as a server-side resource bound.
+	if req.Header.Get(headerContentEncoding) == contentEncodingGzip {
+		r, err := gzip.NewReader(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		defer r.Close()
+		return readAllLimited(w, r, s.settings.MaxMessageSize, "request body")
+	}
+	return readAllLimited(w, req.Body, s.settings.MaxMessageSize, "request body")
 }
 
 func (s *server) compressGzip(data []byte) ([]byte, error) {
@@ -368,10 +382,15 @@ func (s *server) compressGzip(data []byte) ([]byte, error) {
 }
 
 func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter, connectionCallbacks *serverTypes.ConnectionCallbacks) {
-	bodyBytes, err := s.readReqBody(req)
+	bodyBytes, err := s.readReqBody(req, w)
 	if err != nil {
 		s.logger.Debugf(req.Context(), "Cannot read HTTP body: %v", err)
-		w.WriteHeader(http.StatusBadRequest)
+		var sizeErr *internal.SizeLimitError
+		if errors.As(err, &sizeErr) {
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+		} else {
+			w.WriteHeader(http.StatusBadRequest)
+		}
 		return
 	}
 
@@ -418,6 +437,12 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	// Marshal the response.
 	bodyBytes, err = proto.Marshal(response)
 	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if err := internal.CheckSizeLimit(int64(len(bodyBytes)), s.settings.MaxMessageSize, "response body"); err != nil {
+		s.logger.Errorf(req.Context(), "Cannot send HTTP response: %v", err)
+		connectionCallbacks.OnMessageResponseError(agentConn, response, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}

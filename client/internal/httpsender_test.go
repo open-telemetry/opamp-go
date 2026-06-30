@@ -1,6 +1,8 @@
 package internal
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"io"
@@ -8,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -17,16 +20,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/open-telemetry/opamp-go/client/internal/utils"
 	"github.com/open-telemetry/opamp-go/client/types"
 	sharedinternal "github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/internal/testhelpers"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
+func newTestHTTPSender() *HTTPSender {
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender.SetHTTPClient(utils.NewHttpClient())
+	return sender
+}
+
 func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
 	var connectionAttempts int64
 	srv := StartMockServer(t)
-	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
 		attempt := atomic.AddInt64(&connectionAttempts, 1)
 		// Return a Retry-After header with a value of 1 second for first attempt.
 		if attempt == 1 {
@@ -35,10 +45,10 @@ func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
 		} else {
 			w.WriteHeader(http.StatusOK)
 		}
-	}
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	url := "http://" + srv.Endpoint
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender := newTestHTTPSender()
 	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
 		msg.AgentDescription = &protobufs.AgentDescription{
 			IdentifyingAttributes: []*protobufs.KeyValue{{
@@ -69,17 +79,17 @@ func TestHTTPSenderRetryForStatusUnauthorized(t *testing.T) {
 	var connectionAttempts int64
 	var onConnectFailedCount int64
 	srv := StartMockServer(t)
-	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
 		attempt := atomic.AddInt64(&connectionAttempts, 1)
 		if attempt <= 2 {
 			w.WriteHeader(http.StatusUnauthorized)
 		} else {
 			w.WriteHeader(http.StatusOK)
 		}
-	}
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	url := "http://" + srv.Endpoint
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender := newTestHTTPSender()
 	sender.SetRetryStatusCodes([]int{
 		http.StatusTooManyRequests,
 		http.StatusServiceUnavailable,
@@ -116,14 +126,14 @@ func TestHTTPSenderRetryForStatusUnauthorized(t *testing.T) {
 func TestHTTPSenderUnauthorizedNotRetryableByDefault(t *testing.T) {
 	var connectionAttempts int64
 	srv := StartMockServer(t)
-	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&connectionAttempts, 1)
 		w.WriteHeader(http.StatusUnauthorized)
-	}
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	url := "http://" + srv.Endpoint
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender := newTestHTTPSender()
 	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
 		msg.AgentDescription = &protobufs.AgentDescription{
 			IdentifyingAttributes: []*protobufs.KeyValue{{
@@ -147,7 +157,7 @@ func TestHTTPSenderUnauthorizedNotRetryableByDefault(t *testing.T) {
 }
 
 func TestHTTPSenderSetHeartbeatInterval(t *testing.T) {
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender := newTestHTTPSender()
 
 	// Default interval should be 30s as per OpAMP Specification
 	assert.Equal(t, (30 * time.Second).Milliseconds(), sender.pollingIntervalMs.Load())
@@ -250,7 +260,7 @@ func TestAddTLSConfig(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			sender := NewHTTPSender(&sharedinternal.NopLogger{})
+			sender := newTestHTTPSender()
 			sender.client.Transport = tc.existingTransport
 
 			sender.AddTLSConfig(tc.tlsConfig)
@@ -293,7 +303,7 @@ func TestHTTPSenderRetryForFailedRequests(t *testing.T) {
 	var connectionAttempts int64
 
 	var buf []byte
-	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
 		attempt := atomic.AddInt64(&connectionAttempts, 1)
 		if attempt == 1 {
 			hj, ok := w.(http.Hijacker)
@@ -311,10 +321,10 @@ func TestHTTPSenderRetryForFailedRequests(t *testing.T) {
 			buf, _ = io.ReadAll(r.Body)
 			w.WriteHeader(http.StatusOK)
 		}
-	}
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	url := "http://" + address
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender := newTestHTTPSender()
 	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
 		msg.AgentDescription = &protobufs.AgentDescription{
 			IdentifyingAttributes: []*protobufs.KeyValue{{
@@ -355,10 +365,193 @@ func TestHTTPSenderRetryForFailedRequests(t *testing.T) {
 	srv.Close()
 }
 
+func TestHTTPSenderRequestBodySizeLimit(t *testing.T) {
+	var calls atomic.Int64
+	srv := StartMockServer(t)
+	t.Cleanup(srv.Close)
+	srv.SetOnRequest(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	sender := setupTestSender(t, "http://"+srv.Endpoint)
+	sender.SetMaxMessageSize(1)
+
+	resp, err := sender.sendRequestWithRetries(context.Background())
+	assert.Nil(t, resp)
+	assert.ErrorContains(t, err, "request body too large")
+	assert.Equal(t, int64(0), calls.Load(), "oversized request must fail before sending")
+}
+
+func TestHTTPSenderResponseBodySizeLimit(t *testing.T) {
+	tests := []struct {
+		name string
+		read func(*HTTPSender, *http.Response) error
+	}{
+		{
+			name: "read",
+			read: func(sender *HTTPSender, resp *http.Response) error {
+				_, err := sender.readResponseBody(resp)
+				return err
+			},
+		},
+		{
+			name: "discard",
+			read: func(sender *HTTPSender, resp *http.Response) error {
+				return sender.discardResponseBody(resp)
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sender := NewHTTPSender(&sharedinternal.NopLogger{})
+			sender.SetMaxMessageSize(1)
+			resp := &http.Response{
+				Header: http.Header{},
+				Body:   io.NopCloser(strings.NewReader("xx")),
+			}
+
+			err := tc.read(sender, resp)
+			assert.ErrorContains(t, err, "response body too large")
+		})
+	}
+}
+
+func TestHTTPSenderGzipResponseBody(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      io.ReadCloser
+		limit     int64
+		read      func(*HTTPSender, *http.Response) ([]byte, error)
+		want      []byte
+		assertErr assert.ErrorAssertionFunc
+	}{
+		{
+			name:  "read within limit",
+			body:  gzipBody(t, "ok"),
+			limit: 2,
+			read: func(sender *HTTPSender, resp *http.Response) ([]byte, error) {
+				return sender.readResponseBody(resp)
+			},
+			want:      []byte("ok"),
+			assertErr: assert.NoError,
+		},
+		{
+			name:  "read exceeds limit after decompression",
+			body:  gzipBody(t, "toolarge"),
+			limit: 2,
+			read: func(sender *HTTPSender, resp *http.Response) ([]byte, error) {
+				return sender.readResponseBody(resp)
+			},
+			assertErr: assert.Error,
+		},
+		{
+			name:  "discard within limit",
+			body:  gzipBody(t, "ok"),
+			limit: 2,
+			read: func(sender *HTTPSender, resp *http.Response) ([]byte, error) {
+				return nil, sender.discardResponseBody(resp)
+			},
+			assertErr: assert.NoError,
+		},
+		{
+			name:  "discard exceeds limit after decompression",
+			body:  gzipBody(t, "toolarge"),
+			limit: 2,
+			read: func(sender *HTTPSender, resp *http.Response) ([]byte, error) {
+				return nil, sender.discardResponseBody(resp)
+			},
+			assertErr: assert.Error,
+		},
+		{
+			name:  "read invalid gzip",
+			body:  io.NopCloser(strings.NewReader("not gzip")),
+			limit: 2,
+			read: func(sender *HTTPSender, resp *http.Response) ([]byte, error) {
+				return sender.readResponseBody(resp)
+			},
+			assertErr: assert.Error,
+		},
+		{
+			name:  "discard invalid gzip",
+			body:  io.NopCloser(strings.NewReader("not gzip")),
+			limit: 2,
+			read: func(sender *HTTPSender, resp *http.Response) ([]byte, error) {
+				return nil, sender.discardResponseBody(resp)
+			},
+			assertErr: assert.Error,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sender := NewHTTPSender(&sharedinternal.NopLogger{})
+			sender.SetMaxMessageSize(tc.limit)
+			resp := &http.Response{
+				Header: http.Header{headerContentEncoding: []string{encodingTypeGZip}},
+				Body:   tc.body,
+			}
+
+			got, err := tc.read(sender, resp)
+			tc.assertErr(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestHTTPSenderResponseBodySizeLimitFromServer(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+	}{
+		{
+			name:   "retryable response",
+			status: http.StatusServiceUnavailable,
+		},
+		{
+			name:   "non-retryable response",
+			status: http.StatusBadRequest,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int64
+			srv := StartMockServer(t)
+			t.Cleanup(srv.Close)
+			srv.SetOnRequest(func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte("too large body"))
+			})
+
+			sender := newTestHTTPSender()
+			sender.SetMaxMessageSize(10)
+			sender.url = "http://" + srv.Endpoint
+			sender.callbacks.SetDefaults()
+			sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+				msg.SequenceNum = 1
+			})
+
+			resp, err := sender.sendRequestWithRetries(context.Background())
+			assert.Nil(t, resp)
+			assert.ErrorContains(t, err, "response body too large")
+			assert.Equal(t, int64(1), calls.Load(), "oversized response body must not be retried")
+		})
+	}
+}
+
+func gzipBody(t *testing.T, body string) io.ReadCloser {
+	var buf bytes.Buffer
+	w := gzip.NewWriter(&buf)
+	_, err := w.Write([]byte(body))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	return io.NopCloser(bytes.NewReader(buf.Bytes()))
+}
+
 func TestRequestInstanceUidFlagReset(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender := newTestHTTPSender()
 	sender.callbacks = types.Callbacks{}
 	sender.callbacks.SetDefaults()
 
@@ -396,7 +589,7 @@ func TestRequestInstanceUidFlagReset(t *testing.T) {
 func TestPackageUpdatesInParallel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	localPackageState := NewInMemPackagesStore()
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender := newTestHTTPSender()
 	blockSyncCh := make(chan struct{})
 	doneCh := make([]<-chan struct{}, 0)
 
@@ -480,7 +673,7 @@ func TestPackageUpdatesInParallel(t *testing.T) {
 
 func TestPackageUpdatesWithError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender := newTestHTTPSender()
 
 	// We'll pass in a nil PackageStateProvider to force the Sync call to return with an error.
 	localPackageState := types.PackagesStateProvider(nil)
@@ -550,7 +743,7 @@ func TestHTTPSenderSetProxy(t *testing.T) {
 	}}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			sender := NewHTTPSender(&sharedinternal.NopLogger{})
+			sender := newTestHTTPSender()
 			err := sender.SetProxy(tc.url, nil)
 			if tc.err != nil {
 				assert.ErrorAs(t, err, &tc.err)
@@ -629,11 +822,11 @@ func TestHTTPSenderSetProxy(t *testing.T) {
 
 		srv := StartTLSMockServer(t)
 		t.Cleanup(srv.Close)
-		srv.OnRequest = func(w http.ResponseWriter, _ *http.Request) {
+		srv.SetOnRequest(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
-		}
+		})
 
-		sender := NewHTTPSender(&sharedinternal.NopLogger{})
+		sender := newTestHTTPSender()
 		sender.client = proxyServer.Client()
 		err := sender.SetProxy(proxyServer.URL, http.Header{"test-header": []string{"test-value"}})
 		assert.NoError(t, err)
@@ -701,7 +894,7 @@ func TestHTTPSenderClosesBody(t *testing.T) {
 			srv := StartMockServer(t)
 			t.Cleanup(srv.Close)
 
-			srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+			srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
 				attempt := atomic.AddInt64(&connectionAttempts, 1)
 				if tt.shouldRetry && attempt == 1 {
 					w.Header().Set("Retry-After", "0")
@@ -711,7 +904,7 @@ func TestHTTPSenderClosesBody(t *testing.T) {
 					w.WriteHeader(tt.eventualStatus)
 					w.Write([]byte("test"))
 				}
-			}
+			})
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -777,7 +970,7 @@ func (b *closeTrackingBodyWrapper) Close() error {
 
 // setupTestSender creates a test HTTPSender with a standard message.
 func setupTestSender(_ *testing.T, url string) *HTTPSender {
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender := newTestHTTPSender()
 	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
 		msg.AgentDescription = &protobufs.AgentDescription{
 			IdentifyingAttributes: []*protobufs.KeyValue{{
@@ -799,13 +992,13 @@ func TestHTTPSenderOpAMPInstanceUIDHeader(t *testing.T) {
 	require.NoError(t, err)
 
 	srv := StartMockServer(t)
-	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
 		// Verify that request header contains the correct OpAMP Instance UID
 		assert.EqualValues(t, r.Header.Get(headerOpAMPInstanceUID), uid.String())
 		w.WriteHeader(http.StatusOK)
-	}
+	})
 	url := "http://" + srv.Endpoint
-	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender := newTestHTTPSender()
 
 	// Make sure requests contain the Instance UID. Header value will be populated
 	// from the msg.InstanceUid field.

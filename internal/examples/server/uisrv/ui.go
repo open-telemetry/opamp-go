@@ -196,7 +196,7 @@ func rotateInstanceClientCert(w http.ResponseWriter, r *http.Request) {
 	// Send the offer to the agent.
 	data.AllAgents.OfferAgentConnectionSettings(instanceId, offers)
 
-	logger.Printf("Waiting for agent %s to reconnect\n", instanceId)
+	logger.Printf("Waiting for agent %x to reconnect\n", instanceId)
 
 	// Wait for up to 5 seconds for a Status update, which is expected
 	// to be reported by the agent after we set the remote config.
@@ -206,7 +206,7 @@ func rotateInstanceClientCert(w http.ResponseWriter, r *http.Request) {
 
 	select {
 	case <-timer.C:
-		logger.Printf("Time out waiting for agent %s to reconnect\n", instanceId)
+		logger.Printf("Time out waiting for agent %x to reconnect\n", instanceId)
 	}
 
 	http.Redirect(w, r, "/agent?instanceid="+uid.String(), http.StatusSeeOther)
@@ -274,7 +274,7 @@ func opampConnectionSettings(w http.ResponseWriter, r *http.Request) {
 
 	data.AllAgents.OfferAgentConnectionSettings(instanceId, offers)
 
-	logger.Printf("Waiting for agent %s to reconnect\n", instanceId)
+	logger.Printf("Waiting for agent %x to reconnect\n", instanceId)
 
 	// Wait for up to 5 seconds for a Status update, which is expected
 	// to be reported by the agent after we set the remote config.
@@ -284,7 +284,7 @@ func opampConnectionSettings(w http.ResponseWriter, r *http.Request) {
 
 	select {
 	case <-timer.C:
-		logger.Printf("Time out waiting for agent %s to reconnect\n", instanceId)
+		logger.Printf("Time out waiting for agent %x to reconnect\n", instanceId)
 	}
 
 	http.Redirect(w, r, "/agent?instanceid="+uid.String(), http.StatusSeeOther)

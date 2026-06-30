@@ -68,7 +68,7 @@ func (l *InMemPackagesStore) FileContentHash(packageName string) ([]byte, error)
 	return l.fileHashes[packageName], nil
 }
 
-func (l *InMemPackagesStore) UpdateContent(_ context.Context, packageName string, data io.Reader, contentHash, signature []byte) error {
+func (l *InMemPackagesStore) UpdateContent(_ context.Context, packageName, _ string, data io.Reader, contentHash, signature []byte) error {
 	b, err := io.ReadAll(data)
 	if err != nil {
 		return err

@@ -26,7 +26,7 @@ func TestWSSenderWriteWSMessageFailure_BrokenPipe(t *testing.T) {
 	// after a short delay so the client's send will hit the closed connection
 	// and fail with connection reset.
 	connCloseCh := make(chan error)
-	srv.OnWSConnect = func(conn *websocket.Conn) {
+	srv.SetOnWSConnect(func(conn *websocket.Conn) {
 		go func() {
 			if tcpConn, ok := conn.NetConn().(*net.TCPConn); ok {
 				// setting linger to 0 to prevent os from doing graceful close
@@ -37,7 +37,7 @@ func TestWSSenderWriteWSMessageFailure_BrokenPipe(t *testing.T) {
 			// we can be sure that connection is killed
 			connCloseCh <- conn.NetConn().Close()
 		}()
-	}
+	})
 
 	conn, _, err := websocket.DefaultDialer.DialContext(
 		context.Background(),
@@ -219,4 +219,15 @@ func TestWSSenderSetHeartbeatInterval(t *testing.T) {
 	var expected int64 = 10000
 	assert.NoError(t, sender.SetHeartbeatInterval(time.Duration(expected)*time.Millisecond))
 	assert.Equal(t, expected, sender.heartbeatIntervalMs.Load())
+}
+
+func TestWSSenderMessageSizeLimit(t *testing.T) {
+	sender := NewSender(&sharedinternal.NopLogger{})
+	sender.SetMaxMessageSize(1)
+
+	err := sender.sendMessage(context.Background(), &protobufs.AgentToServer{
+		InstanceUid: []byte("test-instance-uid-16b"),
+	})
+
+	assert.ErrorContains(t, err, "websocket message too large")
 }

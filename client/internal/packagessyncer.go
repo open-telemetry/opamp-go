@@ -231,6 +231,7 @@ func (s *packagesSyncer) syncPackage(
 		pkgLocal.Version = pkgAvail.Version
 		if err := s.localState.SetPackageState(pkgName, pkgLocal); err == nil {
 			status.Status = protobufs.PackageStatusEnum_PackageStatusEnum_Installed
+			status.ErrorMessage = ""
 			status.AgentHasHash = pkgAvail.Hash
 			status.AgentHasVersion = pkgAvail.Version
 		}
@@ -285,6 +286,7 @@ func (s *packagesSyncer) shouldDownloadFile(ctx context.Context,
 func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file *protobufs.DownloadableFile) error {
 	status := s.statuses.Packages[pkgName]
 	status.Status = protobufs.PackageStatusEnum_PackageStatusEnum_Downloading
+	status.ErrorMessage = ""
 	_ = s.reportStatuses(ctx, true)
 
 	s.logger.Debugf(ctx, "Downloading package %s file from %s", pkgName, file.DownloadUrl)
@@ -329,7 +331,7 @@ func (s *packagesSyncer) downloadFile(ctx context.Context, pkgName string, file 
 	defer detailsReporter.stop()
 
 	tr := io.TeeReader(resp.Body, detailsReporter)
-	err = s.localState.UpdateContent(ctx, pkgName, tr, file.ContentHash, file.Signature)
+	err = s.localState.UpdateContent(ctx, pkgName, file.GetDownloadUrl(), tr, file.ContentHash, file.Signature)
 	if err != nil {
 		return fmt.Errorf("failed to install/update the package %s downloaded from %s: %v", pkgName, file.DownloadUrl, err)
 	}
