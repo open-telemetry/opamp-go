@@ -80,6 +80,11 @@ func TestHTTPSenderRetryForStatusUnauthorized(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	url := "http://" + srv.Endpoint
 	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender.SetRetryStatusCodes([]int{
+		http.StatusTooManyRequests,
+		http.StatusServiceUnavailable,
+		http.StatusUnauthorized,
+	})
 	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
 		msg.AgentDescription = &protobufs.AgentDescription{
 			IdentifyingAttributes: []*protobufs.KeyValue{{
@@ -105,6 +110,39 @@ func TestHTTPSenderRetryForStatusUnauthorized(t *testing.T) {
 	assert.GreaterOrEqual(t, atomic.LoadInt64(&connectionAttempts), int64(3))
 	assert.GreaterOrEqual(t, atomic.LoadInt64(&onConnectFailedCount), int64(2))
 	cancel()
+	srv.Close()
+}
+
+func TestHTTPSenderUnauthorizedNotRetryableByDefault(t *testing.T) {
+	var connectionAttempts int64
+	srv := StartMockServer(t)
+	srv.OnRequest = func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&connectionAttempts, 1)
+		w.WriteHeader(http.StatusUnauthorized)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	url := "http://" + srv.Endpoint
+	sender := NewHTTPSender(&sharedinternal.NopLogger{})
+	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.AgentDescription = &protobufs.AgentDescription{
+			IdentifyingAttributes: []*protobufs.KeyValue{{
+				Key: "service.name",
+				Value: &protobufs.AnyValue{
+					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
+				},
+			}},
+		}
+	})
+	sender.callbacks = types.Callbacks{
+		OnConnect:       func(ctx context.Context) {},
+		OnConnectFailed: func(ctx context.Context, _ error) {},
+	}
+	sender.url = url
+	resp, err := sender.sendRequestWithRetries(ctx)
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	assert.Equal(t, int64(1), atomic.LoadInt64(&connectionAttempts))
 	srv.Close()
 }
 

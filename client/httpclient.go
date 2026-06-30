@@ -48,6 +48,8 @@ func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) er
 	// Prepare Server connection settings.
 	c.sender.SetRequestHeader(settings.Header, settings.HeaderFunc)
 
+	c.sender.SetRetryStatusCodes(settings.RetryStatusCodes)
+
 	// Add TLS configuration into httpClient
 	c.sender.AddTLSConfig(settings.TLSConfig)
 

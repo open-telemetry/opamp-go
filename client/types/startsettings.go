@@ -77,4 +77,19 @@ type StartSettings struct {
 	// If nil, the default reporter interval (10s) will be used.
 	// If specified a minimum value of 1s will be enforced.
 	DownloadReporterInterval *time.Duration
+
+	// RetryStatusCodes overrides the set of HTTP response status codes that the
+	// plain-HTTP transport treats as retryable. When a response carries one of these
+	// codes the client retries the request with exponential backoff (honoring any
+	// Retry-After header) and invokes OnConnectFailed for each failed attempt.
+	//
+	// If nil, the library default of []int{http.StatusTooManyRequests,
+	// http.StatusServiceUnavailable} is used. A non-nil value (including an empty
+	// slice) fully replaces the default, so callers that want to keep 429/503
+	// retryable while adding additional codes must include them explicitly, e.g.
+	// []int{http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusUnauthorized}.
+	//
+	// Only applies to the plain-HTTP transport; the WebSocket transport ignores
+	// this field.
+	RetryStatusCodes []int
 }
