@@ -70,14 +70,24 @@ type HTTPSender struct {
 
 	// Processor to handle received messages.
 	receiveProcessor receivedProcessor
+
+	// HTTP response status codes that trigger a retry with backoff.
+	retryStatusCodes []int
+}
+
+// defaultRetryStatusCodes returns the HTTP response status codes that the
+// plain-HTTP transport retries by default.
+func defaultRetryStatusCodes() []int {
+	return []int{http.StatusTooManyRequests, http.StatusServiceUnavailable}
 }
 
 // NewHTTPSender creates a new Sender that uses HTTP to send messages
 // with default settings.
 func NewHTTPSender(logger types.Logger) *HTTPSender {
 	h := &HTTPSender{
-		SenderCommon: NewSenderCommon(),
-		logger:       logger,
+		SenderCommon:     NewSenderCommon(),
+		logger:           logger,
+		retryStatusCodes: defaultRetryStatusCodes(),
 	}
 	h.pollingIntervalMs.Store(defaultPollingIntervalMs)
 	h.maxMessageSize = internal.DefaultMaxMessageSize
@@ -90,6 +100,18 @@ func NewHTTPSender(logger types.Logger) *HTTPSender {
 // It must be called before Run, SetProxy, or AddTLSConfig.
 func (h *HTTPSender) SetHTTPClient(client *http.Client) {
 	h.client = client
+}
+
+// SetRetryStatusCodes overrides the HTTP response status codes that trigger a
+// retry with backoff. A nil argument restores the library defaults; a non-nil
+// argument (including an empty slice) fully replaces them.
+// Not thread-safe with concurrent Run.
+func (h *HTTPSender) SetRetryStatusCodes(codes []int) {
+	if codes == nil {
+		h.retryStatusCodes = defaultRetryStatusCodes()
+		return
+	}
+	h.retryStatusCodes = codes
 }
 
 // SetProxy will force each request to use passed proxy and use the passed headers when making a CONNECT request to the proxy.
@@ -283,12 +305,12 @@ func (h *HTTPSender) attemptRequest(ctx context.Context, req *requestWrapper, cu
 	}
 
 	// Handle HTTP response status codes.
-	switch resp.StatusCode {
-	case http.StatusOK:
+	if resp.StatusCode == http.StatusOK {
 		h.callbacks.OnConnect(ctx)
 		return requestResult{resp: resp, err: nil, retry: false}
+	}
 
-	case http.StatusTooManyRequests, http.StatusServiceUnavailable:
+	if h.isRetryableStatus(resp.StatusCode) {
 		retryInterval := recalculateInterval(currentInterval, resp)
 		if err := h.discardResponseBody(resp); err != nil {
 			return requestResult{resp: nil, err: err, retry: false}
@@ -299,17 +321,25 @@ func (h *HTTPSender) attemptRequest(ctx context.Context, req *requestWrapper, cu
 			retry:    true,
 			interval: retryInterval,
 		}
+	}
 
-	default:
-		if err := h.discardResponseBody(resp); err != nil {
-			return requestResult{resp: nil, err: err, retry: false}
-		}
-		return requestResult{
-			resp:  nil,
-			err:   fmt.Errorf("invalid response from server: %d", resp.StatusCode),
-			retry: false,
+	if err := h.discardResponseBody(resp); err != nil {
+		return requestResult{resp: nil, err: err, retry: false}
+	}
+	return requestResult{
+		resp:  nil,
+		err:   fmt.Errorf("invalid response from server: %d", resp.StatusCode),
+		retry: false,
+	}
+}
+
+func (h *HTTPSender) isRetryableStatus(code int) bool {
+	for _, c := range h.retryStatusCodes {
+		if c == code {
+			return true
 		}
 	}
+	return false
 }
 
 func recalculateInterval(interval time.Duration, resp *http.Response) time.Duration {

@@ -75,6 +75,87 @@ func TestHTTPSenderRetryForStatusTooManyRequests(t *testing.T) {
 	srv.Close()
 }
 
+func TestHTTPSenderRetryForStatusUnauthorized(t *testing.T) {
+	var connectionAttempts int64
+	var onConnectFailedCount int64
+	srv := StartMockServer(t)
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
+		attempt := atomic.AddInt64(&connectionAttempts, 1)
+		if attempt <= 2 {
+			w.WriteHeader(http.StatusUnauthorized)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	url := "http://" + srv.Endpoint
+	sender := newTestHTTPSender()
+	sender.SetRetryStatusCodes([]int{
+		http.StatusTooManyRequests,
+		http.StatusServiceUnavailable,
+		http.StatusUnauthorized,
+	})
+	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.AgentDescription = &protobufs.AgentDescription{
+			IdentifyingAttributes: []*protobufs.KeyValue{{
+				Key: "service.name",
+				Value: &protobufs.AnyValue{
+					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
+				},
+			}},
+		}
+	})
+	sender.callbacks = types.Callbacks{
+		OnConnect: func(ctx context.Context) {
+		},
+		OnConnectFailed: func(ctx context.Context, _ error) {
+			atomic.AddInt64(&onConnectFailedCount, 1)
+		},
+	}
+	sender.url = url
+	resp, err := sender.sendRequestWithRetries(ctx)
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.GreaterOrEqual(t, atomic.LoadInt64(&connectionAttempts), int64(3))
+	assert.GreaterOrEqual(t, atomic.LoadInt64(&onConnectFailedCount), int64(2))
+	cancel()
+	srv.Close()
+}
+
+func TestHTTPSenderUnauthorizedNotRetryableByDefault(t *testing.T) {
+	var connectionAttempts int64
+	srv := StartMockServer(t)
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&connectionAttempts, 1)
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	url := "http://" + srv.Endpoint
+	sender := newTestHTTPSender()
+	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.AgentDescription = &protobufs.AgentDescription{
+			IdentifyingAttributes: []*protobufs.KeyValue{{
+				Key: "service.name",
+				Value: &protobufs.AnyValue{
+					Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
+				},
+			}},
+		}
+	})
+	sender.callbacks = types.Callbacks{
+		OnConnect:       func(ctx context.Context) {},
+		OnConnectFailed: func(ctx context.Context, _ error) {},
+	}
+	sender.url = url
+	resp, err := sender.sendRequestWithRetries(ctx)
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	assert.Equal(t, int64(1), atomic.LoadInt64(&connectionAttempts))
+	srv.Close()
+}
+
 func TestHTTPSenderSetHeartbeatInterval(t *testing.T) {
 	sender := newTestHTTPSender()
 
