@@ -362,7 +362,11 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 // When Stop() is called (ctx is cancelled, isStopping is set), wsClient will shutdown gracefully:
 //  1. sender will be cancelled by the ctx, send the close message to server and return the error via sender.Err().
 //  2. runOneCycle will handle that error and wait for the close message from server until timeout.
-func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
+//
+// Returns true if the cycle ended because of a payload trust verification
+// failure (wrong CA, bad signature, etc.). The caller should apply exponential
+// backoff before retrying in that case.
+func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) (attestationFailed bool) {
 	if err := c.ensureConnected(ctx); err != nil {
 		// Can't connect, so can't move forward. This currently happens when we
 		// are being stopped.
@@ -409,6 +413,9 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 		c.common.PackagesStateProvider,
 		&c.common.PackageSyncMutex,
 		c.common.DownloadReporterInterval,
+		c.common.PayloadVerifier,
+		c.url.String(),
+		c.common.PayloadTOFUStore,
 	)
 
 	// When the wsclient is closed, the context passed to runOneCycle will be canceled.
@@ -444,18 +451,48 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 
 		stopSender()
 		<-c.sender.IsStopped()
+		attestationFailed = r.WasAttestationFailure()
 	}
+	return
 }
 
 func (c *wsClient) runUntilStopped(ctx context.Context) {
 	// Iterates until we detect that the client is stopping.
 	sendFirstMessage := true
+
+	// Separate backoff for attestation failures. ensureConnected already
+	// backs off TCP-level failures within a single runOneCycle call, but
+	// when the transport connects and only the application-level
+	// attestation check fails the receiver stops, runOneCycle returns,
+	// and ensureConnected would immediately succeed again on the next
+	// call (TCP is fine). Without this outer backoff the client would
+	// spin in a tight reject-reconnect loop as fast as the network
+	// allows, which is contrary to the spec's SHOULD-exponential-backoff
+	// requirement for attestation failures.
+	attestBackoff := backoff.NewExponentialBackOff()
+	attestBackoff.MaxElapsedTime = 0 // retry forever
+
 	for {
 		if c.common.IsStopping() {
 			return
 		}
 
-		c.runOneCycle(ctx, sendFirstMessage)
+		if attestationFailed := c.runOneCycle(ctx, sendFirstMessage); attestationFailed {
+			interval := attestBackoff.NextBackOff()
+			c.common.Logger.Errorf(ctx, "Payload trust verification failed, will retry in %v.", interval)
+			timer := time.NewTimer(interval)
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			}
+		} else {
+			// Non-attestation cycle: reset so the next attestation
+			// failure starts backoff from the initial interval again.
+			attestBackoff.Reset()
+		}
+
 		sendFirstMessage = false
 	}
 }

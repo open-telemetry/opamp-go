@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/open-telemetry/opamp-go/server/types"
+	"github.com/open-telemetry/opamp-go/signing"
 )
 
 // Settings contains the settings for attaching an OpAMP Server.
@@ -35,6 +36,20 @@ type Settings struct {
 	// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#customcapabilities
 	// for more details.
 	CustomCapabilities []string
+
+	// PayloadSigner produces detached signatures over outbound
+	// ServerToAgent messages and supplies the certificate chain that
+	// authenticates the Server to the Agent. When non-nil and the
+	// connecting Agent declares
+	// AgentCapabilities_RequiresPayloadTrustVerification, every
+	// ServerToAgent the Server sends on that connection is wrapped in
+	// a SignedServerToAgent envelope per the Message Attestation
+	// section of the OpAMP specification. The
+	// ServerCapabilities_OffersPayloadTrustVerification bit is
+	// automatically set on outgoing capabilities when this field is
+	// non-nil. nil disables payload trust signing — wire-identical to
+	// upstream OpAMP.
+	PayloadSigner signing.Signer
 }
 
 // StartSettings contains the settings for starting an OpAMP Server.

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"github.com/open-telemetry/opamp-go/signing"
 )
 
 // StartSettings defines the parameters for starting the OpAMP Client.
@@ -56,6 +57,44 @@ type StartSettings struct {
 	// If nil then ReportsPackageStatuses and AcceptsPackages capabilities will be disabled,
 	// i.e. package status reporting and syncing from the Server will be disabled.
 	PackagesStateProvider PackagesStateProvider
+
+	// PayloadVerifier validates the X.509 trust chain delivered in the
+	// initial SignedServerToAgent.trust_chain_response of a connection
+	// and verifies the detached signature on every subsequent
+	// ServerToAgent message. MUST be set when the Agent's capability
+	// set includes
+	// AgentCapabilities_RequiresPayloadTrustVerification. When nil
+	// (the default), payload trust verification is disabled and the
+	// Server-to-Agent wire format is the standard ServerToAgent
+	// protobuf — identical to upstream OpAMP.
+	//
+	// See the signing package for the in-process LocalVerifier
+	// implementation and the VerifierFromFile helper that constructs
+	// one from a PEM-encoded CA bundle.
+	PayloadVerifier signing.Verifier
+
+	// PayloadTOFUStore enables Trust On First Use (TOFU) enrollment for the
+	// payload trust anchor. Mutually exclusive with PayloadVerifier: if
+	// PayloadVerifier is also set it takes precedence and PayloadTOFUStore
+	// is ignored.
+	//
+	// On startup the client calls PayloadTOFUStore.Load():
+	//   - If a trust anchor is returned, it is used as PayloadVerifier for
+	//     this session (normal attestation path).
+	//   - If no anchor is stored yet, the client advertises
+	//     AgentCapabilities_AcceptsPayloadTrustAnchorTOFU alongside
+	//     AgentCapabilities_RequiresPayloadTrustVerification, accepts the
+	//     root CA from the first TrustChainResponse.tofu_trust_anchor, and
+	//     persists it via PayloadTOFUStore.Save().
+	//
+	// WARNING: TOFU provides no security on the first connection; a
+	// compromised distribution server can install an attacker-controlled
+	// trust anchor. Disable by default and enable only for environments
+	// where the first connection is considered sufficiently trusted.
+	// Requires persistent storage across restarts — agents running in
+	// stateless container environments without a persistent volume will
+	// repeat TOFU enrollment on every restart.
+	PayloadTOFUStore signing.TOFUStore
 
 	// Defines the capabilities of the Agent. AgentCapabilities_ReportsStatus bit does not need to
 	// be set in this field, it will be set automatically since it is required by OpAMP protocol.

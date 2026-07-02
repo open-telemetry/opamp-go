@@ -21,6 +21,7 @@ import (
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"github.com/open-telemetry/opamp-go/signing"
 )
 
 const (
@@ -70,6 +71,12 @@ type HTTPSender struct {
 
 	// Processor to handle received messages.
 	receiveProcessor receivedProcessor
+
+	// attestation, when non-nil, decodes inbound responses as
+	// SignedServerToAgent envelopes — validates the trust chain on the
+	// first response and verifies the signature on every subsequent
+	// one. Set by Run when the StartSettings supplied a PayloadVerifier.
+	attestation *attestationState
 }
 
 // NewHTTPSender creates a new Sender that uses HTTP to send messages
@@ -90,6 +97,12 @@ func NewHTTPSender(logger types.Logger) *HTTPSender {
 // It must be called before Run, SetProxy, or AddTLSConfig.
 func (h *HTTPSender) SetHTTPClient(client *http.Client) {
 	h.client = client
+}
+
+// SetMaxMessageSize sets the maximum message size in bytes. Messages
+// larger than this limit are rejected before sending.
+func (h *HTTPSender) SetMaxMessageSize(maxMessageSize int64) {
+	h.maxMessageSize = internal.ResolveMaxMessageSize(maxMessageSize)
 }
 
 // SetProxy will force each request to use passed proxy and use the passed headers when making a CONNECT request to the proxy.
@@ -129,16 +142,25 @@ func (h *HTTPSender) SetProxy(proxy string, headers http.Header) error {
 // Run continues until ctx is cancelled.
 func (h *HTTPSender) Run(
 	ctx context.Context,
-	url string,
+	serverURL string,
 	callbacks types.Callbacks,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	packageSyncMutex *sync.Mutex,
 	reporterInterval time.Duration,
+	payloadVerifier signing.Verifier,
+	tofuStore signing.TOFUStore,
 ) {
-	h.url = url
+	h.url = serverURL
 	h.callbacks = callbacks
 	h.receiveProcessor = newReceivedProcessor(h.logger, callbacks, h, clientSyncedState, packagesStateProvider, packageSyncMutex, reporterInterval)
+	if payloadVerifier != nil || tofuStore != nil {
+		var serverName string
+		if parsed, err := url.Parse(h.url); err == nil {
+			serverName = parsed.Hostname()
+		}
+		h.attestation = newAttestationState(payloadVerifier, serverName, tofuStore)
+	}
 
 	// we need to detect if the redirect was ever set, if not, we want default behaviour
 	if callbacks.CheckRedirect != nil {
@@ -148,13 +170,36 @@ func (h *HTTPSender) Run(
 		}
 	}
 
+	// attestBackoff mirrors the pattern used by the WebSocket client's
+	// runUntilStopped: attestation failures at the application level
+	// are distinct from transport errors (the TCP connection is fine,
+	// the server just failed verification). Without a separate backoff
+	// the agent would retry at the full polling rate — up to 1 req/s
+	// for aggressive heartbeat intervals — against a potentially
+	// compromised server. Exponential backoff with no max elapsed time
+	// matches the WS client's behaviour.
+	attestBackoff := backoff.NewExponentialBackOff()
+	attestBackoff.MaxElapsedTime = 0
+
 	for {
 		pollingTimer := time.NewTimer(time.Millisecond * time.Duration(h.pollingIntervalMs.Load()))
 		select {
 		case <-h.hasPendingMessage:
 			// Have something to send. Stop the polling timer and send what we have.
 			pollingTimer.Stop()
-			h.makeOneRequestRoundtrip(ctx)
+			if attestationFailed := h.makeOneRequestRoundtrip(ctx); attestationFailed {
+				interval := attestBackoff.NextBackOff()
+				h.logger.Errorf(ctx, "Payload trust verification failed, will retry in %v.", interval)
+				timer := time.NewTimer(interval)
+				select {
+				case <-timer.C:
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				}
+			} else {
+				attestBackoff.Reset()
+			}
 
 		case <-pollingTimer.C:
 			// Polling interval has passed. Force a status update.
@@ -195,18 +240,19 @@ func (h *HTTPSender) SetRequestHeader(baseHeaders http.Header, headerFunc func(h
 
 // makeOneRequestRoundtrip sends a request and receives a response.
 // It will retry the request if the server responds with too many
-// requests or unavailable status.
-func (h *HTTPSender) makeOneRequestRoundtrip(ctx context.Context) {
+// requests or unavailable status. It returns true if the response
+// failed attestation verification so the caller can apply backoff.
+func (h *HTTPSender) makeOneRequestRoundtrip(ctx context.Context) bool {
 	resp, err := h.sendRequestWithRetries(ctx)
 	if err != nil {
 		h.logger.Errorf(ctx, "%v", err)
-		return
+		return false
 	}
 	if resp == nil {
 		// No request was sent and nothing to receive.
-		return
+		return false
 	}
-	h.receiveResponse(ctx, resp)
+	return h.receiveResponse(ctx, resp)
 }
 
 // requestResult represents the outcome of a single HTTP request attempt.
@@ -378,62 +424,75 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 	return &req, nil
 }
 
-func (h *HTTPSender) responseBodyReader(resp *http.Response) (io.Reader, func(), error) {
-	closeBody := func() {
-		_ = resp.Body.Close()
-	}
-	if resp.Header.Get(headerContentEncoding) != encodingTypeGZip {
-		return resp.Body, closeBody, nil
-	}
-
-	gzipReader, err := gzip.NewReader(resp.Body)
-	if err != nil {
-		closeBody()
-		return nil, func() {}, err
-	}
-	return gzipReader, func() {
-		_ = gzipReader.Close()
-		_ = resp.Body.Close()
-	}, nil
-}
-
-func (h *HTTPSender) readResponseBody(resp *http.Response) ([]byte, error) {
-	body, closeBody, err := h.responseBodyReader(resp)
-	if err != nil {
-		return nil, err
-	}
-	defer closeBody()
-
-	// Do not drain oversized responses after the limit is hit. Reading to EOF
-	// would preserve HTTP/1 keep-alive, but would also let a peer force
-	// unbounded network and decompression work after MaxMessageSize is exceeded.
-	return internal.ReadAllLimited(body, h.maxMessageSize, "response body")
-}
-
-func (h *HTTPSender) discardResponseBody(resp *http.Response) error {
-	body, closeBody, err := h.responseBodyReader(resp)
-	if err != nil {
-		return err
-	}
-	defer closeBody()
-
-	return internal.CopyDiscardLimited(body, h.maxMessageSize, "response body")
-}
-
-func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
+// receiveResponse decodes and processes a server response. It returns
+// true when the response failed payload trust verification so the
+// caller can apply attestation-specific backoff before retrying.
+func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) bool {
 	msgBytes, err := h.readResponseBody(resp)
 	if err != nil {
 		h.logger.Errorf(ctx, "cannot read response body: %v", err)
-		return
+		return false
 	}
 
 	var response protobufs.ServerToAgent
-	if err := proto.Unmarshal(msgBytes, &response); err != nil {
+	if err := unwrapServerToAgent(ctx, h.attestation, msgBytes, &response); err != nil {
+		// When payload trust verification is enabled, a failure here
+		// means the response cannot be trusted; the spec says the
+		// connection MUST be terminated. For HTTP polling the agent
+		// has no persistent connection to drop, so we skip processing
+		// this response and Reset the per-connection attestation
+		// state. The next poll will re-attempt the trust-chain
+		// handshake, allowing the Agent to recover from mid-stream
+		// faults such as server-side key rotation. Without the Reset,
+		// the cached firstSeen flag would keep us in the "verify
+		// signature" branch and the Agent could be stuck rejecting
+		// every subsequent response.
+		//
+		// Use the same sentinel string the WebSocket receive path
+		// emits ("Payload trust verification failed") so operators
+		// can grep for one canonical phrase across both transports.
+		if h.attestation != nil && isAttestationFailure(err) {
+			h.logger.Errorf(ctx, "Payload trust verification failed; resetting attestation state: %v", err)
+			h.attestation.Reset()
+			return true
+		}
 		h.logger.Errorf(ctx, "cannot unmarshal response: %v", err)
-		return
+		return false
 	}
 
 	h.receiveProcessor.ProcessReceivedMessage(ctx, &response)
+	return false
+}
+
+// readResponseBody reads the response body, decompressing gzip if indicated
+// by Content-Encoding, and enforces maxMessageSize.
+func (h *HTTPSender) readResponseBody(resp *http.Response) ([]byte, error) {
+	defer resp.Body.Close()
+	if resp.Header.Get(headerContentEncoding) == encodingTypeGZip {
+		gr, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		defer gr.Close()
+		return internal.ReadAllLimited(gr, h.maxMessageSize, "response body")
+	}
+	return internal.ReadAllLimited(resp.Body, h.maxMessageSize, "response body")
+}
+
+// discardResponseBody drains and closes the response body, decompressing
+// gzip if indicated by Content-Encoding and enforcing maxMessageSize. This
+// allows the underlying TCP connection to be reused for subsequent requests.
+func (h *HTTPSender) discardResponseBody(resp *http.Response) error {
+	defer resp.Body.Close()
+	if resp.Header.Get(headerContentEncoding) == encodingTypeGZip {
+		gr, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return err
+		}
+		defer gr.Close()
+		return internal.CopyDiscardLimited(gr, h.maxMessageSize, "response body")
+	}
+	return internal.CopyDiscardLimited(resp.Body, h.maxMessageSize, "response body")
 }
 
 func (h *HTTPSender) SetHeartbeatInterval(duration time.Duration) error {
@@ -458,10 +517,6 @@ func (h *HTTPSender) SetPollingInterval(duration time.Duration) {
 // Should not be called concurrently with Run.
 func (h *HTTPSender) EnableCompression() {
 	h.compressionEnabled = true
-}
-
-func (h *HTTPSender) SetMaxMessageSize(maxMessageSize int64) {
-	h.maxMessageSize = internal.ResolveMaxMessageSize(maxMessageSize)
 }
 
 func (h *HTTPSender) AddTLSConfig(config *tls.Config) {

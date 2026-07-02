@@ -11,6 +11,7 @@ import (
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"github.com/open-telemetry/opamp-go/signing"
 )
 
 var (
@@ -24,6 +25,9 @@ var (
 	ErrAcceptsPackagesNotSet                 = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 	ErrAvailableComponentsMissing            = errors.New("AvailableComponents is nil")
 	ErrReportsConnectionSettingsStatusNotSet = errors.New("ReportsConnectionSettingsStatus capability is not set")
+	ErrPayloadVerifierMissing                = errors.New("PayloadVerifier must be set when RequiresPayloadTrustVerification capability is enabled")
+	ErrPayloadVerifierWithoutCapability      = errors.New("PayloadVerifier set but RequiresPayloadTrustVerification capability is not enabled")
+	ErrTOFULoadFailed                        = errors.New("PayloadTOFUStore.Load failed at startup")
 
 	errAlreadyStarted                  = errors.New("already started")
 	errCannotStopNotStarted            = errors.New("cannot stop because not started")
@@ -45,6 +49,21 @@ type ClientCommon struct {
 
 	// PackageSyncMutex makes sure only one package syncing operation happens at a time.
 	PackageSyncMutex sync.Mutex
+
+	// PayloadVerifier validates the trust chain delivered in
+	// SignedServerToAgent.trust_chain_response on the first message of
+	// a connection, and verifies the per-message signature on every
+	// subsequent ServerToAgent. nil when the Agent has not opted in to
+	// payload trust verification (the standard OpAMP wire path stays
+	// active). MUST be non-nil when
+	// AgentCapabilities_RequiresPayloadTrustVerification is in the
+	// declared capability set.
+	PayloadVerifier signing.Verifier
+
+	// PayloadTOFUStore, when non-nil, backs TOFU enrollment. Set from
+	// StartSettings.PayloadTOFUStore. Nil after the trust anchor has been
+	// loaded from the store and promoted to PayloadVerifier.
+	PayloadTOFUStore signing.TOFUStore
 
 	// The transport-specific sender.
 	sender Sender
@@ -94,6 +113,13 @@ func (c *ClientCommon) validateCapabilities(capabilities protobufs.AgentCapabili
 			return ErrPackagesStateProviderNotSet
 		}
 	}
+	requiresAttestation := capabilities&protobufs.AgentCapabilities_AgentCapabilities_RequiresPayloadTrustVerification != 0
+	switch {
+	case requiresAttestation && c.PayloadVerifier == nil && c.PayloadTOFUStore == nil:
+		return ErrPayloadVerifierMissing
+	case !requiresAttestation && c.PayloadVerifier != nil:
+		return ErrPayloadVerifierWithoutCapability
+	}
 	return nil
 }
 
@@ -132,6 +158,27 @@ func (c *ClientCommon) PrepareStart(
 
 	// Prepare package statuses.
 	c.PackagesStateProvider = settings.PackagesStateProvider
+	// Wire up payload trust verification. PayloadVerifier takes precedence;
+	// if only PayloadTOFUStore is set, try to load a previously-persisted
+	// anchor. If found, promote it to PayloadVerifier (normal path). If
+	// not found, keep PayloadTOFUStore set so the transport-level code
+	// enters TOFU enrollment mode on connection.
+	c.PayloadVerifier = settings.PayloadVerifier
+	if c.PayloadVerifier == nil && settings.PayloadTOFUStore != nil {
+		anchorPEM, err := settings.PayloadTOFUStore.Load()
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrTOFULoadFailed, err)
+		}
+		if len(anchorPEM) > 0 {
+			v, err := signing.VerifierFromPEM(anchorPEM)
+			if err != nil {
+				return fmt.Errorf("%w: persisted anchor is invalid: %v", ErrTOFULoadFailed, err)
+			}
+			c.PayloadVerifier = v
+		} else {
+			c.PayloadTOFUStore = settings.PayloadTOFUStore
+		}
+	}
 	if err := c.validateCapabilities(c.ClientSyncedState.Capabilities()); err != nil {
 		return err
 	}
