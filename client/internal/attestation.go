@@ -36,6 +36,14 @@ var (
 	// spec this is a fatal handshake error.
 	ErrSANMismatch = errors.New("client: leaf certificate SAN does not match server hostname")
 
+	// ErrServerNameUnavailable is returned when payload trust
+	// verification is enabled but the Agent could not determine the
+	// server hostname to check the leaf certificate's SAN against (for
+	// example, the server URL was empty or unparseable). SAN
+	// verification is mandatory when attestation is on, so rather than
+	// silently skip it the handshake fails closed.
+	ErrServerNameUnavailable = errors.New("client: cannot verify leaf certificate SAN: server hostname unavailable")
+
 	// ErrTOFUAnchorMissing is returned during TOFU enrollment when the
 	// Server's TrustChainResponse does not include the expected
 	// tofu_trust_anchor field.
@@ -191,10 +199,15 @@ func (s *attestationState) ProcessEnvelope(ctx context.Context, envelope *protob
 		if err != nil {
 			return nil, fmt.Errorf("client: validate trust chain: %w", err)
 		}
-		if s.serverName != "" {
-			if err := leaf.VerifyHostname(s.serverName); err != nil {
-				return nil, fmt.Errorf("%w: %v", ErrSANMismatch, err)
-			}
+		// SAN verification is mandatory when attestation is enabled. An
+		// empty serverName means the server hostname could not be
+		// resolved from the connection URL; fail closed rather than
+		// silently accept any certificate.
+		if s.serverName == "" {
+			return nil, ErrServerNameUnavailable
+		}
+		if err := leaf.VerifyHostname(s.serverName); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrSANMismatch, err)
 		}
 		s.leaf = leaf
 		s.firstSeen = true

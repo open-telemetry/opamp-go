@@ -18,27 +18,25 @@ import (
 // below this size are rejected even if the rest of the chain validates.
 const rsaMinModulusBits = 2048
 
-// ErrUnsupportedAlgorithm indicates that a certificate's public key
-// (or the algorithm declared by the issuer's signature on the cert)
-// is not in the supported set: it is the wrong key type, an
-// unsupported ECDSA curve, an RSA key below rsaMinModulusBits, or the
-// declared SignatureAlgorithm does not match the leaf's actual key
-// type/curve.
+// ErrUnsupportedAlgorithm indicates that a certificate's public key is
+// not in the supported set: it is the wrong key type, an unsupported
+// ECDSA curve, or an RSA key below rsaMinModulusBits.
 var ErrUnsupportedAlgorithm = errors.New("signing: unsupported signature algorithm")
 
 // algorithmFromCert derives the Algorithm to use for signature
-// operations involving cert. Dispatching on the leaf's own public key
-// type (rather than on cert.SignatureAlgorithm, which describes the
-// issuer's signing of the cert itself) is the correct authority: the
-// Algorithm controls how a payload is signed/verified, and that has to
-// match the leaf key's algorithm and curve, not the issuer's.
+// operations involving cert, dispatching on the leaf's own public key
+// type and (for ECDSA) curve. This is the correct authority: the
+// Algorithm controls how a payload is signed/verified, so it must match
+// the leaf key's type and curve.
 //
-// The function additionally cross-checks cert.SignatureAlgorithm
-// against the leaf key so that a certificate whose declared algorithm
-// is inconsistent with its pubkey is rejected up front. This prevents
-// a within-family mismatch (e.g., a P-384 CA issuing a P-256 leaf with
-// SignatureAlgorithm=ECDSAWithSHA384) from silently accepting the
-// wrong hash size at sign/verify time.
+// cert.SignatureAlgorithm is deliberately NOT consulted. That field
+// describes the algorithm the issuer used to sign this certificate,
+// which is independent of the leaf key: a P-384 CA may legitimately
+// issue a P-256 leaf, in which case cert.SignatureAlgorithm is
+// ECDSAWithSHA384 even though the leaf signs payloads with P-256/SHA-256.
+// The payload algorithm is fully determined by the leaf key returned
+// here, so the issuer's signing algorithm is irrelevant and checking it
+// would only reject valid cross-algorithm PKI hierarchies.
 //
 // Minimum RSA modulus is rsaMinModulusBits.
 func algorithmFromCert(cert *x509.Certificate) (Algorithm, error) {
@@ -46,16 +44,8 @@ func algorithmFromCert(cert *x509.Certificate) (Algorithm, error) {
 	case *ecdsa.PublicKey:
 		switch pub.Curve {
 		case elliptic.P256():
-			if cert.SignatureAlgorithm != x509.ECDSAWithSHA256 {
-				return AlgorithmUnspecified, fmt.Errorf("%w: P-256 leaf with mismatched declared algorithm %s",
-					ErrUnsupportedAlgorithm, cert.SignatureAlgorithm)
-			}
 			return AlgorithmECDSAP256SHA256, nil
 		case elliptic.P384():
-			if cert.SignatureAlgorithm != x509.ECDSAWithSHA384 {
-				return AlgorithmUnspecified, fmt.Errorf("%w: P-384 leaf with mismatched declared algorithm %s",
-					ErrUnsupportedAlgorithm, cert.SignatureAlgorithm)
-			}
 			return AlgorithmECDSAP384SHA384, nil
 		default:
 			curveName := "unknown"
@@ -74,16 +64,8 @@ func algorithmFromCert(cert *x509.Certificate) (Algorithm, error) {
 			return AlgorithmUnspecified, fmt.Errorf("%w: RSA key %d bits < %d",
 				ErrUnsupportedAlgorithm, bits, rsaMinModulusBits)
 		}
-		if cert.SignatureAlgorithm != x509.SHA256WithRSA {
-			return AlgorithmUnspecified, fmt.Errorf("%w: RSA leaf with mismatched declared algorithm %s",
-				ErrUnsupportedAlgorithm, cert.SignatureAlgorithm)
-		}
 		return AlgorithmRSAPKCS1v15SHA256, nil
 	case ed25519.PublicKey:
-		if cert.SignatureAlgorithm != x509.PureEd25519 {
-			return AlgorithmUnspecified, fmt.Errorf("%w: Ed25519 leaf with mismatched declared algorithm %s",
-				ErrUnsupportedAlgorithm, cert.SignatureAlgorithm)
-		}
 		return AlgorithmEd25519, nil
 	default:
 		return AlgorithmUnspecified, fmt.Errorf("%w: unsupported public key type %T",

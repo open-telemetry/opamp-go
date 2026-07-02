@@ -68,7 +68,12 @@ func NewWSReceiver(
 	}
 	if payloadVerifier != nil || tofuStore != nil {
 		var serverName string
-		if parsed, err := url.Parse(serverURL); err == nil {
+		if parsed, err := url.Parse(serverURL); err != nil {
+			// Fail closed downstream: an empty serverName makes
+			// ProcessEnvelope reject the handshake with
+			// ErrServerNameUnavailable rather than skip SAN verification.
+			logger.Errorf(context.Background(), "Cannot parse server URL %q for SAN verification: %v", serverURL, err)
+		} else {
 			serverName = parsed.Hostname()
 		}
 		w.attestation = newAttestationState(payloadVerifier, serverName, tofuStore)

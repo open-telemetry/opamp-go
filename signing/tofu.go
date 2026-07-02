@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // TOFUStore persists the payload trust anchor acquired during a Trust On First
@@ -60,16 +61,53 @@ func (s *FileTOFUStore) Load() ([]byte, error) {
 }
 
 // Save writes pemBytes to the file only if the file does not already exist.
+//
+// The write is atomic: pemBytes is first written in full to a temporary
+// file in the same directory, then hard-linked into place with os.Link,
+// which fails if the target already exists. This preserves the write-once
+// (idempotent) contract while guaranteeing the anchor file is never left
+// in a partially-written state — a crash, disk-full, or short write during
+// the temp write leaves only the temp file (which is removed), never a
+// truncated or empty anchor that would permanently shadow future Saves.
 func (s *FileTOFUStore) Save(pemBytes []byte) error {
-	f, err := os.OpenFile(s.path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if errors.Is(err, os.ErrExist) {
+	// Fast path: anchor already present, nothing to do.
+	if _, err := os.Stat(s.path); err == nil {
 		return nil // idempotent: already stored
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("%w: %v", ErrTOFUStoreSave, err)
 	}
+
+	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".tofu-*.tmp")
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrTOFUStoreSave, err)
 	}
-	defer f.Close()
-	if _, err := f.Write(pemBytes); err != nil {
+	tmpName := tmp.Name()
+	// Remove the temp file on every path: on error, and after a successful
+	// link (the linked target keeps the content; the temp name is redundant).
+	defer os.Remove(tmpName)
+
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return fmt.Errorf("%w: %v", ErrTOFUStoreSave, err)
+	}
+	if _, err := tmp.Write(pemBytes); err != nil {
+		tmp.Close()
+		return fmt.Errorf("%w: %v", ErrTOFUStoreSave, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("%w: %v", ErrTOFUStoreSave, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("%w: %v", ErrTOFUStoreSave, err)
+	}
+
+	// os.Link fails with ErrExist if the anchor was created concurrently
+	// (or between the Stat above and here), preserving write-once semantics.
+	if err := os.Link(tmpName, s.path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil // idempotent: another writer won the race
+		}
 		return fmt.Errorf("%w: %v", ErrTOFUStoreSave, err)
 	}
 	return nil
