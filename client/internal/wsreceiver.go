@@ -35,6 +35,15 @@ type wsReceiver struct {
 	// of a payload trust verification failure. Safe to read only after
 	// <-IsStopped() returns.
 	attestationFailure bool
+
+	// Set to true (before stopped is closed) when the loop exits because
+	// of an abnormal connection close while attestation is enabled. A
+	// server that accepts the connection and then drops it without a
+	// normal-closure handshake is, in an attestation deployment, almost
+	// always failing to sign (e.g. its signing/policy backend is down);
+	// the caller uses this to back off instead of reconnecting in a tight
+	// loop. Safe to read only after <-IsStopped() returns.
+	connectionError bool
 }
 
 // NewWSReceiver creates a new Receiver that uses WebSocket to receive
@@ -98,6 +107,13 @@ func (r *wsReceiver) WasAttestationFailure() bool {
 	return r.attestationFailure
 }
 
+// WasConnectionError reports whether the receiver stopped because of an
+// abnormal connection close while attestation is enabled. Only valid after
+// <-IsStopped() returns.
+func (r *wsReceiver) WasConnectionError() bool {
+	return r.connectionError
+}
+
 // ReceiverLoop runs the receiver loop.
 // To stop the receiver cancel the context and close the websocket connection
 func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
@@ -150,6 +166,14 @@ func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 					}
 					if !websocket.IsCloseError(res.err, websocket.CloseNormalClosure) {
 						r.logger.Errorf(ctx, "Unexpected error while receiving: %v", res.err)
+						// When attestation is enabled, an abnormal close
+						// usually means the server terminated the connection
+						// because it could not attest (e.g. its signing/policy
+						// backend is unavailable). Signal the caller so it
+						// applies backoff instead of a tight reconnect loop.
+						if r.attestation != nil {
+							r.connectionError = true
+						}
 					}
 					return
 				}
