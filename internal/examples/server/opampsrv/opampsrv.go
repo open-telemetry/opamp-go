@@ -50,7 +50,7 @@ func NewServer(agents *data.Agents, emitMetrics bool) *Server {
 	return srv
 }
 
-func (srv *Server) Start() {
+func (srv *Server) Start(noTLS bool) {
 	settings := server.StartSettings{
 		Settings: server.Settings{
 			Callbacks: types.Callbacks{
@@ -75,15 +75,19 @@ func (srv *Server) Start() {
 		ListenEndpoint: "0.0.0.0:4320",
 		HTTPMiddleware: otelhttp.NewMiddleware("/v1/opamp"),
 	}
-	tlsConfig, err := certs.CreateServerTLSConfig(
-		certs.CaCert,
-		certs.ServerCert,
-		certs.ServerKey,
-	)
-	if err != nil {
-		srv.logger.Debugf(context.Background(), "Could not load TLS config, working without TLS: %v", err.Error())
+	if noTLS {
+		srv.logger.Debugf(context.Background(), "TLS disabled by flag, accepting plaintext (ws://) connections")
+	} else {
+		tlsConfig, err := certs.CreateServerTLSConfig(
+			certs.CaCert,
+			certs.ServerCert,
+			certs.ServerKey,
+		)
+		if err != nil {
+			srv.logger.Debugf(context.Background(), "Could not load TLS config, working without TLS: %v", err.Error())
+		}
+		settings.TLSConfig = tlsConfig
 	}
-	settings.TLSConfig = tlsConfig
 
 	if err := srv.opampSrv.Start(settings); err != nil {
 		srv.logger.Errorf(context.Background(), "OpAMP server start fail: %v", err.Error())
