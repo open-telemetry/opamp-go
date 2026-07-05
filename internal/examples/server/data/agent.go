@@ -117,6 +117,16 @@ func (agent *Agent) LastSeen() string {
 	return agent.LastSeenAt.Format(time.RFC3339)
 }
 
+// Uptime returns how long the Agent has been up, computed from the start time
+// it reported in its health status. Valid only while the Agent is healthy.
+func (agent *Agent) Uptime() string {
+	if agent.StartedAt.IsZero() {
+		return ""
+	}
+
+	return time.Since(agent.StartedAt).Truncate(time.Second).String()
+}
+
 func (agent *Agent) displayAttribute(key string) string {
 	if agent.Status == nil || agent.Status.AgentDescription == nil {
 		return ""
