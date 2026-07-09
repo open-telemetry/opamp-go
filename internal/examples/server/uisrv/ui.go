@@ -39,6 +39,8 @@ func Start(rootDir string) {
 		Handler: mux,
 	}
 	go srv.ListenAndServe()
+
+	logger.Printf("Admin UI started, available at http://localhost:4321")
 }
 
 func Shutdown() {

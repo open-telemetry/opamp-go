@@ -75,9 +75,7 @@ func (srv *Server) Start(noTLS bool) {
 		ListenEndpoint: "0.0.0.0:4320",
 		HTTPMiddleware: otelhttp.NewMiddleware("/v1/opamp"),
 	}
-	if noTLS {
-		srv.logger.Debugf(context.Background(), "TLS disabled by flag, accepting plaintext (ws://) connections")
-	} else {
+	if !noTLS {
 		tlsConfig, err := certs.CreateServerTLSConfig(
 			certs.CaCert,
 			certs.ServerCert,
@@ -93,6 +91,12 @@ func (srv *Server) Start(noTLS bool) {
 		srv.logger.Errorf(context.Background(), "OpAMP server start fail: %v", err.Error())
 		os.Exit(1)
 	}
+
+	tls := "TLS enabled (use wss:// or https://)"
+	if noTLS {
+		tls = "TLS disabled (use ws:// or http://)"
+	}
+	srv.logger.Debugf(context.Background(), "OpAMP server started, listening at 0.0.0.0:4320/v1/opamp - %s", tls)
 }
 
 func (srv *Server) Stop() {
