@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -31,19 +32,40 @@ import (
 type RemoteSigner struct {
 	baseURL string
 	client  *http.Client
+
+	// ChainDER is called by the server on every outbound message to detect
+	// signing-chain rotation; the chain is cached for chainTTL so that only
+	// one /v1/chain fetch happens per interval. A shorter TTL detects
+	// rotation faster at the cost of more fetches.
+	chainTTL    time.Duration
+	mu          sync.Mutex
+	cachedChain [][]byte
+	cachedAt    time.Time
 }
 
 var _ Signer = (*RemoteSigner)(nil)
 var _ TrustAnchorProvider = (*RemoteSigner)(nil)
+
+const defaultChainCacheTTL = 60 * time.Second
 
 // NewRemoteSigner returns a RemoteSigner that calls the signing service at
 // baseURL (e.g. "http://policy-server:4322"). A 10-second per-request
 // timeout is applied.
 func NewRemoteSigner(baseURL string) *RemoteSigner {
 	return &RemoteSigner{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		client:  &http.Client{Timeout: 10 * time.Second},
+		baseURL:  strings.TrimRight(baseURL, "/"),
+		client:   &http.Client{Timeout: 10 * time.Second},
+		chainTTL: defaultChainCacheTTL,
 	}
+}
+
+// SetChainCacheTTL overrides how long ChainDER caches the fetched chain
+// before re-fetching to detect rotation. A non-positive value disables
+// caching (fetch on every call).
+func (s *RemoteSigner) SetChainCacheTTL(ttl time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.chainTTL = ttl
 }
 
 // Sign implements [Signer] by POST-ing payload to /v1/sign and returning
@@ -99,6 +121,26 @@ func (s *RemoteSigner) TrustAnchorPEM(ctx context.Context) ([]byte, error) {
 // returned PEM blob into DER byte slices ordered intermediates-first,
 // leaf-last.
 func (s *RemoteSigner) ChainDER(ctx context.Context) ([][]byte, error) {
+	s.mu.Lock()
+	if s.cachedChain != nil && s.chainTTL > 0 && time.Since(s.cachedAt) < s.chainTTL {
+		chain := s.cachedChain
+		s.mu.Unlock()
+		return chain, nil
+	}
+	s.mu.Unlock()
+
+	chain, err := s.fetchChainDER(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	s.cachedChain = chain
+	s.cachedAt = time.Now()
+	s.mu.Unlock()
+	return chain, nil
+}
+
+func (s *RemoteSigner) fetchChainDER(ctx context.Context) ([][]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		s.baseURL+"/v1/chain", nil)
 	if err != nil {
