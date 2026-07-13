@@ -31,7 +31,7 @@ type Server struct {
 // Message Attestation: every outbound ServerToAgent message is wrapped in a
 // SignedServerToAgent envelope signed by the given signer. Use
 // signing.NewRemoteSigner to delegate signing to an out-of-process policy
-// server as recommended in supplementary-guidelines.md.
+// server, the recommended Message Attestation deployment pattern.
 func NewServer(agents *data.Agents, emitMetrics bool, payloadSigner signing.Signer) *Server {
 	logger := &Logger{
 		log.New(

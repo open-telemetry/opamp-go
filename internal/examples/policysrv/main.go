@@ -1,5 +1,5 @@
 // policysrv is a minimal example of an out-of-process OpAMP policy/signing
-// server, as described in supplementary-guidelines.md.
+// server for Message Attestation.
 //
 // # Architecture
 //
@@ -75,9 +75,10 @@ import (
 )
 
 // signerState holds the current signing leaf under a fixed root CA. rotate
-// swaps in a fresh leaf (same root), mimicking rc-x509's frequent signing-key
-// rotation: the payload trust anchor never changes, but the chain to it does.
-// This exercises the Agent's mid-connection re-validation on rotation.
+// swaps in a fresh leaf (same root), mimicking a signing backend that rotates
+// its signing key frequently: the payload trust anchor never changes, but the
+// chain to it does. This exercises the Agent's mid-connection re-validation on
+// rotation.
 type signerState struct {
 	ca       *x509.Certificate
 	caKey    crypto.Signer

@@ -23,7 +23,7 @@ func main() {
 	flag.StringVar(&policyServerURL, "policy-server", "",
 		"Base URL of the out-of-process policy/signing server (e.g. http://localhost:4322).\n"+
 			"When set, every outbound ServerToAgent message is signed via that server,\n"+
-			"demonstrating the isolated signing architecture from supplementary-guidelines.md.\n"+
+			"demonstrating the isolated Message Attestation signing architecture.\n"+
 			"Run internal/examples/policysrv first to start a local policy server.")
 
 	flag.Parse()
