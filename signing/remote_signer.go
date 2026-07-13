@@ -14,9 +14,9 @@ import (
 
 // RemoteSigner implements [Signer] by delegating to an out-of-process HTTP
 // signing service. This is the recommended production deployment pattern
-// described in supplementary-guidelines.md: the OpAMP distribution server
-// holds no private key material, and signing is performed by a separate
-// policy server that is not reachable from the network edge.
+// for Message Attestation: the OpAMP distribution server holds no private
+// key material, and signing is performed by a separate policy server that
+// is not reachable from the network edge.
 //
 // The signing service must expose two endpoints:
 //
