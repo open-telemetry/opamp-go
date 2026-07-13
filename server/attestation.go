@@ -1,10 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/pem"
 	"fmt"
-	"sync/atomic"
+	"sync"
 
 	"google.golang.org/protobuf/proto"
 
@@ -16,36 +17,32 @@ import (
 // outbound ServerToAgent messages in SignedServerToAgent envelopes
 // when payload trust verification has been negotiated.
 //
-// The signer is held by reference; the certificate chain is
-// snapshotted at construction time so that operator-side cert
-// rotation does not affect a live connection (the agent only
-// revalidates the chain on reconnect). firstSent atomically tracks
-// whether the chain has already been delivered on this connection so
-// that exactly one outbound envelope carries it.
+// The chain is delivered on the first message and re-delivered whenever
+// the signer's chain changes (rotation). The root/trust anchor never
+// changes; only the chain to it does.
 type connectionSigningState struct {
 	signer        signing.Signer
-	chainDER      [][]byte // snapshot
-	tofuAnchorPEM []byte   // non-empty iff this connection is a TOFU enrollment
-	tofuError     string   // non-empty when TOFU requested but anchor unavailable
-	firstSent     atomic.Bool
+	tofuAnchorPEM []byte // non-empty iff this connection is a TOFU enrollment
+	tofuError     string // non-empty when TOFU requested but anchor unavailable
+
+	mu           sync.Mutex
+	lastChainPEM []byte // PEM of the chain last delivered; nil until first delivery
+	firstSent    bool
 }
 
-// newConnectionSigningState constructs the per-connection state by
-// asking the signer for its current chain. When tofu is true the signer
-// must also implement TrustAnchorProvider; the root CA is fetched and
-// stored to be included in the first outbound TrustChainResponse.
+// newConnectionSigningState constructs the per-connection state. It fetches
+// the chain once to fail fast if the signer is misconfigured; the chain
+// actually delivered is re-fetched per outbound message to detect rotation.
+// When tofu is true the signer must also implement TrustAnchorProvider; the
+// root CA is fetched and stored to be included in the first TrustChainResponse.
 func newConnectionSigningState(ctx context.Context, signer signing.Signer, tofu bool) (*connectionSigningState, error) {
 	if signer == nil {
 		return nil, fmt.Errorf("server: nil signer")
 	}
-	chain, err := signer.ChainDER(ctx)
-	if err != nil {
+	if _, err := signer.ChainDER(ctx); err != nil {
 		return nil, fmt.Errorf("server: fetch signing chain: %w", err)
 	}
-	state := &connectionSigningState{
-		signer:   signer,
-		chainDER: chain,
-	}
+	state := &connectionSigningState{signer: signer}
 	if tofu {
 		tap, ok := signer.(signing.TrustAnchorProvider)
 		if !ok {
@@ -62,10 +59,10 @@ func newConnectionSigningState(ctx context.Context, signer signing.Signer, tofu 
 	return state, nil
 }
 
-// signOutgoing produces a SignedServerToAgent envelope wrapping msg.
-// The first call on a given state additionally populates
-// trust_chain_response with the snapshotted chain; subsequent calls
-// carry only payload + signature.
+// signOutgoing produces a SignedServerToAgent envelope wrapping msg. It
+// attaches trust_chain_response on the first message and again whenever the
+// signing chain changes, so the Agent can re-validate and re-pin without
+// dropping the connection.
 func (s *connectionSigningState) signOutgoing(ctx context.Context, msg *protobufs.ServerToAgent) (*protobufs.SignedServerToAgent, error) {
 	payload, err := proto.Marshal(msg)
 	if err != nil {
@@ -80,27 +77,32 @@ func (s *connectionSigningState) signOutgoing(ctx context.Context, msg *protobuf
 		Signature: sig,
 	}
 
-	// CompareAndSwap returns true iff we were the goroutine that
-	// transitioned firstSent from false to true — guaranteeing exactly
-	// one envelope carries the trust chain across concurrent callers.
-	if s.firstSent.CompareAndSwap(false, true) {
-		if s.tofuError != "" {
-			// TOFU was requested but the server cannot fulfil it. Per the
-			// spec the server MUST set error_message; the agent will
-			// terminate the connection on receipt.
-			env.TrustChainResponse = &protobufs.TrustChainResponse{
-				ErrorMessage: s.tofuError,
-			}
-		} else {
-			var pemChain []byte
-			for _, der := range s.chainDER {
-				pemChain = append(pemChain, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
-			}
-			env.TrustChainResponse = &protobufs.TrustChainResponse{
-				CertificateChain: pemChain,
-				TofuTrustAnchor:  s.tofuAnchorPEM, // nil unless TOFU enrollment
-			}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.tofuError != "" {
+		if !s.firstSent {
+			s.firstSent = true
+			env.TrustChainResponse = &protobufs.TrustChainResponse{ErrorMessage: s.tofuError}
 		}
+		return env, nil
+	}
+
+	chain, err := s.signer.ChainDER(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("server: fetch signing chain: %w", err)
+	}
+	var pemChain []byte
+	for _, der := range chain {
+		pemChain = append(pemChain, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
+	}
+	if !s.firstSent || !bytes.Equal(pemChain, s.lastChainPEM) {
+		env.TrustChainResponse = &protobufs.TrustChainResponse{CertificateChain: pemChain}
+		if !s.firstSent {
+			env.TrustChainResponse.TofuTrustAnchor = s.tofuAnchorPEM
+		}
+		s.lastChainPEM = pemChain
+		s.firstSent = true
 	}
 	return env, nil
 }

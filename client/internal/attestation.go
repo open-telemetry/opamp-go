@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/pem"
@@ -86,9 +87,10 @@ type attestationState struct {
 	serverName string            // hostname for SAN verification
 	tofuStore  signing.TOFUStore // non-nil when in TOFU enrollment mode
 
-	mu        sync.Mutex
-	firstSeen bool
-	leaf      *x509.Certificate
+	mu             sync.Mutex
+	firstSeen      bool
+	leaf           *x509.Certificate
+	pinnedChainPEM []byte
 }
 
 // newAttestationState constructs a per-connection attestation state.
@@ -114,6 +116,7 @@ func (s *attestationState) Reset() {
 	defer s.mu.Unlock()
 	s.firstSeen = false
 	s.leaf = nil
+	s.pinnedChainPEM = nil
 }
 
 // isAttestationFailure reports whether err originated from a payload
@@ -165,11 +168,8 @@ func (s *attestationState) ProcessEnvelope(ctx context.Context, envelope *protob
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if !s.firstSeen {
-		chainResp := envelope.TrustChainResponse
-		if chainResp == nil {
-			return nil, ErrMissingTrustChain
-		}
+	if chainResp := envelope.TrustChainResponse; chainResp != nil &&
+		!(s.firstSeen && bytes.Equal(chainResp.CertificateChain, s.pinnedChainPEM)) {
 		if chainResp.ErrorMessage != "" {
 			return nil, fmt.Errorf("%w: %s", ErrTrustChainErrorReported, chainResp.ErrorMessage)
 		}
@@ -178,8 +178,6 @@ func (s *attestationState) ProcessEnvelope(ctx context.Context, envelope *protob
 			return nil, fmt.Errorf("client: parse trust chain PEM: %w", err)
 		}
 
-		// TOFU enrollment: bootstrap the verifier from the root CA the
-		// Server included in tofu_trust_anchor, then persist it.
 		if s.tofuStore != nil {
 			if len(chainResp.TofuTrustAnchor) == 0 {
 				return nil, ErrTOFUAnchorMissing
@@ -192,17 +190,13 @@ func (s *attestationState) ProcessEnvelope(ctx context.Context, envelope *protob
 				return nil, fmt.Errorf("client: TOFU: persist trust anchor: %w", err)
 			}
 			s.verifier = v
-			s.tofuStore = nil // enrolled; store no longer needed this session
+			s.tofuStore = nil
 		}
 
 		leaf, err := s.verifier.ValidateChain(ctx, chainDER, time.Now())
 		if err != nil {
 			return nil, fmt.Errorf("client: validate trust chain: %w", err)
 		}
-		// SAN verification is mandatory when attestation is enabled. An
-		// empty serverName means the server hostname could not be
-		// resolved from the connection URL; fail closed rather than
-		// silently accept any certificate.
 		if s.serverName == "" {
 			return nil, ErrServerNameUnavailable
 		}
@@ -210,7 +204,10 @@ func (s *attestationState) ProcessEnvelope(ctx context.Context, envelope *protob
 			return nil, fmt.Errorf("%w: %v", ErrSANMismatch, err)
 		}
 		s.leaf = leaf
+		s.pinnedChainPEM = chainResp.CertificateChain
 		s.firstSeen = true
+	} else if !s.firstSeen {
+		return nil, ErrMissingTrustChain
 	}
 
 	// Every message — including the first — MUST carry a signature.
