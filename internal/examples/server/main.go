@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/open-telemetry/opamp-go/internal/examples/server/data"
 	"github.com/open-telemetry/opamp-go/internal/examples/server/opampsrv"
@@ -36,7 +37,11 @@ func main() {
 	// all signing to it. The OpAMP server itself never touches the private key.
 	var payloadSigner signing.Signer
 	if policyServerURL != "" {
-		payloadSigner = signing.NewRemoteSigner(policyServerURL)
+		rs := signing.NewRemoteSigner(policyServerURL)
+		// Short chain-cache TTL so the demo picks up policy-server leaf
+		// rotation promptly (production can keep the longer default).
+		rs.SetChainCacheTTL(2 * time.Second)
+		payloadSigner = rs
 		logger.Printf("Message Attestation enabled — signing via policy server at %s", policyServerURL)
 	}
 
