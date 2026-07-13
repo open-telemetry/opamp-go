@@ -11,6 +11,16 @@ import (
 // algorithm in use is determined by the certificate's SignatureAlgorithm
 // field. This enum exists so that test helpers, cert generators, and
 // internal dispatch tables can refer to a specific algorithm by name.
+//
+// FIPS 140-3 note: the three classical algorithms below (ECDSA P-256 and
+// P-384 with SHA-2, and RSA PKCS#1 v1.5 with SHA-256) are Approved for
+// use in FIPS 140-3 validated cryptographic modules (ECDSA per FIPS
+// 186-4/186-5 with NIST curves from SP 800-186; RSASSA-PKCS1-v1_5 with a
+// ≥2048-bit modulus; SHA-2 per FIPS 180-4). Ed25519 (EdDSA) was added as
+// an Approved algorithm only in FIPS 186-5 (2023) and its availability in
+// FIPS 140-3 *validated* modules still lags — deployments with a FIPS
+// requirement should confirm their module supports it, or restrict
+// signers to the ECDSA/RSA options.
 type Algorithm uint8
 
 const (
@@ -18,16 +28,17 @@ const (
 	// algorithm in production.
 	AlgorithmUnspecified Algorithm = iota
 	// AlgorithmECDSAP256SHA256 — ECDSA over the P-256 curve with
-	// SHA-256, DER-encoded (r,s) signatures.
+	// SHA-256, DER-encoded (r,s) signatures. FIPS 140-3 Approved.
 	AlgorithmECDSAP256SHA256
 	// AlgorithmECDSAP384SHA384 — ECDSA over the P-384 curve with
-	// SHA-384, DER-encoded (r,s) signatures.
+	// SHA-384, DER-encoded (r,s) signatures. FIPS 140-3 Approved.
 	AlgorithmECDSAP384SHA384
 	// AlgorithmRSAPKCS1v15SHA256 — RSA with PKCS#1 v1.5 padding and
-	// SHA-256. Minimum 2048-bit modulus recommended.
+	// SHA-256. Minimum 2048-bit modulus recommended. FIPS 140-3 Approved.
 	AlgorithmRSAPKCS1v15SHA256
 	// AlgorithmEd25519 — Ed25519 (signs the payload directly; no
-	// pre-hash).
+	// pre-hash). Approved in FIPS 186-5, but validated-module support is
+	// limited; not guaranteed available in a FIPS 140-3 deployment.
 	AlgorithmEd25519
 )
 
