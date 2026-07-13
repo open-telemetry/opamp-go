@@ -1529,10 +1529,18 @@ type SignedServerToAgent struct {
 	// present and verifiable on every SignedServerToAgent, including the
 	// first. There is no exception for the first message.
 	Signature []byte `protobuf:"bytes,15,opt,name=signature,proto3" json:"signature,omitempty"`
-	// Sent only in the first SignedServerToAgent on a connection. Carries
-	// the signing certificate chain the Agent uses to validate the leaf
-	// certificate and verify signatures on all messages including this one.
-	// If the Agent set
+	// Sent in the first SignedServerToAgent on a connection, and again
+	// whenever the signing certificate chain changes (signing certificate
+	// rotation). Carries the signing certificate chain the Agent uses to
+	// validate the leaf certificate and verify signatures. The root
+	// (payload trust anchor) never changes; only the chain to it does.
+	// When trust_chain_response carries a chain that differs from the one
+	// the Agent currently has pinned, the Agent MUST validate it against
+	// its pre-configured trust anchor and re-pin the resulting leaf; a
+	// chain identical to the pinned one is a no-op. This lets a
+	// mid-connection rotation avoid dropping the connection. The HTTP
+	// transport MAY re-send the chain on every response, so the Agent MUST
+	// treat an unchanged chain as a no-op. If the Agent set
 	// RequiresPayloadTrustVerification but the first SignedServerToAgent
 	// does not include a usable trust_chain_response, the Agent MUST
 	// terminate the connection.

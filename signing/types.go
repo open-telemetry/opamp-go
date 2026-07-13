@@ -73,15 +73,17 @@ type Signer interface {
 	// certificate; the caller does not pass it explicitly.
 	Sign(ctx context.Context, payload []byte) ([]byte, error)
 
-	// ChainDER returns the signing certificate chain in DER form,
-	// ordered from the first intermediate down to the signing leaf.
-	// The root certificate (which the Agent already possesses as its
-	// pre-configured payload trust anchor) is excluded.
+	// ChainDER returns the current signing certificate chain in DER
+	// form, ordered from the first intermediate down to the signing
+	// leaf. The root certificate (which the Agent already possesses as
+	// its pre-configured payload trust anchor) is excluded and never
+	// changes.
 	//
-	// The OpAMP server snapshots this once per new client connection
-	// and reuses the result for the connection's lifetime so that
-	// mid-session rotation on the signer side does not change the
-	// chain mid-stream.
+	// The OpAMP server calls ChainDER per outbound message and delivers
+	// the chain to the Agent whenever it changes, so signer-side key
+	// rotation is handled without dropping the connection. Implementations
+	// SHOULD cache and return the current chain cheaply, returning a new
+	// chain only after a rotation.
 	ChainDER(ctx context.Context) ([][]byte, error)
 }
 
