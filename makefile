@@ -17,7 +17,9 @@ GOIMPORTS     := go tool -modfile $(TOOLS_MOD) goimports
 GOACC	      := go tool -modfile $(TOOLS_MOD) go-acc
 
 # Find all .proto files.
-BASELINE_PROTO_FILES := $(wildcard internal/opamp-spec/proto/*.proto)
+BASELINE_PROTO_FILES := $(wildcard internal/opamp-spec/proto/opamp/v1/*.proto)
+# proto imports are relative to the root directory
+PROTO_ROOT_DIRECTORY := internal/opamp-spec/proto
 
 all: test build-examples
 
@@ -54,7 +56,8 @@ build-example-server:
 run-examples:
 	$(MAKE) -C internal/examples run-examples
 
-OTEL_DOCKER_PROTOBUF ?= otel/build-protobuf:0.14.0
+# https://github.com/open-telemetry/build-tools/releases 
+OTEL_DOCKER_PROTOBUF ?= otel/build-protobuf:0.25.0
 
 # Generate Protobuf Go files.
 .PHONY: gen-proto
@@ -67,9 +70,9 @@ gen-proto:
 		exit 1; \
 	fi
 
-	$(foreach file,$(BASELINE_PROTO_FILES),$(call exec-command,docker run --rm -v${PWD}:${PWD} \
-        -w${PWD} $(OTEL_DOCKER_PROTOBUF) --proto_path=${PWD}/internal/opamp-spec/proto/ \
-        --go_out=${PWD}/internal/proto/ -I${PWD}/internal/proto/ ${PWD}/$(file)))
+	$(foreach file,$(BASELINE_PROTO_FILES),$(call exec-command,docker run --rm -u $(shell id -u):$(shell id -g) -v${PWD}:${PWD} \
+        -w${PWD} $(OTEL_DOCKER_PROTOBUF) --proto_path=$(PROTO_ROOT_DIRECTORY)/ \
+        --go_out=internal/proto/ -I=$(PROTO_ROOT_DIRECTORY) $(file)))
 
 	cp -R internal/proto/github.com/open-telemetry/opamp-go/protobufs/* protobufs/
 	rm -rf internal/proto/github.com/
