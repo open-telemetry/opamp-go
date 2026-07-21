@@ -6,6 +6,25 @@
     td {
         padding: 5px
     }
+    .config-table {
+        table-layout: fixed;
+        width: 100%;
+    }
+    .config-table > tbody > tr > td {
+        width: 50%;
+    }
+    .config-table pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        overflow: auto;
+        max-height: 500px;
+        border: 1px solid #ccc;
+        padding: 5px;
+    }
+    .config-table textarea {
+        width: 100%;
+        box-sizing: border-box;
+    }
 </style>
 
 <link rel="stylesheet"
@@ -64,7 +83,7 @@
 <hr/>
 
 <h3>Configuration</h3>
-<table width="100%">
+<table class="config-table">
     <tr>
         <td valign="top">
             Current Effective Configuration:<br/>
@@ -74,7 +93,7 @@
             Additional Configuration:<br/>
             <form action="/save_config" method="post">
             <input type="hidden" name="instanceid" value="{{ .InstanceIdStr }}"/>
-            <textarea cols="40" rows="20" name="config">{{ .CustomInstanceConfig }}</textarea><br/>
+            <textarea rows="20" name="config">{{ .CustomInstanceConfig }}</textarea><br/>
              {{if .Status.RemoteConfigStatus }}
                 {{if .Status.RemoteConfigStatus.ErrorMessage }}
                 <span style="color:red">Failed: {{ .Status.RemoteConfigStatus.ErrorMessage }}</span><br/>
