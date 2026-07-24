@@ -68,12 +68,16 @@ func (s *connectionSigningState) signOutgoing(ctx context.Context, msg *protobuf
 	if err != nil {
 		return nil, fmt.Errorf("server: marshal inner ServerToAgent: %w", err)
 	}
-	sig, err := s.signer.Sign(ctx, payload)
+	// The signer returns the exact bytes it signed. A signer that
+	// re-marshals server-side (non-canonical protobuf) yields bytes that
+	// differ from our marshalling above; we MUST transmit those, not our
+	// own, or the Agent's verification over the received bytes fails.
+	signedPayload, sig, err := s.signer.Sign(ctx, payload)
 	if err != nil {
 		return nil, fmt.Errorf("server: sign payload: %w", err)
 	}
 	env := &protobufs.SignedServerToAgent{
-		Payload:   payload,
+		Payload:   signedPayload,
 		Signature: sig,
 	}
 

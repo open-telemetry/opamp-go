@@ -69,29 +69,32 @@ func (s *RemoteSigner) SetChainCacheTTL(ttl time.Duration) {
 }
 
 // Sign implements [Signer] by POST-ing payload to /v1/sign and returning
-// the response body as the detached signature.
-func (s *RemoteSigner) Sign(ctx context.Context, payload []byte) ([]byte, error) {
+// the response body as the detached signature. This stand-in signs the
+// exact bytes posted (it does not re-marshal), so signedPayload is the
+// input payload unchanged. A production signing backend that serializes
+// server-side would instead return the bytes it actually signed here.
+func (s *RemoteSigner) Sign(ctx context.Context, payload []byte) (signedPayload, sig []byte, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		s.baseURL+"/v1/sign", bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("remote signer: build sign request: %w", err)
+		return nil, nil, fmt.Errorf("remote signer: build sign request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("remote signer: sign request: %w", err)
+		return nil, nil, fmt.Errorf("remote signer: sign request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("remote signer: read sign response: %w", err)
+		return nil, nil, fmt.Errorf("remote signer: read sign response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("remote signer: sign returned HTTP %d: %s", resp.StatusCode, body)
+		return nil, nil, fmt.Errorf("remote signer: sign returned HTTP %d: %s", resp.StatusCode, body)
 	}
-	return body, nil
+	return payload, body, nil
 }
 
 // TrustAnchorPEM implements [TrustAnchorProvider] by GET-ing /v1/ca on the
