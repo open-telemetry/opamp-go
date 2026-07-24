@@ -78,13 +78,20 @@ func NewLocalSigner(key crypto.Signer, chain []*x509.Certificate) (*LocalSigner,
 	}, nil
 }
 
-// Sign implements [Signer]. The context is honoured only for
-// cancellation; the in-process signing operation itself does not block.
-func (s *LocalSigner) Sign(ctx context.Context, payload []byte) ([]byte, error) {
+// Sign implements [Signer]. It signs the caller's bytes unchanged and
+// returns them verbatim as signedPayload: an in-process signer does not
+// re-marshal, so the bytes signed are exactly the bytes passed in. The
+// context is honoured only for cancellation; the in-process signing
+// operation itself does not block.
+func (s *LocalSigner) Sign(ctx context.Context, payload []byte) (signedPayload, sig []byte, err error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return signWithKey(s.key, s.alg, payload)
+	sig, err = signWithKey(s.key, s.alg, payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	return payload, sig, nil
 }
 
 // ChainDER implements [Signer]. Returns a defensive copy so callers

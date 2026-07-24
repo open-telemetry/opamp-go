@@ -67,11 +67,27 @@ func (a Algorithm) String() string {
 // ChainDER both accept a context so RPC-backed implementations can
 // cancel, set deadlines, and propagate trace IDs.
 type Signer interface {
-	// Sign computes a signature over payload. The OpAMP server places
-	// the returned bytes into SignedServerToAgent.signature on the
-	// wire. The signing algorithm is determined by the signing
-	// certificate; the caller does not pass it explicitly.
-	Sign(ctx context.Context, payload []byte) ([]byte, error)
+	// Sign computes a detached signature over the payload and returns
+	// both the signature and the exact payload bytes that were signed.
+	//
+	// The OpAMP server transmits the returned signedPayload as
+	// SignedServerToAgent.payload and the returned sig as
+	// SignedServerToAgent.signature. The Agent verifies sig against the
+	// bytes it receives, so signedPayload MUST be exactly the bytes over
+	// which sig was computed.
+	//
+	// signedPayload exists because protobuf serialization is not
+	// canonical: a signing backend that re-marshals the message with its
+	// own protobuf runtime (for example a remote signer that serializes
+	// server-side and signs the result) produces bytes that differ from
+	// the caller's marshalling. Such a signer returns the bytes it
+	// actually signed, and the server must put those on the wire rather
+	// than its own — otherwise verification fails. An in-process signer
+	// that signs the caller's bytes unchanged returns payload verbatim.
+	//
+	// The signing algorithm is determined by the signing certificate;
+	// the caller does not pass it explicitly.
+	Sign(ctx context.Context, payload []byte) (signedPayload, sig []byte, err error)
 
 	// ChainDER returns the current signing certificate chain in DER
 	// form, ordered from the first intermediate down to the signing
