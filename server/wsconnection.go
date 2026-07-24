@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gorilla/websocket"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/server/types"
 )
+
+const defaultSendCloseMessageTimeout = 5 * time.Second
 
 // wsConnection represents a persistent OpAMP connection over a WebSocket.
 type wsConnection struct {
@@ -40,6 +43,19 @@ func (c *wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent)
 	defer c.connMutex.Unlock()
 
 	return internal.WriteWSMessage(c.wsConn, message, c.maxMessageSize)
+}
+
+// SendClose sends a WebSocket close control frame to the peer. WriteControl may
+// be called concurrently with the reader and writer, so no connMutex is taken.
+func (c *wsConnection) SendClose(closeCode int, text string) error {
+	if c.closed.Load() {
+		return nil
+	}
+	return c.wsConn.WriteControl(
+		websocket.CloseMessage,
+		websocket.FormatCloseMessage(closeCode, text),
+		time.Now().Add(defaultSendCloseMessageTimeout),
+	)
 }
 
 func (c *wsConnection) Disconnect() error {

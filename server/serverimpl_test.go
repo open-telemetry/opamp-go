@@ -20,7 +20,7 @@ import (
 	"github.com/madflojo/testcerts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
+	"go.uber.org/goleak"
 	"google.golang.org/protobuf/proto"
 
 	clienttypes "github.com/open-telemetry/opamp-go/client/types"
@@ -78,6 +78,43 @@ func TestServerStartStopWithCancel(t *testing.T) {
 
 	err = srv.Stop(canceledCtx)
 	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestServerStartStopCloseNoLeakGoroutine(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	startSettings := &StartSettings{}
+	srv := startServer(t, startSettings)
+
+	_, _, _ = dialClient(startSettings) // make sure we have a connection
+	srv.Stop(context.Background())
+}
+
+func TestServerSendsCloseFrameOnShutdown(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	startSettings := &StartSettings{}
+	srv := startServer(t, startSettings)
+
+	conn, _, err := dialClient(startSettings)
+	require.NoError(t, err)
+	require.NotNil(t, conn)
+	defer conn.Close()
+
+	// On shutdown the server should deliver a close frame, surfacing here as a
+	// *websocket.CloseError rather than an abrupt connection reset.
+	closeErrCh := make(chan error, 1)
+	go func() {
+		require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+		_, _, readErr := conn.ReadMessage()
+		closeErrCh <- readErr
+	}()
+
+	require.NoError(t, srv.Stop(context.Background()))
+
+	readErr := <-closeErrCh
+	var closeErr *websocket.CloseError
+	require.ErrorAs(t, readErr, &closeErr)
+	assert.Equal(t, websocket.CloseGoingAway, closeErr.Code)
 }
 
 func TestServerStartStopIdempotency(t *testing.T) {
@@ -194,6 +231,7 @@ func TestServerStartRejectConnection(t *testing.T) {
 }
 
 func eventually(t *testing.T, f func() bool) {
+	t.Helper()
 	assert.Eventually(t, f, 5*time.Second, 10*time.Millisecond)
 }
 
