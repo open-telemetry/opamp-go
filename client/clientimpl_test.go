@@ -3284,3 +3284,205 @@ func TestClientBackoffPolicyIsConsulted(t *testing.T) {
 		require.NoError(t, client.Stop(context.Background()))
 	})
 }
+
+func TestSendMessageForAgent(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		settings := types.StartSettings{
+			Callbacks: types.Callbacks{},
+		}
+		prepareClient(t, &settings, client)
+
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		tests := []struct {
+			name          string
+			message       *protobufs.AgentToServer
+			expectedError string
+		}{
+			{
+				name:          "nil message returns error",
+				message:       nil,
+				expectedError: "message is nil",
+			},
+			{
+				name:          "empty InstanceUid returns error",
+				message:       &protobufs.AgentToServer{},
+				expectedError: "message must have InstanceUid set",
+			},
+			{
+				name: "valid message with foreign InstanceUid succeeds",
+				message: &protobufs.AgentToServer{
+					InstanceUid: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+				},
+				expectedError: "",
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				err := client.SendMessageForAgent(test.message)
+				if test.expectedError == "" {
+					assert.NoError(t, err)
+				} else {
+					assert.ErrorContains(t, err, test.expectedError)
+				}
+			})
+		}
+
+		err := client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
+func TestSendMessageForAgentDelivery(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		srv := internal.StartMockServer(t)
+
+		var initialMsgReceived atomic.Bool
+		var rcvForeignMsg atomic.Value
+
+		foreignUid := []byte{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x00}
+
+		srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			if assert.ObjectsAreEqual(foreignUid, msg.InstanceUid) {
+				rcvForeignMsg.Store(msg)
+			} else {
+				initialMsgReceived.Store(true)
+			}
+			return nil
+		})
+
+		settings := types.StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+		}
+		prepareClient(t, &settings, client)
+
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		eventually(t, func() bool { return initialMsgReceived.Load() })
+
+		agentMsg := &protobufs.AgentToServer{
+			InstanceUid: foreignUid,
+			AgentDescription: &protobufs.AgentDescription{
+				IdentifyingAttributes: []*protobufs.KeyValue{
+					{
+						Key:   "service.name",
+						Value: &protobufs.AnyValue{Value: &protobufs.AnyValue_StringValue{StringValue: "downstream-agent"}},
+					},
+				},
+			},
+		}
+
+		err := client.SendMessageForAgent(agentMsg)
+		assert.NoError(t, err)
+
+		eventually(
+			t,
+			func() bool {
+				msg, ok := rcvForeignMsg.Load().(*protobufs.AgentToServer)
+				if !ok || msg == nil {
+					return false
+				}
+				return msg.AgentDescription != nil &&
+					len(msg.AgentDescription.IdentifyingAttributes) > 0 &&
+					msg.AgentDescription.IdentifyingAttributes[0].GetValue().GetStringValue() == "downstream-agent"
+			},
+		)
+
+		srv.Close()
+
+		err = client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
+func TestOnMessageForOtherAgent(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		srv := internal.StartMockServer(t)
+
+		foreignUid := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10}
+		var receivedOtherMsg atomic.Value
+
+		settings := types.StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			Callbacks: types.Callbacks{
+				OnMessageForOtherAgent: func(ctx context.Context, msg *protobufs.ServerToAgent) {
+					receivedOtherMsg.Store(msg)
+				},
+			},
+		}
+		prepareClient(t, &settings, client)
+
+		srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			return &protobufs.ServerToAgent{
+				InstanceUid: foreignUid,
+				RemoteConfig: &protobufs.AgentRemoteConfig{
+					ConfigHash: []byte("test-config-hash"),
+				},
+			}
+		})
+
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		eventually(
+			t,
+			func() bool {
+				msg, ok := receivedOtherMsg.Load().(*protobufs.ServerToAgent)
+				if !ok || msg == nil {
+					return false
+				}
+				return assert.ObjectsAreEqual(foreignUid, msg.InstanceUid) &&
+					msg.RemoteConfig != nil
+			},
+		)
+
+		srv.Close()
+
+		err := client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
+
+func TestOnMessageForOtherAgentNotCalledForOwnUid(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		srv := internal.StartMockServer(t)
+
+		var otherAgentCalled atomic.Bool
+		var ownMessageReceived atomic.Bool
+
+		settings := types.StartSettings{
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			Callbacks: types.Callbacks{
+				OnMessageForOtherAgent: func(ctx context.Context, msg *protobufs.ServerToAgent) {
+					otherAgentCalled.Store(true)
+				},
+				OnMessage: func(ctx context.Context, msg *types.MessageData) {
+					ownMessageReceived.Store(true)
+				},
+			},
+		}
+		prepareClient(t, &settings, client)
+
+		srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			return &protobufs.ServerToAgent{
+				InstanceUid: msg.InstanceUid,
+			}
+		})
+
+		assert.NoError(t, client.Start(context.Background(), settings))
+
+		eventually(
+			t,
+			func() bool {
+				return ownMessageReceived.Load()
+			},
+		)
+
+		assert.False(t, otherAgentCalled.Load(), "OnMessageForOtherAgent should not be called for own UID")
+
+		srv.Close()
+
+		err := client.Stop(context.Background())
+		assert.NoError(t, err)
+	})
+}
