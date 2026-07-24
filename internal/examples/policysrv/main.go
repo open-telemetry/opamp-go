@@ -109,7 +109,8 @@ func (s *signerState) sign(ctx context.Context, payload []byte) ([]byte, error) 
 	s.mu.Lock()
 	signer := s.signer
 	s.mu.Unlock()
-	return signer.Sign(ctx, payload)
+	_, sig, err := signer.Sign(ctx, payload)
+	return sig, err
 }
 
 func (s *signerState) chainPEM() []byte {
