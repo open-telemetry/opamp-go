@@ -531,6 +531,29 @@ func (c *ClientCommon) SendCustomMessage(message *protobufs.CustomMessage) (mess
 	return sendingChan, nil
 }
 
+// SendMessageForAgent sends a complete AgentToServer message on behalf of another
+// agent. The message bypasses the client's state management and is queued for
+// immediate sending. This enables gateway multiplexing over a single connection.
+func (c *ClientCommon) SendMessageForAgent(msg *protobufs.AgentToServer) error {
+	if msg == nil {
+		return errors.New("message is nil")
+	}
+	if len(msg.InstanceUid) == 0 {
+		return errors.New("message must have InstanceUid set")
+	}
+
+	c.sender.NextMessage().Update(
+		func(nextMsg *protobufs.AgentToServer) {
+			// Replace the entire message content with the relayed agent's message.
+			// We preserve only the wire-level fields; the client's own state
+			// (capabilities, health, etc.) is not mixed in.
+			*nextMsg = *msg
+		},
+	)
+	c.sender.ScheduleSend()
+	return nil
+}
+
 // SetAvailableComponents sends a message to the server with the available components for the agent
 func (c *ClientCommon) SetAvailableComponents(components *protobufs.AvailableComponents) error {
 	if !c.isStarted {

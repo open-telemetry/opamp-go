@@ -142,6 +142,16 @@ type Callbacks struct {
 	// The callback must return a non-nil HTTP client or an error.
 	DownloadHTTPClient func(ctx context.Context, file *protobufs.DownloadableFile) (*http.Client, error)
 
+	// OnMessageForOtherAgent is called when the client receives a ServerToAgent
+	// message whose InstanceUid does not match the client's own instance UID.
+	// This enables gateway/multiplexing scenarios where a single upstream
+	// connection carries messages for multiple downstream agents. The client
+	// bypasses its internal state management for such messages and delegates
+	// them to this callback for routing to the correct downstream agent.
+	//
+	// If this callback is nil, messages for other agents are silently ignored.
+	OnMessageForOtherAgent func(ctx context.Context, msg *protobufs.ServerToAgent)
+
 	// OnConnectionSettings is called when the agent receives any non-OpAMP
 	// connection settings.
 	//

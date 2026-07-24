@@ -44,6 +44,14 @@ func (s *NextMessage) Update(modifier func(msg *protobufs.AgentToServer)) (messa
 	return sending
 }
 
+// InstanceUid returns the current InstanceUid set on the next message.
+// Safe to call concurrently.
+func (s *NextMessage) InstanceUid() []byte {
+	s.messageMutex.Lock()
+	defer s.messageMutex.Unlock()
+	return s.nextMessage.InstanceUid
+}
+
 // PopPending returns the next message to be sent, if it is pending or nil otherwise.
 // Clears the "pending" flag.
 func (s *NextMessage) PopPending() *protobufs.AgentToServer {

@@ -174,4 +174,14 @@ type OpAMPClient interface {
 	// For more details, refer to the OpAMP specification:
 	// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#agenttoservercapabilities
 	SetCapabilities(capabilities *protobufs.AgentCapabilities) error
+
+	// SendMessageForAgent sends a complete AgentToServer message on behalf of
+	// another agent instance identified by a different InstanceUid. This enables
+	// gateway/multiplexing scenarios where a single upstream connection carries
+	// messages for multiple downstream agents. The message is sent as-is without
+	// going through the client's internal state management.
+	//
+	// May be called anytime after Start(). The message must not be nil and must
+	// have a non-empty InstanceUid set.
+	SendMessageForAgent(msg *protobufs.AgentToServer) error
 }

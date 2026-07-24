@@ -61,6 +61,16 @@ func newReceivedProcessor(
 // the received message and performs any processing necessary based on what fields are set.
 // This function will call any relevant callbacks.
 func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
+	// If the message targets a different agent instance (gateway/multiplexing
+	// scenario), bypass state management and delegate to the callback.
+	if len(msg.InstanceUid) > 0 && r.callbacks.OnMessageForOtherAgent != nil {
+		ownUID := r.sender.NextMessage().InstanceUid()
+		if len(ownUID) > 0 && !bytes.Equal(msg.InstanceUid, ownUID) {
+			r.callbacks.OnMessageForOtherAgent(ctx, msg)
+			return
+		}
+	}
+
 	// Note that anytime we add a new command capabilities we need to add a check here.
 	// This is because we want to ignore commands that the agent does not have the capability
 	// to process.

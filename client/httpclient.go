@@ -149,6 +149,10 @@ func (c *httpClient) SetAvailableComponents(components *protobufs.AvailableCompo
 }
 
 // SetCapabilities implements OpAMPClient.SetCapabilities
+func (c *httpClient) SendMessageForAgent(msg *protobufs.AgentToServer) error {
+	return c.common.SendMessageForAgent(msg)
+}
+
 func (c *httpClient) SetCapabilities(capabilities *protobufs.AgentCapabilities) error {
 	return c.common.SetCapabilities(capabilities)
 }
