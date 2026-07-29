@@ -53,7 +53,7 @@ type wsReceiver struct {
 // verified on every subsequent one, and any failure terminates the
 // receive loop (and, by extension, the connection). When
 // payloadVerifier is nil, the receiver uses the standard ServerToAgent
-// wire format (identical to upstream OpAMP).
+// wire format.
 func NewWSReceiver(
 	logger types.Logger,
 	callbacks types.Callbacks,

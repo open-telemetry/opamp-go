@@ -66,7 +66,7 @@ type StartSettings struct {
 	// AgentCapabilities_RequiresPayloadTrustVerification. When nil
 	// (the default), payload trust verification is disabled and the
 	// Server-to-Agent wire format is the standard ServerToAgent
-	// protobuf — identical to upstream OpAMP.
+	// protobuf.
 	//
 	// See the signing package for the in-process LocalVerifier
 	// implementation and the VerifierFromFile helper that constructs

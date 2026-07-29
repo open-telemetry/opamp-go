@@ -80,8 +80,8 @@ var (
 // inbound SignedServerToAgent.
 //
 // When Verifier is nil (the operator did not opt in), the OpAMP wire
-// format is byte-identical to upstream and no attestationState is
-// created at all; payload trust is simply not negotiated.
+// format is the standard ServerToAgent protobuf and no attestationState
+// is created at all; payload trust is simply not negotiated.
 type attestationState struct {
 	verifier   signing.Verifier
 	serverName string            // hostname for SAN verification

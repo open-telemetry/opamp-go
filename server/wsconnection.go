@@ -40,7 +40,8 @@ type wsConnection struct {
 	// requiresNegotiation is fixed at construction. When true the
 	// server has a PayloadSigner configured and Send is rejected until
 	// negotiated flips to true. When false (no server-side signer),
-	// Send is always permitted — wire-identical to upstream OpAMP.
+	// Send is always permitted; the Server sends the standard
+	// ServerToAgent wire format.
 	requiresNegotiation bool
 
 	// negotiated flips to true after the connection's first
