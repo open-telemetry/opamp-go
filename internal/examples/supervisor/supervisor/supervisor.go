@@ -218,7 +218,8 @@ func (s *Supervisor) createAgentDescription() *protobufs.AgentDescription {
 }
 
 func (s *Supervisor) composeExtraLocalConfig() string {
-	return fmt.Sprintf(`
+	return fmt.Sprintf(
+		`
 service:
   telemetry:
     logs:
