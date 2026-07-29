@@ -33,10 +33,10 @@ type RemoteSigner struct {
 	baseURL string
 	client  *http.Client
 
-	// ChainDER is called by the server on every outbound message to detect
-	// signing-chain rotation; the chain is cached for chainTTL so that only
-	// one /v1/chain fetch happens per interval. A shorter TTL detects
-	// rotation faster at the cost of more fetches.
+	// Sign fetches the chain from /v1/chain on every outbound message (so the
+	// chain it returns tracks signing-chain rotation); the chain is cached for
+	// chainTTL so that only one /v1/chain fetch happens per interval. A shorter
+	// TTL detects rotation faster at the cost of more fetches.
 	chainTTL    time.Duration
 	mu          sync.Mutex
 	cachedChain [][]byte
@@ -59,42 +59,47 @@ func NewRemoteSigner(baseURL string) *RemoteSigner {
 	}
 }
 
-// SetChainCacheTTL overrides how long ChainDER caches the fetched chain
-// before re-fetching to detect rotation. A non-positive value disables
-// caching (fetch on every call).
+// SetChainCacheTTL overrides how long Sign caches the fetched chain before
+// re-fetching to detect rotation. A non-positive value disables caching
+// (fetch on every Sign).
 func (s *RemoteSigner) SetChainCacheTTL(ttl time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.chainTTL = ttl
 }
 
-// Sign implements [Signer] by POST-ing payload to /v1/sign and returning
-// the response body as the detached signature. This stand-in signs the
-// exact bytes posted (it does not re-marshal), so signedPayload is the
-// input payload unchanged. A production signing backend that serializes
+// Sign implements [Signer] by POST-ing payload to /v1/sign for the detached
+// signature and pairing it with the current chain from chainDER. This stand-in
+// signs the exact bytes posted (it does not re-marshal), so SignResult.Payload
+// is the input payload unchanged. A production signing backend that serializes
 // server-side would instead return the bytes it actually signed here.
-func (s *RemoteSigner) Sign(ctx context.Context, payload []byte) (signedPayload, sig []byte, err error) {
+func (s *RemoteSigner) Sign(ctx context.Context, payload []byte) (SignResult, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		s.baseURL+"/v1/sign", bytes.NewReader(payload))
 	if err != nil {
-		return nil, nil, fmt.Errorf("remote signer: build sign request: %w", err)
+		return SignResult{}, fmt.Errorf("remote signer: build sign request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("remote signer: sign request: %w", err)
+		return SignResult{}, fmt.Errorf("remote signer: sign request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, nil, fmt.Errorf("remote signer: read sign response: %w", err)
+		return SignResult{}, fmt.Errorf("remote signer: read sign response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("remote signer: sign returned HTTP %d: %s", resp.StatusCode, body)
+		return SignResult{}, fmt.Errorf("remote signer: sign returned HTTP %d: %s", resp.StatusCode, body)
 	}
-	return payload, body, nil
+
+	chain, err := s.chainDER(ctx)
+	if err != nil {
+		return SignResult{}, err
+	}
+	return SignResult{Payload: payload, Signature: body, ChainDER: chain}, nil
 }
 
 // TrustAnchorPEM implements [TrustAnchorProvider] by GET-ing /v1/ca on the
@@ -120,10 +125,11 @@ func (s *RemoteSigner) TrustAnchorPEM(ctx context.Context) ([]byte, error) {
 	return body, nil
 }
 
-// ChainDER implements [Signer] by GET-ing /v1/chain and decoding the
-// returned PEM blob into DER byte slices ordered intermediates-first,
-// leaf-last.
-func (s *RemoteSigner) ChainDER(ctx context.Context) ([][]byte, error) {
+// chainDER returns the current signing chain by GET-ing /v1/chain and decoding
+// the returned PEM blob into DER byte slices ordered intermediates-first,
+// leaf-last. It is called by Sign on every outbound message; results are cached
+// for chainTTL to bound the fetch rate.
+func (s *RemoteSigner) chainDER(ctx context.Context) ([][]byte, error) {
 	s.mu.Lock()
 	if s.cachedChain != nil && s.chainTTL > 0 && time.Since(s.cachedAt) < s.chainTTL {
 		chain := s.cachedChain

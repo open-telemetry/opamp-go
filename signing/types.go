@@ -58,58 +58,57 @@ func (a Algorithm) String() string {
 	}
 }
 
-// Signer produces detached signatures over arbitrary payload bytes and
-// supplies the signing certificate chain.
+// SignResult is the output of one signing operation. Bundling all three
+// fields in a single return guarantees the chain anchors the certificate that
+// produced the signature — a separate chain lookup could race a rotation and
+// return a chain for a different certificate.
 //
-// Implementations may sign locally with an in-process key (see
-// [LocalSigner]) or delegate to an external signing service (HSM,
-// remote signing RPC, hosted platforms with policy gating). Sign and
-// ChainDER both accept a context so RPC-backed implementations can
-// cancel, set deadlines, and propagate trace IDs.
-type Signer interface {
-	// Sign computes a detached signature over the payload and returns
-	// both the signature and the exact payload bytes that were signed.
-	//
-	// The OpAMP server transmits the returned signedPayload as
-	// SignedServerToAgent.payload and the returned sig as
-	// SignedServerToAgent.signature. The Agent verifies sig against the
-	// bytes it receives, so signedPayload MUST be exactly the bytes over
-	// which sig was computed.
-	//
-	// signedPayload exists because protobuf serialization is not
-	// canonical: a signing backend that re-marshals the message with its
-	// own protobuf runtime (for example a remote signer that serializes
-	// server-side and signs the result) produces bytes that differ from
-	// the caller's marshalling. Such a signer returns the bytes it
-	// actually signed, and the server must put those on the wire rather
-	// than its own — otherwise verification fails. An in-process signer
-	// that signs the caller's bytes unchanged returns payload verbatim.
-	//
-	// The signing algorithm is determined by the signing certificate;
-	// the caller does not pass it explicitly.
-	Sign(ctx context.Context, payload []byte) (signedPayload, sig []byte, err error)
+// It is also the extension point for [Signer]: future metadata (a certificate
+// identifier, the leaf's NotAfter for proactive rotation, the algorithm) is
+// added as a field without changing the Sign signature.
+type SignResult struct {
+	// Payload is the exact bytes that were signed, transmitted as
+	// SignedServerToAgent.payload. It is returned (rather than reusing the
+	// bytes passed to Sign) because protobuf serialization is not canonical: a
+	// signer that re-marshals server-side produces different bytes, and the
+	// Agent verifies over the bytes it receives. An in-process signer returns
+	// the input unchanged.
+	Payload []byte
 
-	// ChainDER returns the current signing certificate chain in DER
-	// form, ordered from the first intermediate down to the signing
-	// leaf. The root certificate (which the Agent already possesses as
-	// its pre-configured payload trust anchor) is excluded and never
-	// changes.
-	//
-	// The OpAMP server calls ChainDER per outbound message and delivers
-	// the chain to the Agent whenever it changes, so signer-side key
-	// rotation is handled without dropping the connection. Implementations
-	// SHOULD cache and return the current chain cheaply, returning a new
-	// chain only after a rotation.
-	ChainDER(ctx context.Context) ([][]byte, error)
+	// Signature is the detached signature over Payload, transmitted as
+	// SignedServerToAgent.signature.
+	Signature []byte
+
+	// ChainDER is the signing certificate chain in DER form, ordered first
+	// intermediate to signing leaf. The root (already held by the Agent as its
+	// payload trust anchor) is excluded.
+	ChainDER [][]byte
 }
 
-// TrustAnchorProvider is an optional interface that [Signer] implementations
-// may satisfy when they also hold the root CA certificate. The OpAMP server
-// checks for this interface (via type assertion) to populate
-// trust_chain_response.tofu_trust_anchor during TOFU enrollment.
-// Signers that do not hold the root CA (for example, a remote HSM-backed
-// signer that only exposes the leaf chain) need not implement this interface;
-// TOFU enrollment will simply not be available for those deployments.
+// Signer produces a detached signature over payload bytes together with the
+// certificate chain that anchors it (see [SignResult]).
+//
+// Implementations may sign in-process (see [LocalSigner]) or delegate to an
+// external service (HSM, remote signing RPC). Sign takes a context for
+// cancellation, deadlines, and trace propagation.
+type Signer interface {
+	// Sign computes a detached signature over payload and returns it with the
+	// signed bytes and current chain as a SignResult. The algorithm is
+	// determined by the signing certificate, not passed by the caller.
+	//
+	// There is no separate pre-flight or chain-fetch step: a misconfigured or
+	// unavailable signer fails here (the server then closes the connection).
+	// This lets signers that mint a certificate only as a side effect of
+	// signing — with no "current certificate" to report ahead of time —
+	// implement the interface naturally.
+	Sign(ctx context.Context, payload []byte) (SignResult, error)
+}
+
+// TrustAnchorProvider is an optional interface a [Signer] may satisfy when it
+// also holds the root CA. The server type-asserts for it to populate
+// trust_chain_response.tofu_trust_anchor during TOFU enrollment. Signers that
+// only expose the leaf chain (e.g. a remote HSM) need not implement it; TOFU
+// enrollment is then unavailable for that deployment.
 type TrustAnchorProvider interface {
 	// TrustAnchorPEM returns the PEM-encoded root CA certificate that Agents
 	// should use as their payload trust anchor.

@@ -79,34 +79,26 @@ func NewLocalSigner(key crypto.Signer, chain []*x509.Certificate) (*LocalSigner,
 }
 
 // Sign implements [Signer]. It signs the caller's bytes unchanged and
-// returns them verbatim as signedPayload: an in-process signer does not
-// re-marshal, so the bytes signed are exactly the bytes passed in. The
-// context is honoured only for cancellation; the in-process signing
-// operation itself does not block.
-func (s *LocalSigner) Sign(ctx context.Context, payload []byte) (signedPayload, sig []byte, err error) {
+// returns them verbatim as SignResult.Payload: an in-process signer does not
+// re-marshal, so the bytes signed are exactly the bytes passed in. The chain
+// returned in SignResult.ChainDER is the one configured at construction. The
+// context is honoured only for cancellation; the in-process signing operation
+// itself does not block.
+func (s *LocalSigner) Sign(ctx context.Context, payload []byte) (SignResult, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, nil, err
+		return SignResult{}, err
 	}
-	sig, err = signWithKey(s.key, s.alg, payload)
+	sig, err := signWithKey(s.key, s.alg, payload)
 	if err != nil {
-		return nil, nil, err
+		return SignResult{}, err
 	}
-	return payload, sig, nil
-}
-
-// ChainDER implements [Signer]. Returns a defensive copy so callers
-// cannot mutate the signer's internal state.
-func (s *LocalSigner) ChainDER(ctx context.Context) ([][]byte, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	out := make([][]byte, len(s.chainDER))
-	for i, der := range s.chainDER {
-		clone := make([]byte, len(der))
-		copy(clone, der)
-		out[i] = clone
-	}
-	return out, nil
+	// Return a shallow copy of the chain slice so callers cannot reorder or
+	// replace the signer's internal slice elements. The DER backing arrays
+	// are immutable after construction and are shared to keep Sign cheap on
+	// the hot path.
+	chain := make([][]byte, len(s.chainDER))
+	copy(chain, s.chainDER)
+	return SignResult{Payload: payload, Signature: sig, ChainDER: chain}, nil
 }
 
 // Algorithm reports the algorithm dispatched by this signer (derived

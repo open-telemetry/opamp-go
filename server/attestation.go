@@ -30,17 +30,14 @@ type connectionSigningState struct {
 	firstSent    bool
 }
 
-// newConnectionSigningState constructs the per-connection state. It fetches
-// the chain once to fail fast if the signer is misconfigured; the chain
-// actually delivered is re-fetched per outbound message to detect rotation.
-// When tofu is true the signer must also implement TrustAnchorProvider; the
-// root CA is fetched and stored to be included in the first TrustChainResponse.
+// newConnectionSigningState constructs the per-connection state. There is no
+// pre-flight signer check: the chain arrives per message in SignResult, and a
+// bad signer surfaces from the first Sign in signOutgoing. When tofu is true
+// the signer must also implement TrustAnchorProvider, whose root CA is fetched
+// and stored for the first TrustChainResponse.
 func newConnectionSigningState(ctx context.Context, signer signing.Signer, tofu bool) (*connectionSigningState, error) {
 	if signer == nil {
 		return nil, fmt.Errorf("server: nil signer")
-	}
-	if _, err := signer.ChainDER(ctx); err != nil {
-		return nil, fmt.Errorf("server: fetch signing chain: %w", err)
 	}
 	state := &connectionSigningState{signer: signer}
 	if tofu {
@@ -68,17 +65,18 @@ func (s *connectionSigningState) signOutgoing(ctx context.Context, msg *protobuf
 	if err != nil {
 		return nil, fmt.Errorf("server: marshal inner ServerToAgent: %w", err)
 	}
-	// The signer returns the exact bytes it signed. A signer that
-	// re-marshals server-side (non-canonical protobuf) yields bytes that
-	// differ from our marshalling above; we MUST transmit those, not our
-	// own, or the Agent's verification over the received bytes fails.
-	signedPayload, sig, err := s.signer.Sign(ctx, payload)
+	// Sign returns the exact bytes it signed, the signature, and the anchoring
+	// chain in one SignResult (see signing.SignResult for why all three come
+	// from one call). We MUST transmit res.Payload, not our marshalling above:
+	// a signer that re-marshals server-side yields different bytes, and the
+	// Agent verifies over what it receives.
+	res, err := s.signer.Sign(ctx, payload)
 	if err != nil {
 		return nil, fmt.Errorf("server: sign payload: %w", err)
 	}
 	env := &protobufs.SignedServerToAgent{
-		Payload:   signedPayload,
-		Signature: sig,
+		Payload:   res.Payload,
+		Signature: res.Signature,
 	}
 
 	s.mu.Lock()
@@ -92,12 +90,8 @@ func (s *connectionSigningState) signOutgoing(ctx context.Context, msg *protobuf
 		return env, nil
 	}
 
-	chain, err := s.signer.ChainDER(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("server: fetch signing chain: %w", err)
-	}
 	var pemChain []byte
-	for _, der := range chain {
+	for _, der := range res.ChainDER {
 		pemChain = append(pemChain, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
 	}
 	if !s.firstSent || !bytes.Equal(pemChain, s.lastChainPEM) {
