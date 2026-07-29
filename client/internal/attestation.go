@@ -84,8 +84,8 @@ var (
 // is created at all; payload trust is simply not negotiated.
 type attestationState struct {
 	verifier   signing.Verifier
-	serverName string            // hostname for SAN verification
-	tofuStore  signing.TOFUStore // non-nil when in TOFU enrollment mode
+	serverName string               // hostname for SAN verification
+	enroller   signing.TOFUEnroller // non-nil when in TOFU enrollment mode
 
 	mu             sync.Mutex
 	firstSeen      bool
@@ -94,11 +94,11 @@ type attestationState struct {
 }
 
 // newAttestationState constructs a per-connection attestation state.
-// verifier is nil in TOFU enrollment mode (tofuStore non-nil); in that case
-// the verifier is bootstrapped from the first TrustChainResponse.
-// serverName is the hostname (without port) of the OpAMP server.
-func newAttestationState(verifier signing.Verifier, serverName string, tofuStore signing.TOFUStore) *attestationState {
-	return &attestationState{verifier: verifier, serverName: serverName, tofuStore: tofuStore}
+// verifier is nil in TOFU enrollment mode (enroller non-nil); in that case
+// the verifier is bootstrapped from the first TrustChainResponse via the
+// enroller. serverName is the hostname (without port) of the OpAMP server.
+func newAttestationState(verifier signing.Verifier, serverName string, enroller signing.TOFUEnroller) *attestationState {
+	return &attestationState{verifier: verifier, serverName: serverName, enroller: enroller}
 }
 
 // Reset clears the per-connection handshake state. After Reset, the
@@ -178,19 +178,16 @@ func (s *attestationState) ProcessEnvelope(ctx context.Context, envelope *protob
 			return nil, fmt.Errorf("client: parse trust chain PEM: %w", err)
 		}
 
-		if s.tofuStore != nil {
+		if s.enroller != nil {
 			if len(chainResp.TofuTrustAnchor) == 0 {
 				return nil, ErrTOFUAnchorMissing
 			}
-			v, err := signing.VerifierFromPEM(chainResp.TofuTrustAnchor)
+			v, err := s.enroller.Enroll(chainResp.TofuTrustAnchor)
 			if err != nil {
-				return nil, fmt.Errorf("client: TOFU: parse trust anchor: %w", err)
-			}
-			if err := s.tofuStore.Save(chainResp.TofuTrustAnchor); err != nil {
-				return nil, fmt.Errorf("client: TOFU: persist trust anchor: %w", err)
+				return nil, fmt.Errorf("client: TOFU enrollment: %w", err)
 			}
 			s.verifier = v
-			s.tofuStore = nil
+			s.enroller = nil
 		}
 
 		leaf, err := s.verifier.ValidateChain(ctx, chainDER, time.Now())

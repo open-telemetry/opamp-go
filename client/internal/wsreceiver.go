@@ -65,7 +65,7 @@ func NewWSReceiver(
 	reporterInterval time.Duration,
 	payloadVerifier signing.Verifier,
 	serverURL string,
-	tofuStore signing.TOFUStore,
+	tofuEnroller signing.TOFUEnroller,
 ) *wsReceiver {
 	w := &wsReceiver{
 		conn:      conn,
@@ -75,7 +75,7 @@ func NewWSReceiver(
 		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider, packageSyncMutex, reporterInterval),
 		stopped:   make(chan struct{}),
 	}
-	if payloadVerifier != nil || tofuStore != nil {
+	if payloadVerifier != nil || tofuEnroller != nil {
 		var serverName string
 		if parsed, err := url.Parse(serverURL); err != nil {
 			// Fail closed downstream: an empty serverName makes
@@ -85,7 +85,7 @@ func NewWSReceiver(
 		} else {
 			serverName = parsed.Hostname()
 		}
-		w.attestation = newAttestationState(payloadVerifier, serverName, tofuStore)
+		w.attestation = newAttestationState(payloadVerifier, serverName, tofuEnroller)
 	}
 
 	return w

@@ -58,43 +58,27 @@ type StartSettings struct {
 	// i.e. package status reporting and syncing from the Server will be disabled.
 	PackagesStateProvider PackagesStateProvider
 
-	// PayloadVerifier validates the X.509 trust chain delivered in the
-	// initial SignedServerToAgent.trust_chain_response of a connection
-	// and verifies the detached signature on every subsequent
-	// ServerToAgent message. MUST be set when the Agent's capability
-	// set includes
-	// AgentCapabilities_RequiresPayloadTrustVerification. When nil
-	// (the default), payload trust verification is disabled and the
-	// Server-to-Agent wire format is the standard ServerToAgent
-	// protobuf.
+	// PayloadTrustProvider opts the Agent in to payload trust verification.
+	// When non-nil, the trust chain delivered in the initial
+	// SignedServerToAgent.trust_chain_response is validated and the detached
+	// signature on every subsequent ServerToAgent message is verified. MUST be
+	// set when the Agent's capability set includes
+	// AgentCapabilities_RequiresPayloadTrustVerification. When nil (the
+	// default), payload trust verification is disabled and the Server-to-Agent
+	// wire format is the standard ServerToAgent protobuf.
 	//
-	// See the signing package for the in-process LocalVerifier
-	// implementation and the VerifierFromFile helper that constructs
-	// one from a PEM-encoded CA bundle.
-	PayloadVerifier signing.Verifier
-
-	// PayloadTOFUStore enables Trust On First Use (TOFU) enrollment for the
-	// payload trust anchor. Mutually exclusive with PayloadVerifier: if
-	// PayloadVerifier is also set it takes precedence and PayloadTOFUStore
-	// is ignored.
+	// Construct one with the signing package helpers:
+	//   - signing.FixedAnchor(v) for a fixed, pre-configured trust anchor (see
+	//     signing.VerifierFromFile to build v from a PEM-encoded CA bundle).
+	//   - signing.TOFUAnchor(store) for Trust On First Use enrollment, where
+	//     the root CA is bootstrapped from the first connection and persisted
+	//     via store. TOFU provides no security on the first connection; enable
+	//     it only where that connection is considered sufficiently trusted.
 	//
-	// On startup the client calls PayloadTOFUStore.Load():
-	//   - If a trust anchor is returned, it is used as PayloadVerifier for
-	//     this session (normal attestation path).
-	//   - If no anchor is stored yet, the client advertises
-	//     AgentCapabilities_AcceptsPayloadTrustAnchorTOFU alongside
-	//     AgentCapabilities_RequiresPayloadTrustVerification, accepts the
-	//     root CA from the first TrustChainResponse.tofu_trust_anchor, and
-	//     persists it via PayloadTOFUStore.Save().
-	//
-	// WARNING: TOFU provides no security on the first connection; a
-	// compromised distribution server can install an attacker-controlled
-	// trust anchor. Disable by default and enable only for environments
-	// where the first connection is considered sufficiently trusted.
-	// Requires persistent storage across restarts — agents running in
-	// stateless container environments without a persistent volume will
-	// repeat TOFU enrollment on every restart.
-	PayloadTOFUStore signing.TOFUStore
+	// The provider is extensible: a custom implementation exposes optional
+	// capabilities (such as signing.TOFUEnroller) as additional interfaces the
+	// client detects via type assertion.
+	PayloadTrustProvider signing.PayloadTrustProvider
 
 	// Defines the capabilities of the Agent. AgentCapabilities_ReportsStatus bit does not need to
 	// be set in this field, it will be set automatically since it is required by OpAMP protocol.

@@ -25,9 +25,10 @@ var (
 	ErrAcceptsPackagesNotSet                 = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 	ErrAvailableComponentsMissing            = errors.New("AvailableComponents is nil")
 	ErrReportsConnectionSettingsStatusNotSet = errors.New("ReportsConnectionSettingsStatus capability is not set")
-	ErrPayloadVerifierMissing                = errors.New("PayloadVerifier must be set when RequiresPayloadTrustVerification capability is enabled")
-	ErrPayloadVerifierWithoutCapability      = errors.New("PayloadVerifier set but RequiresPayloadTrustVerification capability is not enabled")
-	ErrTOFULoadFailed                        = errors.New("PayloadTOFUStore.Load failed at startup")
+	ErrPayloadVerifierMissing                = errors.New("PayloadTrustProvider must be set when RequiresPayloadTrustVerification capability is enabled")
+	ErrPayloadVerifierWithoutCapability      = errors.New("PayloadTrustProvider set but RequiresPayloadTrustVerification capability is not enabled")
+	ErrPayloadVerifierInit                   = errors.New("PayloadTrustProvider.Verifier failed at startup")
+	ErrPayloadTrustProviderNoAnchor          = errors.New("PayloadTrustProvider returned no Verifier and does not support TOFU enrollment")
 
 	errAlreadyStarted                  = errors.New("already started")
 	errCannotStopNotStarted            = errors.New("cannot stop because not started")
@@ -55,15 +56,15 @@ type ClientCommon struct {
 	// a connection, and verifies the per-message signature on every
 	// subsequent ServerToAgent. nil when the Agent has not opted in to
 	// payload trust verification (the standard OpAMP wire path stays
-	// active). MUST be non-nil when
-	// AgentCapabilities_RequiresPayloadTrustVerification is in the
-	// declared capability set.
+	// active), or when TOFU enrollment is pending (see PayloadTOFUEnroller).
+	// Resolved from StartSettings.PayloadTrustProvider in PrepareStart.
 	PayloadVerifier signing.Verifier
 
-	// PayloadTOFUStore, when non-nil, backs TOFU enrollment. Set from
-	// StartSettings.PayloadTOFUStore. Nil after the trust anchor has been
-	// loaded from the store and promoted to PayloadVerifier.
-	PayloadTOFUStore signing.TOFUStore
+	// PayloadTOFUEnroller, when non-nil, backs TOFU enrollment: the
+	// PayloadTrustProvider returned no pre-configured Verifier but supports
+	// enrolling a trust anchor from the first connection. Nil once the anchor
+	// has been enrolled and promoted to PayloadVerifier.
+	PayloadTOFUEnroller signing.TOFUEnroller
 
 	// The transport-specific sender.
 	sender Sender
@@ -114,10 +115,11 @@ func (c *ClientCommon) validateCapabilities(capabilities protobufs.AgentCapabili
 		}
 	}
 	requiresAttestation := capabilities&protobufs.AgentCapabilities_AgentCapabilities_RequiresPayloadTrustVerification != 0
+	attestationConfigured := c.PayloadVerifier != nil || c.PayloadTOFUEnroller != nil
 	switch {
-	case requiresAttestation && c.PayloadVerifier == nil && c.PayloadTOFUStore == nil:
+	case requiresAttestation && !attestationConfigured:
 		return ErrPayloadVerifierMissing
-	case !requiresAttestation && c.PayloadVerifier != nil:
+	case !requiresAttestation && attestationConfigured:
 		return ErrPayloadVerifierWithoutCapability
 	}
 	return nil
@@ -158,25 +160,29 @@ func (c *ClientCommon) PrepareStart(
 
 	// Prepare package statuses.
 	c.PackagesStateProvider = settings.PackagesStateProvider
-	// Wire up payload trust verification. PayloadVerifier takes precedence;
-	// if only PayloadTOFUStore is set, try to load a previously-persisted
-	// anchor. If found, promote it to PayloadVerifier (normal path). If
-	// not found, keep PayloadTOFUStore set so the transport-level code
-	// enters TOFU enrollment mode on connection.
-	c.PayloadVerifier = settings.PayloadVerifier
-	if c.PayloadVerifier == nil && settings.PayloadTOFUStore != nil {
-		anchorPEM, err := settings.PayloadTOFUStore.Load()
+	// Wire up payload trust verification from the single PayloadTrustProvider.
+	// The provider resolves its Verifier: a non-nil Verifier is the normal
+	// (fixed anchor, or previously-enrolled TOFU) path. A nil Verifier means
+	// no anchor is configured yet; if the provider also satisfies the optional
+	// TOFUEnroller interface, enter TOFU enrollment mode so the transport-level
+	// code bootstraps the anchor from the first connection. A provider with no
+	// anchor and no enrollment capability is a misconfiguration.
+	c.PayloadVerifier = nil
+	c.PayloadTOFUEnroller = nil
+	if settings.PayloadTrustProvider != nil {
+		v, err := settings.PayloadTrustProvider.Verifier()
 		if err != nil {
-			return fmt.Errorf("%w: %v", ErrTOFULoadFailed, err)
+			return fmt.Errorf("%w: %v", ErrPayloadVerifierInit, err)
 		}
-		if len(anchorPEM) > 0 {
-			v, err := signing.VerifierFromPEM(anchorPEM)
-			if err != nil {
-				return fmt.Errorf("%w: persisted anchor is invalid: %v", ErrTOFULoadFailed, err)
-			}
+		switch {
+		case v != nil:
 			c.PayloadVerifier = v
-		} else {
-			c.PayloadTOFUStore = settings.PayloadTOFUStore
+		default:
+			enroller, ok := settings.PayloadTrustProvider.(signing.TOFUEnroller)
+			if !ok {
+				return ErrPayloadTrustProviderNoAnchor
+			}
+			c.PayloadTOFUEnroller = enroller
 		}
 	}
 	if err := c.validateCapabilities(c.ClientSyncedState.Capabilities()); err != nil {

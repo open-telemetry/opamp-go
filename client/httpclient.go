@@ -164,7 +164,7 @@ func (c *httpClient) runUntilStopped(ctx context.Context) {
 		&c.common.PackageSyncMutex,
 		c.common.DownloadReporterInterval,
 		c.common.PayloadVerifier,
-		c.common.PayloadTOFUStore,
+		c.common.PayloadTOFUEnroller,
 	)
 }
 

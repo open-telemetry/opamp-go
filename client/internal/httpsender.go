@@ -75,7 +75,7 @@ type HTTPSender struct {
 	// attestation, when non-nil, decodes inbound responses as
 	// SignedServerToAgent envelopes — validates the trust chain on the
 	// first response and verifies the signature on every subsequent
-	// one. Set by Run when the StartSettings supplied a PayloadVerifier.
+	// one. Set by Run when the StartSettings supplied a PayloadTrustProvider.
 	attestation *attestationState
 }
 
@@ -149,17 +149,17 @@ func (h *HTTPSender) Run(
 	packageSyncMutex *sync.Mutex,
 	reporterInterval time.Duration,
 	payloadVerifier signing.Verifier,
-	tofuStore signing.TOFUStore,
+	tofuEnroller signing.TOFUEnroller,
 ) {
 	h.url = serverURL
 	h.callbacks = callbacks
 	h.receiveProcessor = newReceivedProcessor(h.logger, callbacks, h, clientSyncedState, packagesStateProvider, packageSyncMutex, reporterInterval)
-	if payloadVerifier != nil || tofuStore != nil {
+	if payloadVerifier != nil || tofuEnroller != nil {
 		var serverName string
 		if parsed, err := url.Parse(h.url); err == nil {
 			serverName = parsed.Hostname()
 		}
-		h.attestation = newAttestationState(payloadVerifier, serverName, tofuStore)
+		h.attestation = newAttestationState(payloadVerifier, serverName, tofuEnroller)
 	}
 
 	// we need to detect if the redirect was ever set, if not, we want default behaviour

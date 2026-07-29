@@ -415,7 +415,7 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) (atte
 		c.common.DownloadReporterInterval,
 		c.common.PayloadVerifier,
 		c.url.String(),
-		c.common.PayloadTOFUStore,
+		c.common.PayloadTOFUEnroller,
 	)
 
 	// When the wsclient is closed, the context passed to runOneCycle will be canceled.
@@ -434,7 +434,7 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) (atte
 			// If the sender noticed the broken connection first (before the
 			// receiver), still treat it as an abnormal connection failure
 			// when attestation is enabled so the caller backs off.
-			if c.common.PayloadVerifier != nil || c.common.PayloadTOFUStore != nil {
+			if c.common.PayloadVerifier != nil || c.common.PayloadTOFUEnroller != nil {
 				connectionFailed = true
 			}
 
