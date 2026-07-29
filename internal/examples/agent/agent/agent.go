@@ -616,7 +616,8 @@ func (agent *Agent) processCustomMessage(ctx context.Context, customMessage *pro
 		return
 	}
 
-	agent.logger.Debugf(ctx, "received custom message: capability=%s, type=%s, data=%s",
+	agent.logger.Debugf(
+		ctx, "received custom message: capability=%s, type=%s, data=%s",
 		customMessage.Capability,
 		customMessage.Type,
 		string(customMessage.Data),

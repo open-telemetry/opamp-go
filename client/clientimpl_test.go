@@ -1271,14 +1271,16 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 								&protobufs.RemoteConfigStatus{
 									LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
 									Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED,
-								})
+								},
+							)
 						} else {
 							client.SetRemoteConfigStatus(
 								&protobufs.RemoteConfigStatus{
 									LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
 									Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
 									ErrorMessage:         "cannot update remote config",
-								})
+								},
+							)
 						}
 					}
 				},
@@ -2924,7 +2926,8 @@ func TestConnectionSettingsSkippedWhenHashUnchanged(t *testing.T) {
 		// Client sends APPLYING then APPLIED status. The server responds with the
 		// same connection settings hash each time. Eventually the callback count
 		// should stabilize at 1 because the hash-skip logic prevents reprocessing.
-		srv.EventuallyExpect("client reports APPLIED status",
+		srv.EventuallyExpect(
+			"client reports APPLIED status",
 			func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent, bool) {
 				resp := &protobufs.ServerToAgent{
 					InstanceUid: msg.InstanceUid,

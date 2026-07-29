@@ -80,7 +80,8 @@ func NewMetricReporter(
 	// Define the Resource to be exported with all metrics. Use OpenTelemetry semantic
 	// conventions as the OpAMP spec requires:
 	// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#own-telemetry-reporting
-	resource, err := otelresource.New(context.Background(),
+	resource, err := otelresource.New(
+		context.Background(),
 		otelresource.WithAttributes(
 			semconv.ServiceNameKey.String(agentType),
 			semconv.ServiceVersionKey.String(agentVersion),
@@ -93,7 +94,8 @@ func NewMetricReporter(
 		sdkmetric.WithResource(resource),
 		sdkmetric.WithReader(
 			sdkmetric.NewPeriodicReader(metricExporter, sdkmetric.WithInterval(5*time.Second)),
-		))
+		),
+	)
 
 	otel.SetMeterProvider(meterProvider)
 

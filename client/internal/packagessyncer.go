@@ -397,7 +397,8 @@ func (s *packagesSyncer) reportStatuses(ctx context.Context, sendImmediately boo
 		s.sender.NextMessage().Update(
 			func(msg *protobufs.AgentToServer) {
 				msg.PackageStatuses = s.clientSyncedState.PackageStatuses()
-			})
+			},
+		)
 
 		if sendImmediately {
 			s.sender.ScheduleSend()
