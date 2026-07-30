@@ -1,0 +1,9 @@
+# build-and-test.yml runs on tag pushes so that tagged commits are verified, but
+# it publishes no artifacts -- it only builds, tests, and uploads coverage.
+# Releases are produced by docker-publish.yml, which does not use these caches.
+# The cache-poisoning audit's premise (a poisoned cache reaching a published
+# artifact) therefore does not apply. Revisit if this workflow ever publishes.
+rules:
+  cache-poisoning:
+    ignore:
+      - build-and-test.yml
