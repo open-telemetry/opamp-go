@@ -4,5 +4,6 @@
     "config:best-practices",
     "helpers:pinGitHubActionDigestsToSemver"
   ],
+  "ignorePaths": [],
   "postUpdateOptions": ["gomodTidy"]
 }
