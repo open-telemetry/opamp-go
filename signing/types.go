@@ -66,6 +66,10 @@ func (a Algorithm) String() string {
 // It is also the extension point for [Signer]: future metadata (a certificate
 // identifier, the leaf's NotAfter for proactive rotation, the algorithm) is
 // added as a field without changing the Sign signature.
+//
+// All fields are read-only: callers MUST NOT modify the returned slices or
+// their backing bytes. Implementations may return storage shared with the
+// signer (see [LocalSigner]), so mutation could corrupt subsequent signatures.
 type SignResult struct {
 	// Payload is the exact bytes that were signed, transmitted as
 	// SignedServerToAgent.payload. It is returned (rather than reusing the
@@ -129,10 +133,15 @@ type Verifier interface {
 	// intermediates first, leaf last; the root is supplied via the
 	// verifier's configuration and MUST NOT appear in chainDER.
 	//
+	// The leaf's SAN must match dnsName, binding the signing identity
+	// to the connected server. dnsName MUST be non-empty; implementations
+	// fail closed otherwise. Callers MUST NOT perform a separate
+	// hostname check.
+	//
 	// Returns the validated leaf certificate on success. The Agent
 	// stores the leaf for the duration of the connection and passes
 	// it to Verify on every subsequent message.
-	ValidateChain(ctx context.Context, chainDER [][]byte, now time.Time) (*x509.Certificate, error)
+	ValidateChain(ctx context.Context, chainDER [][]byte, now time.Time, dnsName string) (*x509.Certificate, error)
 
 	// Verify validates signature over payload using the public key of
 	// leaf. The signature algorithm is derived from leaf's public-key

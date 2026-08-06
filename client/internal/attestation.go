@@ -31,20 +31,6 @@ var (
 	// satisfy the handshake.
 	ErrTrustChainErrorReported = errors.New("client: server reported trust chain error")
 
-	// ErrSANMismatch is returned when the leaf certificate's Subject
-	// Alternative Name entries do not contain a dNSName or iPAddress
-	// that matches the OpAMP server the Agent is connected to. Per the
-	// spec this is a fatal handshake error.
-	ErrSANMismatch = errors.New("client: leaf certificate SAN does not match server hostname")
-
-	// ErrServerNameUnavailable is returned when payload trust
-	// verification is enabled but the Agent could not determine the
-	// server hostname to check the leaf certificate's SAN against (for
-	// example, the server URL was empty or unparseable). SAN
-	// verification is mandatory when attestation is on, so rather than
-	// silently skip it the handshake fails closed.
-	ErrServerNameUnavailable = errors.New("client: cannot verify leaf certificate SAN: server hostname unavailable")
-
 	// ErrTOFUAnchorMissing is returned during TOFU enrollment when the
 	// Server's TrustChainResponse does not include the expected
 	// tofu_trust_anchor field.
@@ -131,12 +117,13 @@ func isAttestationFailure(err error) bool {
 	}
 	return errors.Is(err, ErrMissingTrustChain) ||
 		errors.Is(err, ErrTrustChainErrorReported) ||
-		errors.Is(err, ErrSANMismatch) ||
 		errors.Is(err, ErrTOFUAnchorMissing) ||
 		errors.Is(err, ErrMissingSignature) ||
 		errors.Is(err, ErrMissingPayload) ||
 		errors.Is(err, ErrEmptyInnerServerToAgent) ||
 		errors.Is(err, signing.ErrChainValidation) ||
+		errors.Is(err, signing.ErrHostnameMismatch) ||
+		errors.Is(err, signing.ErrServerNameRequired) ||
 		errors.Is(err, signing.ErrSignatureMismatch) ||
 		errors.Is(err, signing.ErrEmptyChain) ||
 		errors.Is(err, signing.ErrParseCertificate) ||
@@ -190,15 +177,9 @@ func (s *attestationState) ProcessEnvelope(ctx context.Context, envelope *protob
 			s.enroller = nil
 		}
 
-		leaf, err := s.verifier.ValidateChain(ctx, chainDER, time.Now())
+		leaf, err := s.verifier.ValidateChain(ctx, chainDER, time.Now(), s.serverName)
 		if err != nil {
 			return nil, fmt.Errorf("client: validate trust chain: %w", err)
-		}
-		if s.serverName == "" {
-			return nil, ErrServerNameUnavailable
-		}
-		if err := leaf.VerifyHostname(s.serverName); err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrSANMismatch, err)
 		}
 		s.leaf = leaf
 		s.pinnedChainPEM = chainResp.CertificateChain

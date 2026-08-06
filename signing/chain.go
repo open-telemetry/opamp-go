@@ -29,6 +29,19 @@ var (
 	// ErrSignatureMismatch is returned when a detached signature does
 	// not verify against the supplied public key and payload bytes.
 	ErrSignatureMismatch = errors.New("signing: signature does not verify")
+
+	// ErrServerNameRequired is returned when ValidateChain is called
+	// with an empty dnsName. Hostname verification is mandatory: an
+	// empty name would cause crypto/x509 to skip the SAN check
+	// silently, so ValidateChain fails closed rather than accept a
+	// chain that is not bound to the connected server.
+	ErrServerNameRequired = errors.New("signing: server hostname required for chain validation")
+
+	// ErrHostnameMismatch is returned when the leaf certificate's
+	// Subject Alternative Name entries do not cover dnsName. This
+	// prevents a certificate legitimately issued for one host from
+	// being accepted for a connection to another.
+	ErrHostnameMismatch = errors.New("signing: leaf certificate not valid for server hostname")
 )
 
 // ValidateChain performs RFC 5280 §6 X.509 path validation of the
@@ -45,6 +58,12 @@ var (
 // for TLS server authentication from being repurposed to sign OpAMP
 // messages.
 //
+// The leaf's SAN must match dnsName (dNSName or iPAddress), binding the
+// signing identity to the connected server. dnsName MUST be non-empty:
+// an empty name makes crypto/x509 skip the SAN check, so ValidateChain
+// fails closed with ErrServerNameRequired. Callers MUST NOT perform a
+// separate hostname check.
+//
 // Other RFC 5280 checks — per-certificate signature, validity window,
 // basicConstraints, pathLenConstraint, critical extensions — are
 // enforced by the underlying crypto/x509 implementation.
@@ -53,12 +72,15 @@ var (
 // but not performed here in the current implementation; that is a
 // follow-up. Operators MAY rely on short-lived signing certificates
 // as a complementary mitigation.
-func ValidateChain(_ context.Context, chainDER [][]byte, roots *x509.CertPool, now time.Time) (*x509.Certificate, error) {
+func ValidateChain(_ context.Context, chainDER [][]byte, roots *x509.CertPool, now time.Time, dnsName string) (*x509.Certificate, error) {
 	if len(chainDER) == 0 {
 		return nil, ErrEmptyChain
 	}
 	if roots == nil {
 		return nil, fmt.Errorf("%w: nil trust anchor pool", ErrChainValidation)
+	}
+	if dnsName == "" {
+		return nil, ErrServerNameRequired
 	}
 
 	certs := make([]*x509.Certificate, 0, len(chainDER))
@@ -82,9 +104,14 @@ func ValidateChain(_ context.Context, chainDER [][]byte, roots *x509.CertPool, n
 		Intermediates: intermediates,
 		CurrentTime:   now,
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning},
+		DNSName:       dnsName,
 	}
 
 	if _, err := leaf.Verify(opts); err != nil {
+		var hostErr x509.HostnameError
+		if errors.As(err, &hostErr) {
+			return nil, fmt.Errorf("%w: %v", ErrHostnameMismatch, err)
+		}
 		return nil, fmt.Errorf("%w: %v", ErrChainValidation, err)
 	}
 

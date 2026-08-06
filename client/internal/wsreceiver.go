@@ -79,8 +79,8 @@ func NewWSReceiver(
 		var serverName string
 		if parsed, err := url.Parse(serverURL); err != nil {
 			// Fail closed downstream: an empty serverName makes
-			// ProcessEnvelope reject the handshake with
-			// ErrServerNameUnavailable rather than skip SAN verification.
+			// signing.ValidateChain reject the handshake with
+			// ErrServerNameRequired rather than skip SAN verification.
 			logger.Errorf(context.Background(), "Cannot parse server URL %q for SAN verification: %v", serverURL, err)
 		} else {
 			serverName = parsed.Hostname()

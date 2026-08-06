@@ -35,11 +35,11 @@ func NewLocalVerifier(roots *x509.CertPool) (*LocalVerifier, error) {
 
 // ValidateChain implements [Verifier], delegating to the package-level
 // [ValidateChain] function with the verifier's trust anchor pool.
-func (v *LocalVerifier) ValidateChain(ctx context.Context, chainDER [][]byte, now time.Time) (*x509.Certificate, error) {
+func (v *LocalVerifier) ValidateChain(ctx context.Context, chainDER [][]byte, now time.Time, dnsName string) (*x509.Certificate, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return ValidateChain(ctx, chainDER, v.roots, now)
+	return ValidateChain(ctx, chainDER, v.roots, now, dnsName)
 }
 
 // Verify implements [Verifier]. The signature algorithm is derived
