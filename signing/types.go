@@ -2,7 +2,6 @@ package signing
 
 import (
 	"context"
-	"crypto/x509"
 	"time"
 )
 
@@ -123,9 +122,8 @@ type TrustAnchorProvider interface {
 // signatures against the resulting leaf certificate.
 //
 // Implementations are expected to perform RFC 5280 §6 X.509 path
-// validation in ValidateChain. The Verify method performs the
-// signature-only check against the leaf returned by a successful
-// ValidateChain call.
+// validation in ValidateChain and re-confirm the chain is still valid
+// at time-of-use in Verify (see [VerifiedCertificate]).
 type Verifier interface {
 	// ValidateChain performs RFC 5280 §6 path validation of the
 	// supplied DER certificate chain against the verifier's
@@ -138,16 +136,19 @@ type Verifier interface {
 	// fail closed otherwise. Callers MUST NOT perform a separate
 	// hostname check.
 	//
-	// Returns the validated leaf certificate on success. The Agent
-	// stores the leaf for the duration of the connection and passes
-	// it to Verify on every subsequent message.
-	ValidateChain(ctx context.Context, chainDER [][]byte, now time.Time, dnsName string) (*x509.Certificate, error)
+	// On success it returns a [VerifiedCertificate], which the Agent
+	// stores for the duration of the connection and passes to Verify on
+	// every subsequent message.
+	ValidateChain(ctx context.Context, chainDER [][]byte, now time.Time, dnsName string) (*VerifiedCertificate, error)
 
 	// Verify validates signature over payload using the public key of
-	// leaf. The signature algorithm is derived from leaf's public-key
-	// type and (for ECDSA) curve, cross-checked against
-	// leaf.SignatureAlgorithm. The payload bytes are the wire bytes of
+	// cert's leaf. Because a chain valid at ValidateChain time may have
+	// expired since, Verify MUST first re-confirm cert is still valid at
+	// the current time (see [VerifiedCertificate.ValidAt]) and reject the
+	// message otherwise. The signature algorithm is derived from the
+	// leaf's public-key type and (for ECDSA) curve, cross-checked against
+	// its SignatureAlgorithm. The payload bytes are the wire bytes of
 	// SignedServerToAgent.payload — the receiver does not re-marshal
 	// anything.
-	Verify(ctx context.Context, payload, signature []byte, leaf *x509.Certificate) error
+	Verify(ctx context.Context, payload, signature []byte, cert *VerifiedCertificate) error
 }

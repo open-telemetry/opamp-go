@@ -35,30 +35,38 @@ func NewLocalVerifier(roots *x509.CertPool) (*LocalVerifier, error) {
 
 // ValidateChain implements [Verifier], delegating to the package-level
 // [ValidateChain] function with the verifier's trust anchor pool.
-func (v *LocalVerifier) ValidateChain(ctx context.Context, chainDER [][]byte, now time.Time, dnsName string) (*x509.Certificate, error) {
+func (v *LocalVerifier) ValidateChain(ctx context.Context, chainDER [][]byte, now time.Time, dnsName string) (*VerifiedCertificate, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return ValidateChain(ctx, chainDER, v.roots, now, dnsName)
 }
 
-// Verify implements [Verifier]. The signature algorithm is derived
-// from the leaf certificate's public-key type and (for ECDSA) curve,
-// cross-checked against leaf.SignatureAlgorithm.
-// ErrUnsupportedAlgorithm is returned for any pubkey type/curve
-// outside the supported baseline (or when leaf.SignatureAlgorithm
-// disagrees with the actual key). ErrSignatureMismatch is returned
-// when the signature does not verify.
-func (v *LocalVerifier) Verify(ctx context.Context, payload, signature []byte, leaf *x509.Certificate) error {
+// Verify implements [Verifier]. It first re-confirms cert is still
+// valid at the current time — a chain validated at handshake may have
+// expired since — and rejects the message if not. It then checks the
+// signature: the algorithm is derived from the leaf's public-key type
+// and (for ECDSA) curve, cross-checked against its SignatureAlgorithm.
+// ErrUnsupportedAlgorithm is returned for any pubkey type/curve outside
+// the supported baseline (or when SignatureAlgorithm disagrees with the
+// actual key); ErrChainValidation when the chain is no longer valid;
+// ErrSignatureMismatch when the signature does not verify.
+func (v *LocalVerifier) Verify(ctx context.Context, payload, signature []byte, cert *VerifiedCertificate) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if leaf == nil {
-		return errors.New("signing: nil leaf certificate")
+	if cert == nil {
+		return errors.New("signing: nil verified certificate")
 	}
 	if len(signature) == 0 {
 		return errors.New("signing: empty signature")
 	}
+	// Re-establish trust at time-of-use: the chain validated at the
+	// handshake is not trusted indefinitely (certificates expire).
+	if err := cert.ValidAt(time.Now()); err != nil {
+		return err
+	}
+	leaf := cert.Leaf()
 	alg, err := algorithmFromCert(leaf)
 	if err != nil {
 		return err

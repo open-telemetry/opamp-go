@@ -3,7 +3,6 @@ package internal
 import (
 	"bytes"
 	"context"
-	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -75,7 +74,7 @@ type attestationState struct {
 
 	mu             sync.Mutex
 	firstSeen      bool
-	leaf           *x509.Certificate
+	verified       *signing.VerifiedCertificate
 	pinnedChainPEM []byte
 }
 
@@ -101,7 +100,7 @@ func (s *attestationState) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.firstSeen = false
-	s.leaf = nil
+	s.verified = nil
 	s.pinnedChainPEM = nil
 }
 
@@ -177,11 +176,11 @@ func (s *attestationState) ProcessEnvelope(ctx context.Context, envelope *protob
 			s.enroller = nil
 		}
 
-		leaf, err := s.verifier.ValidateChain(ctx, chainDER, time.Now(), s.serverName)
+		verified, err := s.verifier.ValidateChain(ctx, chainDER, time.Now(), s.serverName)
 		if err != nil {
 			return nil, fmt.Errorf("client: validate trust chain: %w", err)
 		}
-		s.leaf = leaf
+		s.verified = verified
 		s.pinnedChainPEM = chainResp.CertificateChain
 		s.firstSeen = true
 	} else if !s.firstSeen {
@@ -192,7 +191,7 @@ func (s *attestationState) ProcessEnvelope(ctx context.Context, envelope *protob
 	if len(envelope.Signature) == 0 {
 		return nil, ErrMissingSignature
 	}
-	if err := s.verifier.Verify(ctx, envelope.Payload, envelope.Signature, s.leaf); err != nil {
+	if err := s.verifier.Verify(ctx, envelope.Payload, envelope.Signature, s.verified); err != nil {
 		return nil, fmt.Errorf("client: verify signature: %w", err)
 	}
 	return envelope.Payload, nil

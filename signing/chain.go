@@ -44,6 +44,38 @@ var (
 	ErrHostnameMismatch = errors.New("signing: leaf certificate not valid for server hostname")
 )
 
+// VerifiedCertificate is a certificate chain that has passed path
+// validation via [ValidateChain]. It is the only type [Verifier.Verify]
+// accepts, so the compiler guarantees a signature is never verified
+// against a chain that has not been validated — the unexported fields
+// mean it cannot be constructed outside this package.
+//
+// It retains the validated chain, trust anchors, and hostname so that
+// validity can be re-confirmed at time-of-use (see [VerifiedCertificate.ValidAt]),
+// because a chain valid at handshake may expire before a later message.
+//
+// The zero value is unusable; obtain one from [ValidateChain].
+type VerifiedCertificate struct {
+	leaf    *x509.Certificate
+	chain   []*x509.Certificate // ordered intermediates first, leaf last
+	roots   *x509.CertPool
+	dnsName string
+}
+
+// Leaf returns the validated leaf certificate (public key, SANs, EKU,
+// etc.). Callers may inspect it but MUST treat it as read-only.
+func (c *VerifiedCertificate) Leaf() *x509.Certificate { return c.leaf }
+
+// ValidAt re-runs path validation of the chain as of now and returns a
+// non-nil error if it is no longer valid — for example a certificate
+// has expired. Because certificates expire (and may later be revoked),
+// a chain validated at handshake is not trusted indefinitely: a
+// verifier MUST call ValidAt at the moment it relies on the chain.
+func (c *VerifiedCertificate) ValidAt(now time.Time) error {
+	_, err := verifyParsedChain(c.chain, c.roots, now, c.dnsName)
+	return err
+}
+
 // ValidateChain performs RFC 5280 §6 X.509 path validation of the
 // supplied DER certificate chain against the trust anchor pool in
 // roots.
@@ -72,7 +104,13 @@ var (
 // but not performed here in the current implementation; that is a
 // follow-up. Operators MAY rely on short-lived signing certificates
 // as a complementary mitigation.
-func ValidateChain(_ context.Context, chainDER [][]byte, roots *x509.CertPool, now time.Time, dnsName string) (*x509.Certificate, error) {
+//
+// On success it returns a [VerifiedCertificate]: the only type Verify
+// accepts, so a signature can never be checked against a chain that
+// has not passed validation. A validated chain is NOT trusted forever
+// — certificates expire — so verifiers MUST re-confirm validity at
+// time-of-use via [VerifiedCertificate.ValidAt] (Verify does this).
+func ValidateChain(_ context.Context, chainDER [][]byte, roots *x509.CertPool, now time.Time, dnsName string) (*VerifiedCertificate, error) {
 	if len(chainDER) == 0 {
 		return nil, ErrEmptyChain
 	}
@@ -92,6 +130,18 @@ func ValidateChain(_ context.Context, chainDER [][]byte, roots *x509.CertPool, n
 		certs = append(certs, cert)
 	}
 
+	leaf, err := verifyParsedChain(certs, roots, now, dnsName)
+	if err != nil {
+		return nil, err
+	}
+	return &VerifiedCertificate{leaf: leaf, chain: certs, roots: roots, dnsName: dnsName}, nil
+}
+
+// verifyParsedChain runs crypto/x509 path validation of an
+// already-parsed chain (intermediates first, leaf last) and returns
+// the validated leaf. Shared by ValidateChain and the time-of-use
+// recheck in VerifiedCertificate.ValidAt.
+func verifyParsedChain(certs []*x509.Certificate, roots *x509.CertPool, now time.Time, dnsName string) (*x509.Certificate, error) {
 	leaf := certs[len(certs)-1]
 
 	intermediates := x509.NewCertPool()
