@@ -41,6 +41,29 @@ type RemoteSigner struct {
 	mu          sync.Mutex
 	cachedChain [][]byte
 	cachedAt    time.Time
+	// inflight is non-nil while a chain fetch is in progress. Concurrent Sign
+	// callers that miss the cache wait on it instead of each issuing their own
+	// /v1/chain request (see chainDER).
+	inflight *chainFetch
+}
+
+// chainFetch is a single in-flight /v1/chain request whose result is shared by
+// all callers that arrive while it runs. done is closed once chain/err are set.
+type chainFetch struct {
+	done  chan struct{}
+	chain [][]byte
+	err   error
+}
+
+// wait blocks until the in-flight fetch completes and returns its shared
+// result, or returns early if the caller's context is cancelled first.
+func (f *chainFetch) wait(ctx context.Context) ([][]byte, error) {
+	select {
+	case <-f.done:
+		return f.chain, f.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 var _ Signer = (*RemoteSigner)(nil)
@@ -129,6 +152,11 @@ func (s *RemoteSigner) TrustAnchorPEM(ctx context.Context) ([]byte, error) {
 // the returned PEM blob into DER byte slices ordered intermediates-first,
 // leaf-last. It is called by Sign on every outbound message; results are cached
 // for chainTTL to bound the fetch rate.
+//
+// On a cache miss a single caller (the leader) performs the HTTP request while
+// any other callers that arrive meanwhile wait for and share its result. This
+// collapses a burst of concurrent Sign calls into one /v1/chain request rather
+// than one per caller, sparing the backend signer.
 func (s *RemoteSigner) chainDER(ctx context.Context) ([][]byte, error) {
 	s.mu.Lock()
 	if s.cachedChain != nil && s.chainTTL > 0 && time.Since(s.cachedAt) < s.chainTTL {
@@ -136,17 +164,31 @@ func (s *RemoteSigner) chainDER(ctx context.Context) ([][]byte, error) {
 		s.mu.Unlock()
 		return chain, nil
 	}
+	if s.inflight != nil {
+		// A fetch is already running; wait for it rather than starting another.
+		f := s.inflight
+		s.mu.Unlock()
+		return f.wait(ctx)
+	}
+	// We are the leader: publish an in-flight marker so concurrent callers wait
+	// on us, then fetch without holding the lock.
+	f := &chainFetch{done: make(chan struct{})}
+	s.inflight = f
 	s.mu.Unlock()
 
 	chain, err := s.fetchChainDER(ctx)
-	if err != nil {
-		return nil, err
-	}
+
 	s.mu.Lock()
-	s.cachedChain = chain
-	s.cachedAt = time.Now()
+	if err == nil {
+		s.cachedChain = chain
+		s.cachedAt = time.Now()
+	}
+	s.inflight = nil
+	f.chain, f.err = chain, err
+	close(f.done)
 	s.mu.Unlock()
-	return chain, nil
+
+	return chain, err
 }
 
 func (s *RemoteSigner) fetchChainDER(ctx context.Context) ([][]byte, error) {
