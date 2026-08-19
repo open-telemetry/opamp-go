@@ -17,27 +17,20 @@ func TestMutationEndpointsRequirePost(t *testing.T) {
 		"/send_custom_message",
 	} {
 		t.Run(endpoint, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodGet, endpoint, nil)
-			response := httptest.NewRecorder()
+			getRequest := httptest.NewRequest(http.MethodGet, endpoint, nil)
+			getResponse := httptest.NewRecorder()
 
-			handler.ServeHTTP(response, request)
+			handler.ServeHTTP(getResponse, getRequest)
 
-			require.Equal(t, http.StatusMethodNotAllowed, response.Code)
-			require.Equal(t, http.MethodPost, response.Header().Get("Allow"))
+			require.Equal(t, http.StatusMethodNotAllowed, getResponse.Code)
+			require.Equal(t, http.MethodPost, getResponse.Header().Get("Allow"))
+
+			postRequest := httptest.NewRequest(http.MethodPost, endpoint, nil)
+			postResponse := httptest.NewRecorder()
+
+			handler.ServeHTTP(postResponse, postRequest)
+
+			require.NotEqual(t, http.StatusMethodNotAllowed, postResponse.Code)
 		})
 	}
-}
-
-func TestPostOnlyAllowsPost(t *testing.T) {
-	called := false
-	handler := postOnly(func(http.ResponseWriter, *http.Request) {
-		called = true
-	})
-
-	handler.ServeHTTP(
-		httptest.NewRecorder(),
-		httptest.NewRequest(http.MethodPost, "/", nil),
-	)
-
-	require.True(t, called)
 }
