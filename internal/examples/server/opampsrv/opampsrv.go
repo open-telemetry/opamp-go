@@ -108,9 +108,17 @@ func (srv *Server) onDisconnect(conn types.Connection) {
 	srv.agents.RemoveConnection(conn)
 }
 
+// serverCapabilities is the set of OpAMP capabilities this example Server
+// implements. It must be reported in the first ServerToAgent on a connection.
+const serverCapabilities = uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus |
+	protobufs.ServerCapabilities_ServerCapabilities_OffersRemoteConfig |
+	protobufs.ServerCapabilities_ServerCapabilities_AcceptsEffectiveConfig |
+	protobufs.ServerCapabilities_ServerCapabilities_OffersConnectionSettings |
+	protobufs.ServerCapabilities_ServerCapabilities_AcceptsConnectionSettingsRequest)
+
 func (srv *Server) onMessage(ctx context.Context, conn types.Connection, msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 	// Start building the response.
-	response := &protobufs.ServerToAgent{}
+	response := &protobufs.ServerToAgent{Capabilities: serverCapabilities}
 
 	var instanceId data.InstanceId
 	if len(msg.InstanceUid) == 26 {
