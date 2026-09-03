@@ -134,7 +134,12 @@ type Verifier interface {
 	// The leaf's SAN must match dnsName, binding the signing identity
 	// to the connected server. dnsName MUST be non-empty; implementations
 	// fail closed otherwise. Callers MUST NOT perform a separate
-	// hostname check.
+	// hostname check. A leaf MAY carry multiple SAN entries (e.g. an
+	// OpAMP gateway host plus the origin server host); dnsName — the
+	// single host the Agent connected to — is matched against the full
+	// SAN set, so a signature is accepted when dnsName is any listed
+	// host. The match itself is never relaxed: a dnsName absent from the
+	// SAN set fails with ErrHostnameMismatch.
 	//
 	// On success it returns a [VerifiedCertificate], which the Agent
 	// stores for the duration of the connection and passes to Verify on
