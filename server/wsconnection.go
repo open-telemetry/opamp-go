@@ -111,6 +111,15 @@ func (c *wsConnection) Send(ctx context.Context, message *protobufs.ServerToAgen
 	defer c.connMutex.Unlock()
 
 	if state := c.signing.Load(); state != nil {
+		// Heartbeat exemption: a heartbeat response (only instance_uid
+		// set) MAY be sent unsigned on an attested connection. Write it
+		// as a plain ServerToAgent, skipping the signing round-trip. The
+		// Agent accepts this narrow, content-free shape unsigned and
+		// rejects any other unsigned message. Every substantive message
+		// is still wrapped and signed below.
+		if protobufs.IsHeartbeatServerToAgent(message) {
+			return internal.WriteWSMessage(c.wsConn, message, c.maxMessageSize)
+		}
 		env, err := state.signOutgoing(ctx, message)
 		if err != nil {
 			return err

@@ -57,6 +57,15 @@ var (
 	// because handleWSConnection auto-fills it (see
 	// server/serverimpl.go).
 	ErrEmptyInnerServerToAgent = errors.New("client: inner ServerToAgent decoded to all default values; likely downgrade attempt")
+
+	// ErrUnsignedNonHeartbeat is returned when an attested connection
+	// receives a plain (unsigned) ServerToAgent that is not a heartbeat
+	// response. Only heartbeat responses (a ServerToAgent with only
+	// instance_uid set) MAY be sent unsigned; any other unsigned message
+	// is a downgrade and is rejected fail-closed. The allowlist is
+	// enforced here by the receiver — the server's cooperation is never
+	// trusted.
+	ErrUnsignedNonHeartbeat = errors.New("client: unsigned ServerToAgent is not a heartbeat; rejecting non-signed message")
 )
 
 // attestationState holds per-connection state for payload trust
@@ -120,6 +129,7 @@ func isAttestationFailure(err error) bool {
 		errors.Is(err, ErrMissingSignature) ||
 		errors.Is(err, ErrMissingPayload) ||
 		errors.Is(err, ErrEmptyInnerServerToAgent) ||
+		errors.Is(err, ErrUnsignedNonHeartbeat) ||
 		errors.Is(err, signing.ErrChainValidation) ||
 		errors.Is(err, signing.ErrHostnameMismatch) ||
 		errors.Is(err, signing.ErrServerNameRequired) ||
@@ -235,6 +245,32 @@ func unwrapServerToAgent(ctx context.Context, state *attestationState, rawProto 
 	if err := proto.Unmarshal(rawProto, &envelope); err != nil {
 		return fmt.Errorf("client: decode SignedServerToAgent envelope: %w", err)
 	}
+
+	// Discriminate a signed envelope from an unsigned heartbeat.
+	// SignedServerToAgent uses field numbers 14/15/16, while a plain
+	// ServerToAgent heartbeat uses field 1 (instance_uid); decoding
+	// heartbeat bytes as an envelope therefore yields an empty
+	// payload/signature/trust_chain_response. When all three are empty
+	// this is not a signed message, so it is a candidate unsigned
+	// heartbeat rather than a malformed envelope. (A malformed signed
+	// envelope — e.g. one carrying a signature but no payload — has a
+	// non-empty signature/chain and falls through to ProcessEnvelope,
+	// which rejects it with ErrMissingPayload.)
+	if len(envelope.Payload) == 0 && len(envelope.Signature) == 0 && envelope.TrustChainResponse == nil {
+		if err := proto.Unmarshal(rawProto, msg); err != nil {
+			return fmt.Errorf("client: decode unsigned ServerToAgent: %w", err)
+		}
+		// Receiver-enforced, default-deny allowlist: accept the unsigned
+		// message only if it is exactly a heartbeat (instance_uid only).
+		// Anything carrying actionable content is a downgrade attempt and
+		// is rejected fail-closed.
+		if protobufs.IsHeartbeatServerToAgent(msg) {
+			return nil
+		}
+		proto.Reset(msg)
+		return ErrUnsignedNonHeartbeat
+	}
+
 	payload, err := state.ProcessEnvelope(ctx, &envelope)
 	if err != nil {
 		return err

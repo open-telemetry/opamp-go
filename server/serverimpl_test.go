@@ -283,7 +283,7 @@ func TestDisconnectClientWSConnection(t *testing.T) {
 	assert.True(t, atomic.LoadInt32(&connectionCloseCalled) == 0)
 
 	// Close connection from client side
-	clientConn := newWSConnection(conn, sharedinternal.DefaultMaxMessageSize)
+	clientConn := newWSConnection(conn, sharedinternal.DefaultMaxMessageSize, false)
 	err = clientConn.Disconnect()
 	assert.NoError(t, err)
 
