@@ -24,6 +24,7 @@ var (
 	ErrAcceptsPackagesNotSet                 = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 	ErrAvailableComponentsMissing            = errors.New("AvailableComponents is nil")
 	ErrReportsConnectionSettingsStatusNotSet = errors.New("ReportsConnectionSettingsStatus capability is not set")
+	ErrDialContextAndProxyURL                = errors.New("DialContext and ProxyURL cannot both be set")
 
 	errAlreadyStarted                  = errors.New("already started")
 	errCannotStopNotStarted            = errors.New("cannot stop because not started")
@@ -104,6 +105,12 @@ func (c *ClientCommon) PrepareStart(
 ) error {
 	if c.isStarted {
 		return errAlreadyStarted
+	}
+
+	// DialContext replaces the dialing that proxying relies on, so the two
+	// cannot be combined.
+	if settings.DialContext != nil && settings.ProxyURL != "" {
+		return ErrDialContextAndProxyURL
 	}
 	// Deprecated: Use client.SetCapabilities() instead.
 	if settings.Capabilities != 0 {

@@ -113,6 +113,7 @@ func TestAddTLSConfig(t *testing.T) {
 		name              string
 		existingTransport http.RoundTripper
 		tlsConfig         *tls.Config
+		wantErr           bool
 		validateFunc      func(*testing.T, *HTTPSender)
 	}{
 		{
@@ -169,11 +170,10 @@ func TestAddTLSConfig(t *testing.T) {
 			name:              "non-*http.Transport",
 			existingTransport: &customTransport{},
 			tlsConfig:         tlsConfig,
+			wantErr:           true,
 			validateFunc: func(t *testing.T, sender *HTTPSender) {
-				transport, ok := sender.client.Transport.(*http.Transport)
-				assert.True(t, ok, "transport should be *http.Transport")
-				assert.NotNil(t, transport.TLSClientConfig)
-				assert.Equal(t, tlsConfig, transport.TLSClientConfig)
+				_, ok := sender.client.Transport.(*customTransport)
+				assert.True(t, ok, "custom transport should be left untouched on error")
 			},
 		},
 	}
@@ -183,7 +183,12 @@ func TestAddTLSConfig(t *testing.T) {
 			sender := newTestHTTPSender()
 			sender.client.Transport = tc.existingTransport
 
-			sender.AddTLSConfig(tc.tlsConfig)
+			err := sender.AddTLSConfig(tc.tlsConfig)
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
 
 			tc.validateFunc(t, sender)
 		})

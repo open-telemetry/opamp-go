@@ -137,6 +137,7 @@ func (s *server) Start(settings StartSettings) error {
 		}
 		err = s.startHttpServer(
 			listenAddr,
+			settings.Listener,
 			func(l net.Listener) error {
 				defer httpServerServeWg.Done()
 				return hs.ServeTLS(l, "", "")
@@ -148,6 +149,7 @@ func (s *server) Start(settings StartSettings) error {
 		}
 		err = s.startHttpServer(
 			listenAddr,
+			settings.Listener,
 			func(l net.Listener) error {
 				defer httpServerServeWg.Done()
 				return hs.Serve(l)
@@ -157,17 +159,21 @@ func (s *server) Start(settings StartSettings) error {
 	return err
 }
 
-func (s *server) startHttpServer(listenAddr string, serveFunc func(l net.Listener) error) error {
-	// If the listen address is not specified use the default.
-	ln, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		return err
+func (s *server) startHttpServer(listenAddr string, listener net.Listener, serveFunc func(l net.Listener) error) error {
+	ln := listener
+	if ln == nil {
+		// No listener was provided, open a TCP listener on the listen address.
+		var err error
+		ln, err = net.Listen("tcp", listenAddr)
+		if err != nil {
+			return err
+		}
 	}
 	s.addr = ln.Addr()
 
 	// Begin serving connections in the background.
 	go func() {
-		err = serveFunc(ln)
+		err := serveFunc(ln)
 
 		// ErrServerClosed is expected after successful Stop(), so we won't log that
 		// particular error.
