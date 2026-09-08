@@ -580,7 +580,7 @@ func rootCAs(t *testing.T, s *httptest.Server) *x509.CertPool {
 func createRemoteConfig() *protobufs.AgentRemoteConfig {
 	return &protobufs.AgentRemoteConfig{
 		Config: &protobufs.AgentConfigMap{
-			ConfigMap: map[string]*protobufs.AgentConfigFile{},
+			ConfigMap: map[string]*protobufs.AgentConfigObject{},
 		},
 		ConfigHash: []byte{1, 2, 3, 4},
 	}
@@ -692,7 +692,7 @@ func TestExcludesDetailsOnReconnect(t *testing.T) {
 func createEffectiveConfig() *protobufs.EffectiveConfig {
 	cfg := &protobufs.EffectiveConfig{
 		ConfigMap: &protobufs.AgentConfigMap{
-			ConfigMap: map[string]*protobufs.AgentConfigFile{
+			ConfigMap: map[string]*protobufs.AgentConfigObject{
 				"key": {},
 			},
 		},
@@ -737,7 +737,7 @@ func TestSetEffectiveConfig(t *testing.T) {
 		)
 
 		// Now change the config.
-		sendConfig.ConfigMap.ConfigMap["key2"] = &protobufs.AgentConfigFile{}
+		sendConfig.ConfigMap.ConfigMap["key2"] = &protobufs.AgentConfigObject{}
 		updateErr := client.UpdateEffectiveConfig(context.Background())
 		require.NoError(t, updateErr)
 
