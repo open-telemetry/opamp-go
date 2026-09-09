@@ -100,10 +100,11 @@ func (c *VerifiedCertificate) ValidAt(now time.Time) error {
 // basicConstraints, pathLenConstraint, critical extensions — are
 // enforced by the underlying crypto/x509 implementation.
 //
-// Revocation checking via CRL/OCSP is RECOMMENDED by the OpAMP spec
-// but not performed here in the current implementation; that is a
-// follow-up. Operators MAY rely on short-lived signing certificates
-// as a complementary mitigation.
+// Revocation is not checked here, and the OpAMP spec does not require
+// it: CRL/OCSP are not consulted during validation, and active
+// revocation is handled out of band. Short-lived signing certificates
+// are the primary mitigation — the validity checks above reject an
+// expired leaf.
 //
 // On success it returns a [VerifiedCertificate]: the only type Verify
 // accepts, so a signature can never be checked against a chain that

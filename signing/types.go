@@ -7,9 +7,10 @@ import (
 
 // Algorithm identifies the signature algorithm used by a signing
 // certificate. The OpAMP protocol does not negotiate algorithms; the
-// algorithm in use is determined by the certificate's SignatureAlgorithm
-// field. This enum exists so that test helpers, cert generators, and
-// internal dispatch tables can refer to a specific algorithm by name.
+// algorithm in use is determined by the leaf's public key
+// (subjectPublicKeyInfo). This enum exists so that test helpers, cert
+// generators, and internal dispatch tables can refer to a specific
+// algorithm by name.
 //
 // FIPS 140-3 note: the three classical algorithms below (ECDSA P-256 and
 // P-384 with SHA-2, and RSA PKCS#1 v1.5 with SHA-256) are Approved for
