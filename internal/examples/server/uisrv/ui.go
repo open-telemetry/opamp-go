@@ -27,20 +27,35 @@ var logger = log.New(log.Default().Writer(), "[UI] ", log.Default().Flags()|log.
 func Start(rootDir string) {
 	htmlDir = path.Join(rootDir, "uisrv/html")
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", renderRoot)
-	mux.HandleFunc("/agent", renderAgent)
-	mux.HandleFunc("/save_config", saveCustomConfigForInstance)
-	mux.HandleFunc("/rotate_client_cert", rotateInstanceClientCert)
-	mux.HandleFunc("/opamp_connection_settings", opampConnectionSettings)
-	mux.HandleFunc("/send_custom_message", sendCustomMessage)
 	srv = &http.Server{
 		Addr:    "0.0.0.0:4321",
-		Handler: mux,
+		Handler: newUIHandler(),
 	}
 	go srv.ListenAndServe()
 
 	logger.Printf("Admin UI started, available at http://localhost:4321")
+}
+
+func newUIHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", renderRoot)
+	mux.HandleFunc("/agent", renderAgent)
+	mux.HandleFunc("/save_config", postOnly(saveCustomConfigForInstance))
+	mux.HandleFunc("/rotate_client_cert", postOnly(rotateInstanceClientCert))
+	mux.HandleFunc("/opamp_connection_settings", postOnly(opampConnectionSettings))
+	mux.HandleFunc("/send_custom_message", postOnly(sendCustomMessage))
+	return mux
+}
+
+func postOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+			return
+		}
+		next(w, r)
+	}
 }
 
 func Shutdown() {
