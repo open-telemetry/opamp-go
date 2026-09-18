@@ -22,6 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 1
       - id: install_go
         uses: WillAbides/setup-go-faster@fea1b51f8e1f07229131e4438f235ad219880d31 # v1.19.0
