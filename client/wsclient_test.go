@@ -268,7 +268,7 @@ func TestVerifyWSCompress(t *testing.T) {
 						}
 						return &protobufs.EffectiveConfig{
 							ConfigMap: &protobufs.AgentConfigMap{
-								ConfigMap: map[string]*protobufs.AgentConfigFile{
+								ConfigMap: map[string]*protobufs.AgentConfigObject{
 									"key": {
 										Body: effCfg,
 									},
@@ -294,7 +294,7 @@ func TestVerifyWSCompress(t *testing.T) {
 
 			remoteCfg := &protobufs.AgentRemoteConfig{
 				Config: &protobufs.AgentConfigMap{
-					ConfigMap: map[string]*protobufs.AgentConfigFile{
+					ConfigMap: map[string]*protobufs.AgentConfigObject{
 						"": {
 							Body: uncompressedCfg,
 						},

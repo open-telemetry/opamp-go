@@ -592,7 +592,7 @@ func TestServerWebSocketResponseMessageSizeLimit(t *testing.T) {
 					return &protobufs.ServerToAgent{
 						RemoteConfig: &protobufs.AgentRemoteConfig{
 							Config: &protobufs.AgentConfigMap{
-								ConfigMap: map[string]*protobufs.AgentConfigFile{
+								ConfigMap: map[string]*protobufs.AgentConfigObject{
 									"": {Body: []byte("too large")},
 								},
 							},
@@ -641,7 +641,7 @@ func TestServerReceiveSendMessageWithCompression(t *testing.T) {
 								Capabilities: uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus),
 								RemoteConfig: &protobufs.AgentRemoteConfig{
 									Config: &protobufs.AgentConfigMap{
-										ConfigMap: map[string]*protobufs.AgentConfigFile{
+										ConfigMap: map[string]*protobufs.AgentConfigObject{
 											"": {Body: uncompressedCfg},
 										},
 									},
@@ -675,7 +675,7 @@ func TestServerReceiveSendMessageWithCompression(t *testing.T) {
 				InstanceUid: testInstanceUid,
 				EffectiveConfig: &protobufs.EffectiveConfig{
 					ConfigMap: &protobufs.AgentConfigMap{
-						ConfigMap: map[string]*protobufs.AgentConfigFile{
+						ConfigMap: map[string]*protobufs.AgentConfigObject{
 							"": {Body: uncompressedCfg},
 						},
 					},
@@ -843,7 +843,7 @@ func TestServerPlainHTTPResponseBodySizeLimit(t *testing.T) {
 					return &protobufs.ServerToAgent{
 						RemoteConfig: &protobufs.AgentRemoteConfig{
 							Config: &protobufs.AgentConfigMap{
-								ConfigMap: map[string]*protobufs.AgentConfigFile{
+								ConfigMap: map[string]*protobufs.AgentConfigObject{
 									"": {Body: []byte("too large")},
 								},
 							},

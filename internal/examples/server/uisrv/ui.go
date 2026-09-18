@@ -140,7 +140,7 @@ func saveCustomConfigForInstance(w http.ResponseWriter, r *http.Request) {
 
 	configStr := r.PostForm.Get("config")
 	config := &protobufs.AgentConfigMap{
-		ConfigMap: map[string]*protobufs.AgentConfigFile{
+		ConfigMap: map[string]*protobufs.AgentConfigObject{
 			"": {Body: []byte(configStr)},
 		},
 	}
