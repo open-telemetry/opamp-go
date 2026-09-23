@@ -83,6 +83,10 @@ func renderAgent(w http.ResponseWriter, r *http.Request) {
 	renderTemplate(w, "agent.html", agent)
 }
 
+func agentPath(uid uuid.UUID) string {
+	return "agent?instanceid=" + uid.String()
+}
+
 func sendCustomMessage(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -116,7 +120,7 @@ func sendCustomMessage(w http.ResponseWriter, r *http.Request) {
 
 	data.AllAgents.SendCustomMessageToAgent(instanceId, customMsg)
 
-	http.Redirect(w, r, "/agent?instanceid="+uid.String(), http.StatusSeeOther)
+	http.Redirect(w, r, agentPath(uid), http.StatusSeeOther)
 }
 
 func saveCustomConfigForInstance(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +161,7 @@ func saveCustomConfigForInstance(w http.ResponseWriter, r *http.Request) {
 	case <-timer.C:
 	}
 
-	http.Redirect(w, r, "/agent?instanceid="+uid.String(), http.StatusSeeOther)
+	http.Redirect(w, r, agentPath(uid), http.StatusSeeOther)
 }
 
 func rotateInstanceClientCert(w http.ResponseWriter, r *http.Request) {
@@ -211,7 +215,7 @@ func rotateInstanceClientCert(w http.ResponseWriter, r *http.Request) {
 		logger.Printf("Time out waiting for agent %x to reconnect\n", instanceId)
 	}
 
-	http.Redirect(w, r, "/agent?instanceid="+uid.String(), http.StatusSeeOther)
+	http.Redirect(w, r, agentPath(uid), http.StatusSeeOther)
 }
 
 func opampConnectionSettings(w http.ResponseWriter, r *http.Request) {
@@ -289,5 +293,5 @@ func opampConnectionSettings(w http.ResponseWriter, r *http.Request) {
 		logger.Printf("Time out waiting for agent %x to reconnect\n", instanceId)
 	}
 
-	http.Redirect(w, r, "/agent?instanceid="+uid.String(), http.StatusSeeOther)
+	http.Redirect(w, r, agentPath(uid), http.StatusSeeOther)
 }
