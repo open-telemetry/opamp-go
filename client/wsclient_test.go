@@ -268,7 +268,7 @@ func TestVerifyWSCompress(t *testing.T) {
 						}
 						return &protobufs.EffectiveConfig{
 							ConfigMap: &protobufs.AgentConfigMap{
-								ConfigMap: map[string]*protobufs.AgentConfigFile{
+								ConfigMap: map[string]*protobufs.AgentConfigObject{
 									"key": {
 										Body: effCfg,
 									},
@@ -294,7 +294,7 @@ func TestVerifyWSCompress(t *testing.T) {
 
 			remoteCfg := &protobufs.AgentRemoteConfig{
 				Config: &protobufs.AgentConfigMap{
-					ConfigMap: map[string]*protobufs.AgentConfigFile{
+					ConfigMap: map[string]*protobufs.AgentConfigObject{
 						"": {
 							Body: uncompressedCfg,
 						},
@@ -1208,6 +1208,141 @@ func TestWSClientUseHTTPProxy(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		return serverConnected.Load()
 	}, 3*time.Second, 10*time.Millisecond, "WS client did not connect to server")
+
+	err := client.Stop(context.Background())
+	assert.NoError(t, err)
+}
+
+// TestWSClientBackoffPolicyDuringReconnect verifies that the BackoffPolicy is
+// consulted during reconnection after a dropped connection.
+func TestWSClientBackoffPolicyDuringReconnect(t *testing.T) {
+	policy := &mockBackoffPolicy{interval: 1 * time.Millisecond}
+
+	srv := internal.StartMockServer(t)
+	t.Cleanup(srv.Close)
+
+	var serverConn atomic.Value
+	srv.SetOnWSConnect(func(c *websocket.Conn) {
+		serverConn.Store(c)
+	})
+
+	settings := types.StartSettings{
+		OpAMPServerURL: "ws://" + srv.Endpoint,
+		BackoffPolicy:  func() types.BackoffPolicy { return policy },
+	}
+	client := NewWebSocket(nil)
+	startClient(t, settings, client)
+
+	// Wait for the initial connection.
+	eventually(t, func() bool { return serverConn.Load() != nil })
+
+	callsAfterConnect := policy.calls.Load()
+
+	// Drop the server-side connection to trigger a client reconnect.
+	serverConn.Load().(*websocket.Conn).Close()
+
+	// The client must call the policy again during its reconnection attempt.
+	eventually(t, func() bool {
+		return policy.calls.Load() > callsAfterConnect
+	})
+
+	err := client.Stop(context.Background())
+	assert.NoError(t, err)
+}
+
+// TestWSClientBackoffPolicyFuncFreshPerConnect verifies that the
+// BackoffPolicyFunc is invoked again for each connect sequence, so a reconnect
+// obtains a fresh policy instance rather than reusing the already advanced one
+// from the previous connect.
+func TestWSClientBackoffPolicyFuncFreshPerConnect(t *testing.T) {
+	var mu sync.Mutex
+	var policies []*mockBackoffPolicy
+	factory := func() types.BackoffPolicy {
+		mu.Lock()
+		defer mu.Unlock()
+		p := &mockBackoffPolicy{interval: 1 * time.Millisecond}
+		policies = append(policies, p)
+		return p
+	}
+
+	srv := internal.StartMockServer(t)
+	t.Cleanup(srv.Close)
+
+	var serverConn atomic.Value
+	srv.SetOnWSConnect(func(c *websocket.Conn) {
+		serverConn.Store(c)
+	})
+
+	settings := types.StartSettings{
+		OpAMPServerURL: "ws://" + srv.Endpoint,
+		BackoffPolicy:  factory,
+	}
+	client := NewWebSocket(nil)
+	startClient(t, settings, client)
+
+	// Wait for the initial connection: the func must have produced one policy.
+	eventually(t, func() bool { return serverConn.Load() != nil })
+
+	mu.Lock()
+	firstCount := len(policies)
+	mu.Unlock()
+	require.GreaterOrEqual(t, firstCount, 1, "func must be invoked for the initial connect")
+
+	// Drop the server-side connection to trigger a client reconnect.
+	serverConn.Load().(*websocket.Conn).Close()
+
+	// The reconnect must invoke the func again, producing a new policy.
+	eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(policies) > firstCount
+	})
+
+	err := client.Stop(context.Background())
+	assert.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	// Every produced policy must be a distinct instance (fresh state per connect).
+	seen := make(map[*mockBackoffPolicy]struct{}, len(policies))
+	for _, p := range policies {
+		_, dup := seen[p]
+		assert.False(t, dup, "factory returned the same policy instance more than once")
+		seen[p] = struct{}{}
+		// Each fresh policy must have been consulted by its own connect sequence.
+		assert.GreaterOrEqual(t, p.calls.Load(), int64(1))
+	}
+}
+
+// TestWSClientBackoffPolicyNegativeInterval verifies that a BackoffPolicy
+// returning a negative value prevents connection; the client errors out instead
+// of retrying.
+func TestWSClientBackoffPolicyNegativeInterval(t *testing.T) {
+	policy := &mockBackoffPolicy{interval: -1}
+
+	srv := internal.StartMockServer(t)
+	t.Cleanup(srv.Close)
+
+	var connected atomic.Bool
+	srv.SetOnWSConnect(func(c *websocket.Conn) {
+		connected.Store(true)
+	})
+
+	settings := types.StartSettings{
+		OpAMPServerURL: "ws://" + srv.Endpoint,
+		BackoffPolicy:  func() types.BackoffPolicy { return policy },
+	}
+	client := NewWebSocket(nil)
+	startClient(t, settings, client)
+
+	// The negative interval must surface as an internal error and the client
+	// must never connect.
+	eventually(t, func() bool { return client.lastInternalErr.Load() != nil })
+	assert.False(t, connected.Load())
+	assert.GreaterOrEqual(t, policy.calls.Load(), int64(1))
+	if errPtr := client.lastInternalErr.Load(); assert.NotNil(t, errPtr) {
+		assert.EqualError(t, *errPtr, "invalid backoff policy time")
+	}
 
 	err := client.Stop(context.Background())
 	assert.NoError(t, err)

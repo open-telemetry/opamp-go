@@ -64,6 +64,10 @@ type wsClient struct {
 	// connection. responseChain should only be referred to by the goroutine that
 	// runs tryConnectOnce and its synchronous callees.
 	responseChain []*http.Response
+
+	// backoffPolicy returns a fresh policy controlling the delay between
+	// connection retry attempts for each connect sequence.
+	backoffPolicy types.BackoffPolicyFunc
 }
 
 // NewWebSocket creates a new OpAMP Client that uses WebSocket transport.
@@ -125,6 +129,8 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 	c.getHeader = func() http.Header {
 		return headerFunc(baseHeader.Clone())
 	}
+
+	c.backoffPolicy = settings.BackoffPolicy
 
 	c.common.StartConnectAndRun(c.runUntilStopped)
 
@@ -305,16 +311,26 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinterna
 // Continuously try until connected. Will return nil when successfully
 // connected. Will return error if it is cancelled via context.
 func (c *wsClient) ensureConnected(ctx context.Context) error {
-	infiniteBackoff := backoff.NewExponentialBackOff()
-
-	// Make ticker run forever.
-	infiniteBackoff.MaxElapsedTime = 0
+	var bpolicy types.BackoffPolicy
+	if c.backoffPolicy != nil {
+		bpolicy = c.backoffPolicy()
+	} else {
+		b := backoff.NewExponentialBackOff()
+		b.MaxElapsedTime = 0
+		bpolicy = b
+	}
 
 	interval := time.Duration(0)
 
 	for {
 		timer := time.NewTimer(interval)
-		interval = infiniteBackoff.NextBackOff()
+		next := bpolicy.NextBackOff()
+		if next < 0 {
+			err := errors.New("invalid backoff policy time")
+			c.lastInternalErr.Store(&err)
+			return err
+		}
+		interval = next
 
 		select {
 		case <-timer.C:

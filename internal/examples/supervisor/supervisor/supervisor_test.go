@@ -38,7 +38,7 @@ func startOpampServer(t *testing.T) {
 	t.Helper()
 
 	opampSrv := opampsrv.NewServer(&data.AllAgents, false)
-	opampSrv.Start()
+	opampSrv.Start(false)
 
 	t.Cleanup(func() {
 		opampSrv.Stop()

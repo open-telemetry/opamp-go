@@ -39,6 +39,8 @@ func Start(rootDir string) {
 		Handler: mux,
 	}
 	go srv.ListenAndServe()
+
+	logger.Printf("Admin UI started, available at http://localhost:4321")
 }
 
 func Shutdown() {
@@ -138,7 +140,7 @@ func saveCustomConfigForInstance(w http.ResponseWriter, r *http.Request) {
 
 	configStr := r.PostForm.Get("config")
 	config := &protobufs.AgentConfigMap{
-		ConfigMap: map[string]*protobufs.AgentConfigFile{
+		ConfigMap: map[string]*protobufs.AgentConfigObject{
 			"": {Body: []byte(configStr)},
 		},
 	}

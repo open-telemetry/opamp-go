@@ -66,8 +66,10 @@ func (f *chainFetch) wait(ctx context.Context) ([][]byte, error) {
 	}
 }
 
-var _ Signer = (*RemoteSigner)(nil)
-var _ TrustAnchorProvider = (*RemoteSigner)(nil)
+var (
+	_ Signer              = (*RemoteSigner)(nil)
+	_ TrustAnchorProvider = (*RemoteSigner)(nil)
+)
 
 const defaultChainCacheTTL = 60 * time.Second
 

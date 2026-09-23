@@ -9,6 +9,18 @@ import (
 	"github.com/open-telemetry/opamp-go/signing"
 )
 
+// BackoffPolicy controls the delay between consecutive connection or request
+// retry attempts. The client calls NextBackOff to determine how long to wait
+// before the next one.
+type BackoffPolicy interface {
+	// NextBackOff returns the duration to wait before the next retry.
+	NextBackOff() time.Duration
+}
+
+// BackoffPolicyFunc returns a fresh BackoffPolicy. The client invokes it at
+// the start of each retry sequence.
+type BackoffPolicyFunc func() BackoffPolicy
+
 // StartSettings defines the parameters for starting the OpAMP Client.
 type StartSettings struct {
 	// Connection parameters.
@@ -112,4 +124,12 @@ type StartSettings struct {
 	// If nil, the default reporter interval (10s) will be used.
 	// If specified a minimum value of 1s will be enforced.
 	DownloadReporterInterval *time.Duration
+
+	// Optional BackoffPolicy returns a fresh policy controlling the delay between
+	// consecutive retry attempts when a connection (WebSocket) or request
+	// (HTTP) fails. It is invoked at the start of each retry sequence, so every
+	// sequence begins from the returned policy's initial state. If nil, a
+	// default exponential backoff is used that retries indefinitely.
+	// See BackoffPolicy and BackoffPolicyFunc for details.
+	BackoffPolicy BackoffPolicyFunc
 }

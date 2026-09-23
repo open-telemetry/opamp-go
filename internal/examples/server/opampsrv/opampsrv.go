@@ -50,7 +50,7 @@ func NewServer(agents *data.Agents, emitMetrics bool) *Server {
 	return srv
 }
 
-func (srv *Server) Start() {
+func (srv *Server) Start(noTLS bool) {
 	settings := server.StartSettings{
 		Settings: server.Settings{
 			Callbacks: types.Callbacks{
@@ -75,20 +75,28 @@ func (srv *Server) Start() {
 		ListenEndpoint: "0.0.0.0:4320",
 		HTTPMiddleware: otelhttp.NewMiddleware("/v1/opamp"),
 	}
-	tlsConfig, err := certs.CreateServerTLSConfig(
-		certs.CaCert,
-		certs.ServerCert,
-		certs.ServerKey,
-	)
-	if err != nil {
-		srv.logger.Debugf(context.Background(), "Could not load TLS config, working without TLS: %v", err.Error())
+	if !noTLS {
+		tlsConfig, err := certs.CreateServerTLSConfig(
+			certs.CaCert,
+			certs.ServerCert,
+			certs.ServerKey,
+		)
+		if err != nil {
+			srv.logger.Debugf(context.Background(), "Could not load TLS config, working without TLS: %v", err.Error())
+		}
+		settings.TLSConfig = tlsConfig
 	}
-	settings.TLSConfig = tlsConfig
 
 	if err := srv.opampSrv.Start(settings); err != nil {
 		srv.logger.Errorf(context.Background(), "OpAMP server start fail: %v", err.Error())
 		os.Exit(1)
 	}
+
+	tls := "TLS enabled (use wss:// or https://)"
+	if noTLS {
+		tls = "TLS disabled (use ws:// or http://)"
+	}
+	srv.logger.Debugf(context.Background(), "OpAMP server started, listening at 0.0.0.0:4320/v1/opamp - %s", tls)
 }
 
 func (srv *Server) Stop() {
@@ -100,9 +108,17 @@ func (srv *Server) onDisconnect(conn types.Connection) {
 	srv.agents.RemoveConnection(conn)
 }
 
+// serverCapabilities is the set of OpAMP capabilities this example Server
+// implements. It must be reported in the first ServerToAgent on a connection.
+const serverCapabilities = uint64(protobufs.ServerCapabilities_ServerCapabilities_AcceptsStatus |
+	protobufs.ServerCapabilities_ServerCapabilities_OffersRemoteConfig |
+	protobufs.ServerCapabilities_ServerCapabilities_AcceptsEffectiveConfig |
+	protobufs.ServerCapabilities_ServerCapabilities_OffersConnectionSettings |
+	protobufs.ServerCapabilities_ServerCapabilities_AcceptsConnectionSettingsRequest)
+
 func (srv *Server) onMessage(ctx context.Context, conn types.Connection, msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 	// Start building the response.
-	response := &protobufs.ServerToAgent{}
+	response := &protobufs.ServerToAgent{Capabilities: serverCapabilities}
 
 	var instanceId data.InstanceId
 	if len(msg.InstanceUid) == 26 {

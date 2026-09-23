@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -93,6 +94,18 @@ func TestConnectInvalidURL(t *testing.T) {
 
 func eventually(t *testing.T, f func() bool) {
 	assert.Eventually(t, f, 5*time.Second, 10*time.Millisecond)
+}
+
+// mockBackoffPolicy is a BackoffPolicy that returns a fixed interval and records
+// how many times NextBackOff has been called. Used in tests.
+type mockBackoffPolicy struct {
+	interval time.Duration
+	calls    atomic.Int64
+}
+
+func (p *mockBackoffPolicy) NextBackOff() time.Duration {
+	p.calls.Add(1)
+	return p.interval
 }
 
 type mockServerMessageHandler func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent
@@ -567,7 +580,7 @@ func rootCAs(t *testing.T, s *httptest.Server) *x509.CertPool {
 func createRemoteConfig() *protobufs.AgentRemoteConfig {
 	return &protobufs.AgentRemoteConfig{
 		Config: &protobufs.AgentConfigMap{
-			ConfigMap: map[string]*protobufs.AgentConfigFile{},
+			ConfigMap: map[string]*protobufs.AgentConfigObject{},
 		},
 		ConfigHash: []byte{1, 2, 3, 4},
 	}
@@ -679,7 +692,7 @@ func TestExcludesDetailsOnReconnect(t *testing.T) {
 func createEffectiveConfig() *protobufs.EffectiveConfig {
 	cfg := &protobufs.EffectiveConfig{
 		ConfigMap: &protobufs.AgentConfigMap{
-			ConfigMap: map[string]*protobufs.AgentConfigFile{
+			ConfigMap: map[string]*protobufs.AgentConfigObject{
 				"key": {},
 			},
 		},
@@ -724,7 +737,7 @@ func TestSetEffectiveConfig(t *testing.T) {
 		)
 
 		// Now change the config.
-		sendConfig.ConfigMap.ConfigMap["key2"] = &protobufs.AgentConfigFile{}
+		sendConfig.ConfigMap.ConfigMap["key2"] = &protobufs.AgentConfigObject{}
 		updateErr := client.UpdateEffectiveConfig(context.Background())
 		require.NoError(t, updateErr)
 
@@ -1258,14 +1271,16 @@ func verifyRemoteConfigUpdate(t *testing.T, successCase bool, expectStatus *prot
 								&protobufs.RemoteConfigStatus{
 									LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
 									Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED,
-								})
+								},
+							)
 						} else {
 							client.SetRemoteConfigStatus(
 								&protobufs.RemoteConfigStatus{
 									LastRemoteConfigHash: msg.RemoteConfig.ConfigHash,
 									Status:               protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED,
 									ErrorMessage:         "cannot update remote config",
-								})
+								},
+							)
 						}
 					}
 				},
@@ -2911,7 +2926,8 @@ func TestConnectionSettingsSkippedWhenHashUnchanged(t *testing.T) {
 		// Client sends APPLYING then APPLIED status. The server responds with the
 		// same connection settings hash each time. Eventually the callback count
 		// should stabilize at 1 because the hash-skip logic prevents reprocessing.
-		srv.EventuallyExpect("client reports APPLIED status",
+		srv.EventuallyExpect(
+			"client reports APPLIED status",
 			func(msg *protobufs.AgentToServer) (*protobufs.ServerToAgent, bool) {
 				resp := &protobufs.ServerToAgent{
 					InstanceUid: msg.InstanceUid,
@@ -3205,5 +3221,69 @@ func TestSetConnectionSettingsStatusAsync(t *testing.T) {
 
 		err = client.Stop(t.Context())
 		require.NoError(t, err)
+	})
+}
+
+// TestClientCenkaltiBackoffPolicy verifies that a cenkalti/backoff
+// *ExponentialBackOff with custom values satisfies the BackoffPolicy interface
+// and works correctly with both transport implementations.
+func TestClientCenkaltiBackoffPolicy(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		b := backoff.NewExponentialBackOff(
+			backoff.WithInitialInterval(10*time.Millisecond),
+			backoff.WithMultiplier(1.5),
+			backoff.WithMaxInterval(100*time.Millisecond),
+			backoff.WithMaxElapsedTime(0), // retry indefinitely
+		)
+
+		srv := internal.StartMockServer(t)
+		t.Cleanup(srv.Close)
+
+		var gotMessage atomic.Bool
+		srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			gotMessage.Store(true)
+			return nil
+		})
+
+		settings := types.StartSettings{
+			OpAMPServerURL: srv.GetHTTPTestServer().URL,
+			BackoffPolicy:  func() types.BackoffPolicy { return b },
+		}
+		startClient(t, settings, client)
+
+		eventually(t, func() bool { return gotMessage.Load() })
+
+		require.NoError(t, client.Stop(context.Background()))
+	})
+}
+
+// TestClientBackoffPolicyIsConsulted verifies that a BackoffPolicy provided in
+// StartSettings is consulted by both transport implementations.
+func TestClientBackoffPolicyIsConsulted(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		policy := &mockBackoffPolicy{interval: 1 * time.Millisecond}
+
+		srv := internal.StartMockServer(t)
+		t.Cleanup(srv.Close)
+
+		var gotMessage atomic.Bool
+		srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			gotMessage.Store(true)
+			return nil
+		})
+
+		settings := types.StartSettings{
+			OpAMPServerURL: srv.GetHTTPTestServer().URL,
+			BackoffPolicy:  func() types.BackoffPolicy { return policy },
+		}
+		startClient(t, settings, client)
+
+		eventually(t, func() bool { return gotMessage.Load() })
+
+		// The policy must have been consulted at least once during the connection
+		// or request cycle.
+		assert.GreaterOrEqual(t, policy.calls.Load(), int64(1))
+
+		require.NoError(t, client.Stop(context.Background()))
 	})
 }

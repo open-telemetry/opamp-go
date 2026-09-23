@@ -350,7 +350,7 @@ func (agent *Agent) loadLocalConfig() {
 func (agent *Agent) composeEffectiveConfig() *protobufs.EffectiveConfig {
 	return &protobufs.EffectiveConfig{
 		ConfigMap: &protobufs.AgentConfigMap{
-			ConfigMap: map[string]*protobufs.AgentConfigFile{
+			ConfigMap: map[string]*protobufs.AgentConfigObject{
 				"": {Body: agent.effectiveConfig},
 			},
 		},
@@ -377,7 +377,7 @@ func (agent *Agent) initMeter(settings *protobufs.TelemetryConnectionSettings) e
 
 type agentConfigFileItem struct {
 	name string
-	file *protobufs.AgentConfigFile
+	file *protobufs.AgentConfigObject
 }
 
 type agentConfigFileSlice []agentConfigFileItem
@@ -616,7 +616,8 @@ func (agent *Agent) processCustomMessage(ctx context.Context, customMessage *pro
 		return
 	}
 
-	agent.logger.Debugf(ctx, "received custom message: capability=%s, type=%s, data=%s",
+	agent.logger.Debugf(
+		ctx, "received custom message: capability=%s, type=%s, data=%s",
 		customMessage.Capability,
 		customMessage.Type,
 		string(customMessage.Data),
