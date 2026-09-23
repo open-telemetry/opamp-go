@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"github.com/open-telemetry/opamp-go/signing"
 )
 
 // BackoffPolicy controls the delay between consecutive connection or request
@@ -68,6 +69,28 @@ type StartSettings struct {
 	// If nil then ReportsPackageStatuses and AcceptsPackages capabilities will be disabled,
 	// i.e. package status reporting and syncing from the Server will be disabled.
 	PackagesStateProvider PackagesStateProvider
+
+	// PayloadTrustProvider opts the Agent in to payload trust verification.
+	// When non-nil, the trust chain delivered in the initial
+	// SignedServerToAgent.trust_chain_response is validated and the detached
+	// signature on every subsequent ServerToAgent message is verified. MUST be
+	// set when the Agent's capability set includes
+	// AgentCapabilities_RequiresPayloadTrustVerification. When nil (the
+	// default), payload trust verification is disabled and the Server-to-Agent
+	// wire format is the standard ServerToAgent protobuf.
+	//
+	// Construct one with the signing package helpers:
+	//   - signing.FixedAnchor(v) for a fixed, pre-configured trust anchor (see
+	//     signing.VerifierFromFile to build v from a PEM-encoded CA bundle).
+	//   - signing.TOFUAnchor(store) for Trust On First Use enrollment, where
+	//     the root CA is bootstrapped from the first connection and persisted
+	//     via store. TOFU provides no security on the first connection; enable
+	//     it only where that connection is considered sufficiently trusted.
+	//
+	// The provider is extensible: a custom implementation exposes optional
+	// capabilities (such as signing.TOFUEnroller) as additional interfaces the
+	// client detects via type assertion.
+	PayloadTrustProvider signing.PayloadTrustProvider
 
 	// Defines the capabilities of the Agent. AgentCapabilities_ReportsStatus bit does not need to
 	// be set in this field, it will be set automatically since it is required by OpAMP protocol.

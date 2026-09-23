@@ -11,6 +11,7 @@ import (
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"github.com/open-telemetry/opamp-go/signing"
 )
 
 var (
@@ -24,6 +25,10 @@ var (
 	ErrAcceptsPackagesNotSet                 = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 	ErrAvailableComponentsMissing            = errors.New("AvailableComponents is nil")
 	ErrReportsConnectionSettingsStatusNotSet = errors.New("ReportsConnectionSettingsStatus capability is not set")
+	ErrPayloadVerifierMissing                = errors.New("PayloadTrustProvider must be set when RequiresPayloadTrustVerification capability is enabled")
+	ErrPayloadVerifierWithoutCapability      = errors.New("PayloadTrustProvider set but RequiresPayloadTrustVerification capability is not enabled")
+	ErrPayloadVerifierInit                   = errors.New("PayloadTrustProvider.Verifier failed at startup")
+	ErrPayloadTrustProviderNoAnchor          = errors.New("PayloadTrustProvider returned no Verifier and does not support TOFU enrollment")
 
 	errAlreadyStarted                  = errors.New("already started")
 	errCannotStopNotStarted            = errors.New("cannot stop because not started")
@@ -45,6 +50,21 @@ type ClientCommon struct {
 
 	// PackageSyncMutex makes sure only one package syncing operation happens at a time.
 	PackageSyncMutex sync.Mutex
+
+	// PayloadVerifier validates the trust chain delivered in
+	// SignedServerToAgent.trust_chain_response on the first message of
+	// a connection, and verifies the per-message signature on every
+	// subsequent ServerToAgent. nil when the Agent has not opted in to
+	// payload trust verification (the standard OpAMP wire path stays
+	// active), or when TOFU enrollment is pending (see PayloadTOFUEnroller).
+	// Resolved from StartSettings.PayloadTrustProvider in PrepareStart.
+	PayloadVerifier signing.Verifier
+
+	// PayloadTOFUEnroller, when non-nil, backs TOFU enrollment: the
+	// PayloadTrustProvider returned no pre-configured Verifier but supports
+	// enrolling a trust anchor from the first connection. Nil once the anchor
+	// has been enrolled and promoted to PayloadVerifier.
+	PayloadTOFUEnroller signing.TOFUEnroller
 
 	// The transport-specific sender.
 	sender Sender
@@ -94,6 +114,14 @@ func (c *ClientCommon) validateCapabilities(capabilities protobufs.AgentCapabili
 			return ErrPackagesStateProviderNotSet
 		}
 	}
+	requiresAttestation := capabilities&protobufs.AgentCapabilities_AgentCapabilities_RequiresPayloadTrustVerification != 0
+	attestationConfigured := c.PayloadVerifier != nil || c.PayloadTOFUEnroller != nil
+	switch {
+	case requiresAttestation && !attestationConfigured:
+		return ErrPayloadVerifierMissing
+	case !requiresAttestation && attestationConfigured:
+		return ErrPayloadVerifierWithoutCapability
+	}
 	return nil
 }
 
@@ -132,6 +160,31 @@ func (c *ClientCommon) PrepareStart(
 
 	// Prepare package statuses.
 	c.PackagesStateProvider = settings.PackagesStateProvider
+	// Wire up payload trust verification from the single PayloadTrustProvider.
+	// The provider resolves its Verifier: a non-nil Verifier is the normal
+	// (fixed anchor, or previously-enrolled TOFU) path. A nil Verifier means
+	// no anchor is configured yet; if the provider also satisfies the optional
+	// TOFUEnroller interface, enter TOFU enrollment mode so the transport-level
+	// code bootstraps the anchor from the first connection. A provider with no
+	// anchor and no enrollment capability is a misconfiguration.
+	c.PayloadVerifier = nil
+	c.PayloadTOFUEnroller = nil
+	if settings.PayloadTrustProvider != nil {
+		v, err := settings.PayloadTrustProvider.Verifier()
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrPayloadVerifierInit, err)
+		}
+		switch {
+		case v != nil:
+			c.PayloadVerifier = v
+		default:
+			enroller, ok := settings.PayloadTrustProvider.(signing.TOFUEnroller)
+			if !ok {
+				return ErrPayloadTrustProviderNoAnchor
+			}
+			c.PayloadTOFUEnroller = enroller
+		}
+	}
 	if err := c.validateCapabilities(c.ClientSyncedState.Capabilities()); err != nil {
 		return err
 	}

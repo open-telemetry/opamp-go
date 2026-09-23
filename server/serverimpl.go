@@ -242,7 +242,7 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 	if s.settings.MaxMessageSize >= 0 {
 		wsConn.SetReadLimit(s.settings.MaxMessageSize)
 	}
-	agentConn := newWSConnection(wsConn, s.settings.MaxMessageSize)
+	agentConn := newWSConnection(wsConn, s.settings.MaxMessageSize, s.settings.PayloadSigner != nil)
 
 	defer func() {
 		// Close the connection when all is done.
@@ -305,6 +305,27 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			continue
 		}
 
+		// On the first AgentToServer of this connection, decide
+		// whether payload trust verification is negotiated. The Agent
+		// declares its requirement via capabilities; the Server has
+		// to have a configured PayloadSigner. If both line up, attach
+		// a signing state to the connection so subsequent Sends wrap
+		// their messages in a SignedServerToAgent envelope.
+		// markNegotiated also unblocks Send for callers that
+		// were rejected pre-negotiation (see ErrSendBeforeNegotiated).
+		if !agentConn.isNegotiated() {
+			if s.settings.PayloadSigner != nil && agentRequiresAttestation(request.Capabilities) {
+				tofu := agentRequestsTOFU(request.Capabilities)
+				state, err := newConnectionSigningState(msgContext, s.settings.PayloadSigner, tofu)
+				if err != nil {
+					s.logger.Errorf(msgContext, "Cannot initialize signing state: %v", err)
+					break
+				}
+				agentConn.enableSigning(state)
+			}
+			agentConn.markNegotiated()
+		}
+
 		response := connectionCallbacks.OnMessage(msgContext, agentConn, &request)
 		if response == nil { // No send message when 'response' is empty
 			continue
@@ -318,6 +339,15 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 				Capabilities: s.settings.CustomCapabilities,
 			}
 			sentCustomCapabilities = true
+		}
+		// Auto-advertise OffersPayloadTrustVerification whenever the
+		// server has a PayloadSigner configured — independent of
+		// whether THIS agent declared the Requires bit. Per the spec's
+		// negotiation matrix, the bit signals server capability.
+		// Agents that don't require attestation still see the bit and
+		// can choose to opt in on reconnect.
+		if s.settings.PayloadSigner != nil {
+			response.Capabilities = addOffersAttestationBit(response.Capabilities)
 		}
 
 		err = agentConn.Send(msgContext, response)
@@ -419,6 +449,11 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 
 	response := connectionCallbacks.OnMessage(req.Context(), agentConn, &request)
 
+	// A nil response means this poll needs no action — an empty
+	// keepalive/heartbeat response. Tracked so that on an attested
+	// connection it can be sent unsigned (see the heartbeat exemption
+	// below).
+	isNoOp := response == nil
 	if response == nil {
 		response = &protobufs.ServerToAgent{}
 	}
@@ -428,14 +463,57 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 		response.InstanceUid = request.InstanceUid
 	}
 
-	// Return the CustomCapabilities
-	// Note that unlike a WebSocket response, this is included in all HTTP responses.
-	response.CustomCapabilities = &protobufs.CustomCapabilities{
-		Capabilities: s.settings.CustomCapabilities,
+	// Payload trust verification (HTTP path). HTTP is request-response
+	// with no persistent connection, so the trust handshake happens
+	// per-response: every signed response carries the chain alongside
+	// the signature. The Agent's HTTP receive path is stateful across
+	// polls (see client/internal/attestation.go) but tolerates the
+	// chain being re-sent — it just ignores it after the first.
+	var responseMessage proto.Message = response
+	if s.settings.PayloadSigner != nil && agentRequiresAttestation(request.Capabilities) && isNoOp {
+		// Heartbeat exemption: a no-op response on an attested connection
+		// is sent as a plain (unsigned) ServerToAgent with only
+		// instance_uid, skipping the per-poll signing round-trip. The
+		// Agent accepts this shape unsigned and rejects any other unsigned
+		// message. CustomCapabilities and the Offers bit are omitted: they
+		// add nothing to a keepalive and would disqualify it from the
+		// exemption. Substantive responses still carry chain and signature.
+		responseMessage = &protobufs.ServerToAgent{InstanceUid: response.InstanceUid}
+	} else {
+		// Return the CustomCapabilities.
+		// Note that unlike a WebSocket response, this is included in all
+		// (non-heartbeat) HTTP responses.
+		response.CustomCapabilities = &protobufs.CustomCapabilities{
+			Capabilities: s.settings.CustomCapabilities,
+		}
+
+		if s.settings.PayloadSigner != nil {
+			// Always advertise Offers when the server is capable, even
+			// if THIS agent didn't declare Requires (per spec's
+			// negotiation matrix).
+			response.Capabilities = addOffersAttestationBit(response.Capabilities)
+
+			if agentRequiresAttestation(request.Capabilities) {
+				tofu := agentRequestsTOFU(request.Capabilities)
+				state, sigErr := newConnectionSigningState(req.Context(), s.settings.PayloadSigner, tofu)
+				if sigErr != nil {
+					s.logger.Errorf(req.Context(), "Cannot initialize signing state: %v", sigErr)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				envelope, sigErr := state.signOutgoing(req.Context(), response)
+				if sigErr != nil {
+					s.logger.Errorf(req.Context(), "Cannot sign HTTP response: %v", sigErr)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				responseMessage = envelope
+			}
+		}
 	}
 
-	// Marshal the response.
-	bodyBytes, err = proto.Marshal(response)
+	// Marshal the response (or its envelope).
+	bodyBytes, err = proto.Marshal(responseMessage)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
