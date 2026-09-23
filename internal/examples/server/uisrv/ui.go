@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,22 +41,39 @@ func newUIHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", renderRoot)
 	mux.HandleFunc("/agent", renderAgent)
-	mux.HandleFunc("/save_config", postOnly(saveCustomConfigForInstance))
-	mux.HandleFunc("/rotate_client_cert", postOnly(rotateInstanceClientCert))
-	mux.HandleFunc("/opamp_connection_settings", postOnly(opampConnectionSettings))
-	mux.HandleFunc("/send_custom_message", postOnly(sendCustomMessage))
+	mux.HandleFunc("/save_config", mutationOnly(saveCustomConfigForInstance))
+	mux.HandleFunc("/rotate_client_cert", mutationOnly(rotateInstanceClientCert))
+	mux.HandleFunc("/opamp_connection_settings", mutationOnly(opampConnectionSettings))
+	mux.HandleFunc("/send_custom_message", mutationOnly(sendCustomMessage))
 	return mux
 }
 
-func postOnly(next http.HandlerFunc) http.HandlerFunc {
+func mutationOnly(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
 			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 			return
 		}
+		if !hasSameOrigin(r) {
+			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+			return
+		}
 		next(w, r)
 	}
+}
+
+func hasSameOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+
+	parsed, err := url.Parse(origin)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return false
+	}
+	return strings.EqualFold(parsed.Host, r.Host)
 }
 
 func Shutdown() {
