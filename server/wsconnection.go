@@ -79,12 +79,6 @@ func (c *wsConnection) enableSigning(state *connectionSigningState) {
 	c.signing.Store(state)
 }
 
-// signingEnabled reports whether this connection has negotiated
-// payload trust verification.
-func (c *wsConnection) signingEnabled() bool {
-	return c.signing.Load() != nil
-}
-
 // markNegotiated records that the connection has processed its first
 // AgentToServer message. After this point Send is no longer blocked
 // by the pre-negotiation guard.
