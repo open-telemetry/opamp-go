@@ -27,6 +27,7 @@ import (
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/internal/examples/config"
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"github.com/open-telemetry/opamp-go/signing"
 )
 
 var localConfig = []byte(`
@@ -87,6 +88,13 @@ type Agent struct {
 	// lastConnectionSettingsHash stores the hash of the most recently received
 	// ConnectionSettingsOffers, used when reporting connection settings status.
 	lastConnectionSettingsHash []byte
+
+	// payloadTrustProvider, when non-nil, enables Message Attestation:
+	// every inbound ServerToAgent message must arrive in a
+	// SignedServerToAgent envelope whose signature chains to the trust
+	// anchor the provider resolves. Built by WithPayloadVerifier (fixed
+	// anchor) or WithPayloadTOFUStore (TOFU enrollment).
+	payloadTrustProvider signing.PayloadTrustProvider
 }
 
 type proxySettings struct {
@@ -135,6 +143,25 @@ func WithInstanceID(id uuid.UUID) Option {
 func WithNoClientCertRequest() Option {
 	return func(agent *Agent) {
 		agent.certRequested = true
+	}
+}
+
+// WithPayloadVerifier enables Message Attestation. Every inbound ServerToAgent
+// message must arrive in a SignedServerToAgent envelope whose signature chains
+// to the trust anchor embedded in v.
+func WithPayloadVerifier(v signing.Verifier) Option {
+	return func(agent *Agent) {
+		agent.payloadTrustProvider = signing.FixedAnchor(v)
+	}
+}
+
+// WithPayloadTOFUStore enables TOFU enrollment for the payload trust anchor.
+// On first connection the agent accepts and persists the root CA delivered by
+// the server; on subsequent connections the persisted anchor is used directly.
+// Mutually exclusive with WithPayloadVerifier.
+func WithPayloadTOFUStore(s signing.TOFUStore) Option {
+	return func(agent *Agent) {
+		agent.payloadTrustProvider = signing.TOFUAnchor(s)
 	}
 }
 
@@ -187,9 +214,10 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 	}
 
 	settings := types.StartSettings{
-		OpAMPServerURL:    agent.agentConfig.Endpoint,
-		HeartbeatInterval: agent.agentConfig.HeartbeatInterval,
-		InstanceUid:       types.InstanceUid(agent.instanceId),
+		OpAMPServerURL:       agent.agentConfig.Endpoint,
+		HeartbeatInterval:    agent.agentConfig.HeartbeatInterval,
+		InstanceUid:          types.InstanceUid(agent.instanceId),
+		PayloadTrustProvider: agent.payloadTrustProvider,
 		Callbacks: types.Callbacks{
 			OnConnect: func(ctx context.Context) {
 				agent.logger.Debugf(ctx, "Connected to the server.")
@@ -232,6 +260,13 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 		protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
 		protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings |
 		protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus
+	if agent.payloadTrustProvider != nil {
+		supportedCapabilities |= protobufs.AgentCapabilities_AgentCapabilities_RequiresPayloadTrustVerification
+		// A provider that can enroll an anchor also advertises TOFU.
+		if _, ok := agent.payloadTrustProvider.(signing.TOFUEnroller); ok {
+			supportedCapabilities |= protobufs.AgentCapabilities_AgentCapabilities_AcceptsPayloadTrustAnchorTOFU
+		}
+	}
 	err = agent.client.SetCapabilities(&supportedCapabilities)
 	if err != nil {
 		return err
