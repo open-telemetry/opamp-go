@@ -3,7 +3,6 @@ package internal
 import (
 	"bytes"
 	"context"
-	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -30,20 +29,6 @@ var (
 	// trust_chain_response.error_message, signalling that it cannot
 	// satisfy the handshake.
 	ErrTrustChainErrorReported = errors.New("client: server reported trust chain error")
-
-	// ErrSANMismatch is returned when the leaf certificate's Subject
-	// Alternative Name entries do not contain a dNSName or iPAddress
-	// that matches the OpAMP server the Agent is connected to. Per the
-	// spec this is a fatal handshake error.
-	ErrSANMismatch = errors.New("client: leaf certificate SAN does not match server hostname")
-
-	// ErrServerNameUnavailable is returned when payload trust
-	// verification is enabled but the Agent could not determine the
-	// server hostname to check the leaf certificate's SAN against (for
-	// example, the server URL was empty or unparseable). SAN
-	// verification is mandatory when attestation is on, so rather than
-	// silently skip it the handshake fails closed.
-	ErrServerNameUnavailable = errors.New("client: cannot verify leaf certificate SAN: server hostname unavailable")
 
 	// ErrTOFUAnchorMissing is returned during TOFU enrollment when the
 	// Server's TrustChainResponse does not include the expected
@@ -72,6 +57,15 @@ var (
 	// because handleWSConnection auto-fills it (see
 	// server/serverimpl.go).
 	ErrEmptyInnerServerToAgent = errors.New("client: inner ServerToAgent decoded to all default values; likely downgrade attempt")
+
+	// ErrUnsignedNonHeartbeat is returned when an attested connection
+	// receives a plain (unsigned) ServerToAgent that is not a heartbeat
+	// response. Only heartbeat responses (a ServerToAgent with only
+	// instance_uid set) MAY be sent unsigned; any other unsigned message
+	// is a downgrade and is rejected fail-closed. The allowlist is
+	// enforced here by the receiver — the server's cooperation is never
+	// trusted.
+	ErrUnsignedNonHeartbeat = errors.New("client: unsigned ServerToAgent is not a heartbeat; rejecting non-signed message")
 )
 
 // attestationState holds per-connection state for payload trust
@@ -80,25 +74,25 @@ var (
 // inbound SignedServerToAgent.
 //
 // When Verifier is nil (the operator did not opt in), the OpAMP wire
-// format is byte-identical to upstream and no attestationState is
-// created at all; payload trust is simply not negotiated.
+// format is the standard ServerToAgent protobuf and no attestationState
+// is created at all; payload trust is simply not negotiated.
 type attestationState struct {
 	verifier   signing.Verifier
-	serverName string            // hostname for SAN verification
-	tofuStore  signing.TOFUStore // non-nil when in TOFU enrollment mode
+	serverName string               // hostname for SAN verification
+	enroller   signing.TOFUEnroller // non-nil when in TOFU enrollment mode
 
 	mu             sync.Mutex
 	firstSeen      bool
-	leaf           *x509.Certificate
+	verified       *signing.VerifiedCertificate
 	pinnedChainPEM []byte
 }
 
 // newAttestationState constructs a per-connection attestation state.
-// verifier is nil in TOFU enrollment mode (tofuStore non-nil); in that case
-// the verifier is bootstrapped from the first TrustChainResponse.
-// serverName is the hostname (without port) of the OpAMP server.
-func newAttestationState(verifier signing.Verifier, serverName string, tofuStore signing.TOFUStore) *attestationState {
-	return &attestationState{verifier: verifier, serverName: serverName, tofuStore: tofuStore}
+// verifier is nil in TOFU enrollment mode (enroller non-nil); in that case
+// the verifier is bootstrapped from the first TrustChainResponse via the
+// enroller. serverName is the hostname (without port) of the OpAMP server.
+func newAttestationState(verifier signing.Verifier, serverName string, enroller signing.TOFUEnroller) *attestationState {
+	return &attestationState{verifier: verifier, serverName: serverName, enroller: enroller}
 }
 
 // Reset clears the per-connection handshake state. After Reset, the
@@ -115,7 +109,7 @@ func (s *attestationState) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.firstSeen = false
-	s.leaf = nil
+	s.verified = nil
 	s.pinnedChainPEM = nil
 }
 
@@ -131,12 +125,14 @@ func isAttestationFailure(err error) bool {
 	}
 	return errors.Is(err, ErrMissingTrustChain) ||
 		errors.Is(err, ErrTrustChainErrorReported) ||
-		errors.Is(err, ErrSANMismatch) ||
 		errors.Is(err, ErrTOFUAnchorMissing) ||
 		errors.Is(err, ErrMissingSignature) ||
 		errors.Is(err, ErrMissingPayload) ||
 		errors.Is(err, ErrEmptyInnerServerToAgent) ||
+		errors.Is(err, ErrUnsignedNonHeartbeat) ||
 		errors.Is(err, signing.ErrChainValidation) ||
+		errors.Is(err, signing.ErrHostnameMismatch) ||
+		errors.Is(err, signing.ErrServerNameRequired) ||
 		errors.Is(err, signing.ErrSignatureMismatch) ||
 		errors.Is(err, signing.ErrEmptyChain) ||
 		errors.Is(err, signing.ErrParseCertificate) ||
@@ -178,32 +174,23 @@ func (s *attestationState) ProcessEnvelope(ctx context.Context, envelope *protob
 			return nil, fmt.Errorf("client: parse trust chain PEM: %w", err)
 		}
 
-		if s.tofuStore != nil {
+		if s.enroller != nil {
 			if len(chainResp.TofuTrustAnchor) == 0 {
 				return nil, ErrTOFUAnchorMissing
 			}
-			v, err := signing.VerifierFromPEM(chainResp.TofuTrustAnchor)
+			v, err := s.enroller.Enroll(chainResp.TofuTrustAnchor)
 			if err != nil {
-				return nil, fmt.Errorf("client: TOFU: parse trust anchor: %w", err)
-			}
-			if err := s.tofuStore.Save(chainResp.TofuTrustAnchor); err != nil {
-				return nil, fmt.Errorf("client: TOFU: persist trust anchor: %w", err)
+				return nil, fmt.Errorf("client: TOFU enrollment: %w", err)
 			}
 			s.verifier = v
-			s.tofuStore = nil
+			s.enroller = nil
 		}
 
-		leaf, err := s.verifier.ValidateChain(ctx, chainDER, time.Now())
+		verified, err := s.verifier.ValidateChain(ctx, chainDER, time.Now(), s.serverName)
 		if err != nil {
 			return nil, fmt.Errorf("client: validate trust chain: %w", err)
 		}
-		if s.serverName == "" {
-			return nil, ErrServerNameUnavailable
-		}
-		if err := leaf.VerifyHostname(s.serverName); err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrSANMismatch, err)
-		}
-		s.leaf = leaf
+		s.verified = verified
 		s.pinnedChainPEM = chainResp.CertificateChain
 		s.firstSeen = true
 	} else if !s.firstSeen {
@@ -214,7 +201,7 @@ func (s *attestationState) ProcessEnvelope(ctx context.Context, envelope *protob
 	if len(envelope.Signature) == 0 {
 		return nil, ErrMissingSignature
 	}
-	if err := s.verifier.Verify(ctx, envelope.Payload, envelope.Signature, s.leaf); err != nil {
+	if err := s.verifier.Verify(ctx, envelope.Payload, envelope.Signature, s.verified); err != nil {
 		return nil, fmt.Errorf("client: verify signature: %w", err)
 	}
 	return envelope.Payload, nil
@@ -258,6 +245,32 @@ func unwrapServerToAgent(ctx context.Context, state *attestationState, rawProto 
 	if err := proto.Unmarshal(rawProto, &envelope); err != nil {
 		return fmt.Errorf("client: decode SignedServerToAgent envelope: %w", err)
 	}
+
+	// Discriminate a signed envelope from an unsigned heartbeat.
+	// SignedServerToAgent uses field numbers 14/15/16, while a plain
+	// ServerToAgent heartbeat uses field 1 (instance_uid); decoding
+	// heartbeat bytes as an envelope therefore yields an empty
+	// payload/signature/trust_chain_response. When all three are empty
+	// this is not a signed message, so it is a candidate unsigned
+	// heartbeat rather than a malformed envelope. (A malformed signed
+	// envelope — e.g. one carrying a signature but no payload — has a
+	// non-empty signature/chain and falls through to ProcessEnvelope,
+	// which rejects it with ErrMissingPayload.)
+	if len(envelope.Payload) == 0 && len(envelope.Signature) == 0 && envelope.TrustChainResponse == nil {
+		if err := proto.Unmarshal(rawProto, msg); err != nil {
+			return fmt.Errorf("client: decode unsigned ServerToAgent: %w", err)
+		}
+		// Receiver-enforced, default-deny allowlist: accept the unsigned
+		// message only if it is exactly a heartbeat (instance_uid only).
+		// Anything carrying actionable content is a downgrade attempt and
+		// is rejected fail-closed.
+		if protobufs.IsHeartbeatServerToAgent(msg) {
+			return nil
+		}
+		proto.Reset(msg)
+		return ErrUnsignedNonHeartbeat
+	}
+
 	payload, err := state.ProcessEnvelope(ctx, &envelope)
 	if err != nil {
 		return err

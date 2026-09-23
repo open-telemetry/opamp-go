@@ -75,8 +75,12 @@ type HTTPSender struct {
 	// attestation, when non-nil, decodes inbound responses as
 	// SignedServerToAgent envelopes — validates the trust chain on the
 	// first response and verifies the signature on every subsequent
-	// one. Set by Run when the StartSettings supplied a PayloadVerifier.
+	// one. Set by Run when the StartSettings supplied a PayloadTrustProvider.
 	attestation *attestationState
+
+	// backoffPolicy returns a fresh policy controlling the delay between
+	// request retry attempts for each request sequence.
+	backoffPolicy types.BackoffPolicyFunc
 }
 
 // NewHTTPSender creates a new Sender that uses HTTP to send messages
@@ -149,17 +153,17 @@ func (h *HTTPSender) Run(
 	packageSyncMutex *sync.Mutex,
 	reporterInterval time.Duration,
 	payloadVerifier signing.Verifier,
-	tofuStore signing.TOFUStore,
+	tofuEnroller signing.TOFUEnroller,
 ) {
 	h.url = serverURL
 	h.callbacks = callbacks
 	h.receiveProcessor = newReceivedProcessor(h.logger, callbacks, h, clientSyncedState, packagesStateProvider, packageSyncMutex, reporterInterval)
-	if payloadVerifier != nil || tofuStore != nil {
+	if payloadVerifier != nil || tofuEnroller != nil {
 		var serverName string
 		if parsed, err := url.Parse(h.url); err == nil {
 			serverName = parsed.Hostname()
 		}
-		h.attestation = newAttestationState(payloadVerifier, serverName, tofuStore)
+		h.attestation = newAttestationState(payloadVerifier, serverName, tofuEnroller)
 	}
 
 	// we need to detect if the redirect was ever set, if not, we want default behaviour
@@ -279,15 +283,24 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 	}
 
 	// Repeatedly try requests with a backoff strategy.
-	infiniteBackoff := backoff.NewExponentialBackOff()
-	// Make backoff run forever.
-	infiniteBackoff.MaxElapsedTime = 0
+	var bpolicy types.BackoffPolicy
+	if h.backoffPolicy != nil {
+		bpolicy = h.backoffPolicy()
+	} else {
+		b := backoff.NewExponentialBackOff()
+		b.MaxElapsedTime = 0
+		bpolicy = b
+	}
 
 	interval := time.Duration(0)
 
 	for {
 		timer := time.NewTimer(interval)
-		interval = infiniteBackoff.NextBackOff()
+		next := bpolicy.NextBackOff()
+		if next < 0 {
+			return nil, errors.New("invalid backoff policy time")
+		}
+		interval = next
 
 		select {
 		case <-timer.C:
@@ -517,6 +530,12 @@ func (h *HTTPSender) SetPollingInterval(duration time.Duration) {
 // Should not be called concurrently with Run.
 func (h *HTTPSender) EnableCompression() {
 	h.compressionEnabled = true
+}
+
+// SetBackoffPolicy sets the factory that produces a fresh backoff policy for
+// each request retry sequence.
+func (h *HTTPSender) SetBackoffPolicy(p types.BackoffPolicyFunc) {
+	h.backoffPolicy = p
 }
 
 func (h *HTTPSender) AddTLSConfig(config *tls.Config) {

@@ -40,7 +40,8 @@ type wsConnection struct {
 	// requiresNegotiation is fixed at construction. When true the
 	// server has a PayloadSigner configured and Send is rejected until
 	// negotiated flips to true. When false (no server-side signer),
-	// Send is always permitted — wire-identical to upstream OpAMP.
+	// Send is always permitted; the Server sends the standard
+	// ServerToAgent wire format.
 	requiresNegotiation bool
 
 	// negotiated flips to true after the connection's first
@@ -78,12 +79,6 @@ func (c *wsConnection) enableSigning(state *connectionSigningState) {
 	c.signing.Store(state)
 }
 
-// signingEnabled reports whether this connection has negotiated
-// payload trust verification.
-func (c *wsConnection) signingEnabled() bool {
-	return c.signing.Load() != nil
-}
-
 // markNegotiated records that the connection has processed its first
 // AgentToServer message. After this point Send is no longer blocked
 // by the pre-negotiation guard.
@@ -110,6 +105,15 @@ func (c *wsConnection) Send(ctx context.Context, message *protobufs.ServerToAgen
 	defer c.connMutex.Unlock()
 
 	if state := c.signing.Load(); state != nil {
+		// Heartbeat exemption: a heartbeat response (only instance_uid
+		// set) MAY be sent unsigned on an attested connection. Write it
+		// as a plain ServerToAgent, skipping the signing round-trip. The
+		// Agent accepts this narrow, content-free shape unsigned and
+		// rejects any other unsigned message. Every substantive message
+		// is still wrapped and signed below.
+		if protobufs.IsHeartbeatServerToAgent(message) {
+			return internal.WriteWSMessage(c.wsConn, message, c.maxMessageSize)
+		}
 		env, err := state.signOutgoing(ctx, message)
 		if err != nil {
 			return err

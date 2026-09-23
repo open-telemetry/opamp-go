@@ -26,6 +26,9 @@ func main() {
 			"demonstrating the isolated Message Attestation signing architecture.\n"+
 			"Run internal/examples/policysrv first to start a local policy server.")
 
+	var noTLS bool
+	flag.BoolVar(&noTLS, "no-tls", false, "Serve the OpAMP endpoint without TLS, accepting plaintext (ws://) connections. Useful when testing OpAMP clients that do not support TLS yet.")
+
 	flag.Parse()
 
 	curDir, err := os.Getwd()
@@ -49,7 +52,7 @@ func main() {
 
 	uisrv.Start(curDir)
 	opampSrv := opampsrv.NewServer(&data.AllAgents, emitMetrics, payloadSigner)
-	opampSrv.Start()
+	opampSrv.Start(noTLS)
 
 	logger.Println("OpAMP Server running...")
 

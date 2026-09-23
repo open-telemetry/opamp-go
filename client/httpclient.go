@@ -69,6 +69,8 @@ func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) er
 		}
 	}
 
+	c.sender.SetBackoffPolicy(settings.BackoffPolicy)
+
 	// Prepare the first message to send.
 	err := c.common.PrepareFirstMessage(ctx)
 	if err != nil {
@@ -164,7 +166,7 @@ func (c *httpClient) runUntilStopped(ctx context.Context) {
 		&c.common.PackageSyncMutex,
 		c.common.DownloadReporterInterval,
 		c.common.PayloadVerifier,
-		c.common.PayloadTOFUStore,
+		c.common.PayloadTOFUEnroller,
 	)
 }
 

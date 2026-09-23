@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -902,6 +903,170 @@ func setupTestSender(_ *testing.T, url string) *HTTPSender {
 	})
 	sender.url = url
 	return sender
+}
+
+// mockBackoffPolicy is a BackoffPolicy that returns a fixed interval and records
+// call count. Used in tests.
+type mockBackoffPolicy struct {
+	interval time.Duration
+	calls    atomic.Int64
+}
+
+func (p *mockBackoffPolicy) NextBackOff() time.Duration {
+	p.calls.Add(1)
+	return p.interval
+}
+
+// TestHTTPSenderUsesBackoffPolicy verifies that a custom BackoffPolicy is
+// consulted before every request attempt, including retries.
+func TestHTTPSenderUsesBackoffPolicy(t *testing.T) {
+	policy := &mockBackoffPolicy{interval: 0}
+
+	var requestCount atomic.Int64
+	srv := StartMockServer(t)
+	t.Cleanup(srv.Close)
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
+		// Fail the first request to trigger one retry.
+		if requestCount.Add(1) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+
+	sender := setupTestSender(t, "http://"+srv.Endpoint)
+	sender.SetBackoffPolicy(func() types.BackoffPolicy { return policy })
+	sender.callbacks.SetDefaults()
+
+	resp, err := sender.sendRequestWithRetries(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	// Policy is called before each attempt: once before the 503 and once before the 200.
+	assert.GreaterOrEqual(t, policy.calls.Load(), int64(2))
+}
+
+// TestHTTPSenderBackoffPolicyNegativeInterval verifies that a BackoffPolicy
+// returning a negative value terminates the retry loop with an error instead of
+// retrying.
+func TestHTTPSenderBackoffPolicyNegativeInterval(t *testing.T) {
+	policy := &mockBackoffPolicy{interval: -1}
+
+	srv := StartMockServer(t)
+	t.Cleanup(srv.Close)
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
+		// Always return 503 so the loop would keep retrying if not for the
+		// negative backoff.
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+
+	sender := setupTestSender(t, "http://"+srv.Endpoint)
+	sender.SetBackoffPolicy(func() types.BackoffPolicy { return policy })
+	sender.callbacks.SetDefaults()
+
+	_, err := sender.sendRequestWithRetries(context.Background())
+	// The loop must exit immediately with an error because the policy returned a
+	// negative interval.
+	require.Error(t, err)
+	assert.EqualError(t, err, "invalid backoff policy time")
+	assert.Equal(t, int64(1), policy.calls.Load())
+}
+
+// TestHTTPSenderCenkaltiBackoffWithCustomValues verifies that a cenkalti/backoff
+// *ExponentialBackOff configured with custom values satisfies BackoffPolicy and
+// that the custom intervals are actually respected during retries.
+func TestHTTPSenderCenkaltiBackoffWithCustomValues(t *testing.T) {
+	const initialInterval = 50 * time.Millisecond
+	b := backoff.NewExponentialBackOff(
+		backoff.WithInitialInterval(initialInterval),
+		backoff.WithRandomizationFactor(0), // deterministic intervals for assertions
+		backoff.WithMultiplier(2.0),
+		backoff.WithMaxInterval(500*time.Millisecond),
+		backoff.WithMaxElapsedTime(0), // retry indefinitely
+	)
+
+	var requestCount atomic.Int64
+	srv := StartMockServer(t)
+	t.Cleanup(srv.Close)
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
+		if requestCount.Add(1) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+
+	sender := setupTestSender(t, "http://"+srv.Endpoint)
+	sender.SetBackoffPolicy(func() types.BackoffPolicy { return b })
+	sender.callbacks.SetDefaults()
+
+	start := time.Now()
+	resp, err := sender.sendRequestWithRetries(context.Background())
+	elapsed := time.Since(start)
+
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, int64(2), requestCount.Load())
+	// The retry waited for at least the configured initial interval.
+	assert.GreaterOrEqual(t, elapsed, initialInterval)
+}
+
+// TestHTTPSenderBackoffPolicyFuncFreshPerSequence verifies that the
+// BackoffPolicyFunc is invoked once per request sequence, so each sequence gets
+// a fresh policy instance rather than reusing an already advanced one.
+func TestHTTPSenderBackoffPolicyFuncFreshPerSequence(t *testing.T) {
+	var mu sync.Mutex
+	var policies []*mockBackoffPolicy
+	factory := func() types.BackoffPolicy {
+		mu.Lock()
+		defer mu.Unlock()
+		p := &mockBackoffPolicy{interval: 0}
+		policies = append(policies, p)
+		return p
+	}
+
+	var requestCount atomic.Int64
+	srv := StartMockServer(t)
+	t.Cleanup(srv.Close)
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
+		// Fail the first attempt of each sequence to force one retry, then succeed.
+		if requestCount.Add(1)%2 == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+
+	sender := setupTestSender(t, "http://"+srv.Endpoint)
+	sender.SetBackoffPolicy(factory)
+	sender.callbacks.SetDefaults()
+
+	// Run two independent request sequences. prepareRequest consumes the pending
+	// message, so queue a fresh one before each sequence.
+	for range 2 {
+		sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+			msg.AgentDescription = &protobufs.AgentDescription{
+				IdentifyingAttributes: []*protobufs.KeyValue{{
+					Key: "service.name",
+					Value: &protobufs.AnyValue{
+						Value: &protobufs.AnyValue_StringValue{StringValue: "test-service"},
+					},
+				}},
+			}
+		})
+		resp, err := sender.sendRequestWithRetries(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	// The func must have been called once per sequence.
+	require.Len(t, policies, 2, "backoffFunc must be invoked once per request sequence")
+	// Each sequence must use a distinct, freshly created policy instance.
+	assert.NotSame(t, policies[0], policies[1], "each sequence must use a distinct policy instance")
+	// Each fresh policy must have been consulted during its own sequence.
+	assert.GreaterOrEqual(t, policies[0].calls.Load(), int64(1))
+	assert.GreaterOrEqual(t, policies[1].calls.Load(), int64(1))
 }
 
 func TestHTTPSenderOpAMPInstanceUIDHeader(t *testing.T) {

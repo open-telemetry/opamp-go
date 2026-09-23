@@ -32,6 +32,13 @@ type CertOptions struct {
 	// MUST include a SAN that matches the OpAMP distribution server's
 	// hostname so the Agent can bind the signing certificate to a
 	// specific server during the connection-time handshake.
+	//
+	// Multiple entries are supported: list every host through which
+	// Agents legitimately reach this deployment (for example, an OpAMP
+	// gateway/proxy hostname in addition to the origin server hostname).
+	// A single signing key then produces signatures accepted by Agents
+	// connecting to any listed host; each Agent matches only the host it
+	// connected to against the full SAN set (the match is never relaxed).
 	DNSNames []string
 	// IPAddresses sets the iPAddress Subject Alternative Name entries
 	// on the leaf certificate. Use when the Agent connects to the

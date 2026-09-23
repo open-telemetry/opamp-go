@@ -78,7 +78,8 @@ func (h *SenderCommon) SetInstanceUid(instanceUid types.InstanceUid) error {
 	h.nextMessage.Update(
 		func(msg *protobufs.AgentToServer) {
 			msg.InstanceUid = instanceUid[:]
-		})
+		},
+	)
 
 	return nil
 }

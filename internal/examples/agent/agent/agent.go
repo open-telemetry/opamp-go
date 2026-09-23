@@ -89,14 +89,12 @@ type Agent struct {
 	// ConnectionSettingsOffers, used when reporting connection settings status.
 	lastConnectionSettingsHash []byte
 
-	// payloadVerifier, when non-nil, enables Message Attestation: every
-	// inbound ServerToAgent message must arrive in a SignedServerToAgent
-	// envelope whose signature chains to this verifier's trust anchor.
-	payloadVerifier signing.Verifier
-
-	// payloadTOFUStore, when non-nil, enables TOFU enrollment for the
-	// payload trust anchor. Mutually exclusive with payloadVerifier.
-	payloadTOFUStore signing.TOFUStore
+	// payloadTrustProvider, when non-nil, enables Message Attestation:
+	// every inbound ServerToAgent message must arrive in a
+	// SignedServerToAgent envelope whose signature chains to the trust
+	// anchor the provider resolves. Built by WithPayloadVerifier (fixed
+	// anchor) or WithPayloadTOFUStore (TOFU enrollment).
+	payloadTrustProvider signing.PayloadTrustProvider
 }
 
 type proxySettings struct {
@@ -153,7 +151,7 @@ func WithNoClientCertRequest() Option {
 // to the trust anchor embedded in v.
 func WithPayloadVerifier(v signing.Verifier) Option {
 	return func(agent *Agent) {
-		agent.payloadVerifier = v
+		agent.payloadTrustProvider = signing.FixedAnchor(v)
 	}
 }
 
@@ -163,7 +161,7 @@ func WithPayloadVerifier(v signing.Verifier) Option {
 // Mutually exclusive with WithPayloadVerifier.
 func WithPayloadTOFUStore(s signing.TOFUStore) Option {
 	return func(agent *Agent) {
-		agent.payloadTOFUStore = s
+		agent.payloadTrustProvider = signing.TOFUAnchor(s)
 	}
 }
 
@@ -216,11 +214,10 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 	}
 
 	settings := types.StartSettings{
-		OpAMPServerURL:    agent.agentConfig.Endpoint,
-		HeartbeatInterval: agent.agentConfig.HeartbeatInterval,
-		InstanceUid:       types.InstanceUid(agent.instanceId),
-		PayloadVerifier:   agent.payloadVerifier,
-		PayloadTOFUStore:  agent.payloadTOFUStore,
+		OpAMPServerURL:       agent.agentConfig.Endpoint,
+		HeartbeatInterval:    agent.agentConfig.HeartbeatInterval,
+		InstanceUid:          types.InstanceUid(agent.instanceId),
+		PayloadTrustProvider: agent.payloadTrustProvider,
 		Callbacks: types.Callbacks{
 			OnConnect: func(ctx context.Context) {
 				agent.logger.Debugf(ctx, "Connected to the server.")
@@ -263,11 +260,12 @@ func (agent *Agent) connect(ops ...settingsOp) error {
 		protobufs.AgentCapabilities_AgentCapabilities_ReportsOwnMetrics |
 		protobufs.AgentCapabilities_AgentCapabilities_AcceptsOpAMPConnectionSettings |
 		protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus
-	if agent.payloadVerifier != nil {
+	if agent.payloadTrustProvider != nil {
 		supportedCapabilities |= protobufs.AgentCapabilities_AgentCapabilities_RequiresPayloadTrustVerification
-	} else if agent.payloadTOFUStore != nil {
-		supportedCapabilities |= protobufs.AgentCapabilities_AgentCapabilities_RequiresPayloadTrustVerification |
-			protobufs.AgentCapabilities_AgentCapabilities_AcceptsPayloadTrustAnchorTOFU
+		// A provider that can enroll an anchor also advertises TOFU.
+		if _, ok := agent.payloadTrustProvider.(signing.TOFUEnroller); ok {
+			supportedCapabilities |= protobufs.AgentCapabilities_AgentCapabilities_AcceptsPayloadTrustAnchorTOFU
+		}
 	}
 	err = agent.client.SetCapabilities(&supportedCapabilities)
 	if err != nil {
@@ -387,7 +385,7 @@ func (agent *Agent) loadLocalConfig() {
 func (agent *Agent) composeEffectiveConfig() *protobufs.EffectiveConfig {
 	return &protobufs.EffectiveConfig{
 		ConfigMap: &protobufs.AgentConfigMap{
-			ConfigMap: map[string]*protobufs.AgentConfigFile{
+			ConfigMap: map[string]*protobufs.AgentConfigObject{
 				"": {Body: agent.effectiveConfig},
 			},
 		},
@@ -414,7 +412,7 @@ func (agent *Agent) initMeter(settings *protobufs.TelemetryConnectionSettings) e
 
 type agentConfigFileItem struct {
 	name string
-	file *protobufs.AgentConfigFile
+	file *protobufs.AgentConfigObject
 }
 
 type agentConfigFileSlice []agentConfigFileItem
@@ -653,7 +651,8 @@ func (agent *Agent) processCustomMessage(ctx context.Context, customMessage *pro
 		return
 	}
 
-	agent.logger.Debugf(ctx, "received custom message: capability=%s, type=%s, data=%s",
+	agent.logger.Debugf(
+		ctx, "received custom message: capability=%s, type=%s, data=%s",
 		customMessage.Capability,
 		customMessage.Type,
 		string(customMessage.Data),

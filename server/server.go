@@ -47,8 +47,8 @@ type Settings struct {
 	// section of the OpAMP specification. The
 	// ServerCapabilities_OffersPayloadTrustVerification bit is
 	// automatically set on outgoing capabilities when this field is
-	// non-nil. nil disables payload trust signing — wire-identical to
-	// upstream OpAMP.
+	// non-nil. nil disables payload trust signing; the Server sends
+	// the standard ServerToAgent wire format.
 	PayloadSigner signing.Signer
 }
 

@@ -117,6 +117,16 @@ func (agent *Agent) LastSeen() string {
 	return agent.LastSeenAt.Format(time.RFC3339)
 }
 
+// Uptime returns how long the Agent has been up, computed from the start time
+// it reported in its health status. Valid only while the Agent is healthy.
+func (agent *Agent) Uptime() string {
+	if agent.StartedAt.IsZero() {
+		return ""
+	}
+
+	return time.Since(agent.StartedAt).Truncate(time.Second).String()
+}
+
 func (agent *Agent) displayAttribute(key string) string {
 	if agent.Status == nil || agent.Status.AgentDescription == nil {
 		return ""
@@ -230,7 +240,8 @@ func (agent *Agent) UpdateStatus(
 }
 
 func (agent *Agent) processCustomMessage(statusMsg *protobufs.AgentToServer) {
-	formattedMessage := fmt.Sprintf("[%s] capability=%s, type=%s, data=%s",
+	formattedMessage := fmt.Sprintf(
+		"[%s] capability=%s, type=%s, data=%s",
 		time.Now().Format(time.DateTime),
 		statusMsg.CustomMessage.Capability,
 		statusMsg.CustomMessage.Type,
@@ -472,13 +483,13 @@ func (agent *Agent) calcRemoteConfig() bool {
 
 	cfg := protobufs.AgentRemoteConfig{
 		Config: &protobufs.AgentConfigMap{
-			ConfigMap: map[string]*protobufs.AgentConfigFile{},
+			ConfigMap: map[string]*protobufs.AgentConfigObject{},
 		},
 	}
 
 	// Add the custom config for this particular Agent instance. Use empty
 	// string as the config file name.
-	cfg.Config.ConfigMap[""] = &protobufs.AgentConfigFile{
+	cfg.Config.ConfigMap[""] = &protobufs.AgentConfigObject{
 		Body: []byte(agent.CustomInstanceConfig),
 	}
 
@@ -530,7 +541,7 @@ func isEqualConfigSet(c1, c2 *protobufs.AgentConfigMap) bool {
 	return true
 }
 
-func isEqualConfigFile(f1, f2 *protobufs.AgentConfigFile) bool {
+func isEqualConfigFile(f1, f2 *protobufs.AgentConfigObject) bool {
 	if f1 == f2 {
 		return true
 	}

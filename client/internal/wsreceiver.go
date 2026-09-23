@@ -53,7 +53,7 @@ type wsReceiver struct {
 // verified on every subsequent one, and any failure terminates the
 // receive loop (and, by extension, the connection). When
 // payloadVerifier is nil, the receiver uses the standard ServerToAgent
-// wire format (identical to upstream OpAMP).
+// wire format.
 func NewWSReceiver(
 	logger types.Logger,
 	callbacks types.Callbacks,
@@ -65,7 +65,7 @@ func NewWSReceiver(
 	reporterInterval time.Duration,
 	payloadVerifier signing.Verifier,
 	serverURL string,
-	tofuStore signing.TOFUStore,
+	tofuEnroller signing.TOFUEnroller,
 ) *wsReceiver {
 	w := &wsReceiver{
 		conn:      conn,
@@ -75,17 +75,17 @@ func NewWSReceiver(
 		processor: newReceivedProcessor(logger, callbacks, sender, clientSyncedState, packagesStateProvider, packageSyncMutex, reporterInterval),
 		stopped:   make(chan struct{}),
 	}
-	if payloadVerifier != nil || tofuStore != nil {
+	if payloadVerifier != nil || tofuEnroller != nil {
 		var serverName string
 		if parsed, err := url.Parse(serverURL); err != nil {
 			// Fail closed downstream: an empty serverName makes
-			// ProcessEnvelope reject the handshake with
-			// ErrServerNameUnavailable rather than skip SAN verification.
+			// signing.ValidateChain reject the handshake with
+			// ErrServerNameRequired rather than skip SAN verification.
 			logger.Errorf(context.Background(), "Cannot parse server URL %q for SAN verification: %v", serverURL, err)
 		} else {
 			serverName = parsed.Hostname()
 		}
-		w.attestation = newAttestationState(payloadVerifier, serverName, tofuStore)
+		w.attestation = newAttestationState(payloadVerifier, serverName, tofuEnroller)
 	}
 
 	return w

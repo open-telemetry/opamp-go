@@ -4,11 +4,15 @@
 // # Architecture
 //
 // The OpAMP distribution server (internal/examples/server) holds no private
-// key material. Before delivering each ServerToAgent message it calls this
+// key material. Before delivering a ServerToAgent message it calls this
 // server's /v1/sign endpoint to obtain a signature over the payload bytes.
 // The structural isolation is the key security property: an attacker who
 // compromises the distribution server gains the ability to send messages,
 // but cannot produce valid signatures without also compromising this server.
+//
+// One exception: a heartbeat response — a ServerToAgent with only
+// instance_uid set — MAY be sent unsigned, so it is written directly and
+// never reaches this server. Every content-bearing message is signed.
 //
 //	Agent ──AgentToServer──► OpAMP Server ──sign request──► Policy Server
 //	                                       ◄──signature──────────────────
@@ -109,8 +113,11 @@ func (s *signerState) sign(ctx context.Context, payload []byte) ([]byte, error) 
 	s.mu.Lock()
 	signer := s.signer
 	s.mu.Unlock()
-	_, sig, err := signer.Sign(ctx, payload)
-	return sig, err
+	res, err := signer.Sign(ctx, payload)
+	if err != nil {
+		return nil, err
+	}
+	return res.Signature, nil
 }
 
 func (s *signerState) chainPEM() []byte {

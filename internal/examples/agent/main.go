@@ -310,7 +310,8 @@ func runScale(ctx context.Context, cfg flagConfig) ([]*agent.Agent, error) {
 			if err != nil {
 				return nil, err
 			}
-			opts = append(opts,
+			opts = append(
+				opts,
 				agent.WithNoClientCertRequest(),
 				agent.WithInstanceID(id),
 			)

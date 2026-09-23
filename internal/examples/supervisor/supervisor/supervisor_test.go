@@ -37,8 +37,8 @@ func changeCurrentDir(t *testing.T) string {
 func startOpampServer(t *testing.T) {
 	t.Helper()
 
-	opampSrv := opampsrv.NewServer(&data.AllAgents, false)
-	opampSrv.Start()
+	opampSrv := opampsrv.NewServer(&data.AllAgents, false, nil)
+	opampSrv.Start(false)
 
 	t.Cleanup(func() {
 		opampSrv.Stop()

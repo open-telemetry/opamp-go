@@ -29,7 +29,8 @@ type metricsTracker struct {
 }
 
 func NewMetricsTracker(emitMetrics bool) (*metricsTracker, error) {
-	resource, err := otelresource.New(context.Background(),
+	resource, err := otelresource.New(
+		context.Background(),
 		otelresource.WithAttributes(
 			semconv.ServiceNameKey.String("io.opentelemetry.opampserver"),
 			semconv.ServiceVersionKey.String("0.1.0"),
