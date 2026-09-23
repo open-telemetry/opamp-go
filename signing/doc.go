@@ -19,8 +19,8 @@
 // of the OpAMP specification for the wire protocol.
 //
 // The signing algorithm for a given connection is determined by the
-// signing certificate's SignatureAlgorithm field; the OpAMP protocol
-// does not negotiate algorithms.
+// signing leaf's public key (its type and, for ECDSA, its curve); the
+// OpAMP protocol does not negotiate algorithms.
 //
 // [GenerateCA] and [GenerateLeaf] are exported test helpers; they
 // also serve smoke tests and the example server. Production

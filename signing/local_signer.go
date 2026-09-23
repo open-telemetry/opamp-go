@@ -50,11 +50,9 @@ type LocalSigner struct {
 // trust anchor pool.
 //
 // The signing algorithm is determined by the leaf certificate's public
-// key type and (for ECDSA) curve, cross-checked against the cert's
-// SignatureAlgorithm field. ErrUnsupportedAlgorithm is returned for
-// any pubkey type/curve outside the supported baseline, for RSA keys
-// below the minimum modulus (rsaMinModulusBits), or when
-// SignatureAlgorithm does not match the leaf's actual key.
+// key type and (for ECDSA) curve. ErrUnsupportedAlgorithm is returned
+// for any pubkey type/curve outside the supported baseline, or for RSA
+// keys below the minimum modulus (rsaMinModulusBits).
 //
 // The material is validated at construction so misconfiguration fails
 // at startup rather than as opaque client-side errors later: key's

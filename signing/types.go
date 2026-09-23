@@ -152,9 +152,8 @@ type Verifier interface {
 	// expired since, Verify MUST first re-confirm cert is still valid at
 	// the current time (see [VerifiedCertificate.ValidAt]) and reject the
 	// message otherwise. The signature algorithm is derived from the
-	// leaf's public-key type and (for ECDSA) curve, cross-checked against
-	// its SignatureAlgorithm. The payload bytes are the wire bytes of
-	// SignedServerToAgent.payload — the receiver does not re-marshal
-	// anything.
+	// leaf's public-key type and (for ECDSA) curve. The payload bytes
+	// are the wire bytes of SignedServerToAgent.payload — the receiver
+	// does not re-marshal anything.
 	Verify(ctx context.Context, payload, signature []byte, cert *VerifiedCertificate) error
 }

@@ -46,11 +46,10 @@ func (v *LocalVerifier) ValidateChain(ctx context.Context, chainDER [][]byte, no
 // valid at the current time — a chain validated at handshake may have
 // expired since — and rejects the message if not. It then checks the
 // signature: the algorithm is derived from the leaf's public-key type
-// and (for ECDSA) curve, cross-checked against its SignatureAlgorithm.
-// ErrUnsupportedAlgorithm is returned for any pubkey type/curve outside
-// the supported baseline (or when SignatureAlgorithm disagrees with the
-// actual key); ErrChainValidation when the chain is no longer valid;
-// ErrSignatureMismatch when the signature does not verify.
+// and (for ECDSA) curve. ErrUnsupportedAlgorithm is returned for any
+// pubkey type/curve outside the supported baseline; ErrChainValidation
+// when the chain is no longer valid; ErrSignatureMismatch when the
+// signature does not verify.
 func (v *LocalVerifier) Verify(ctx context.Context, payload, signature []byte, cert *VerifiedCertificate) error {
 	if err := ctx.Err(); err != nil {
 		return err
