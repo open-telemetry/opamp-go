@@ -10,6 +10,10 @@ import (
 
 // MessageData represents a message received from the server and handled by Callbacks.
 type MessageData struct {
+	// Flags contains the flags of the received server message. OnMessage can
+	// refresh state here before a requested full report is sent.
+	Flags protobufs.ServerToAgentFlags
+
 	// RemoteConfig is offered by the Server. The Agent must process it and call
 	// OpAMPClient.SetRemoteConfigStatus to indicate success or failure. If the
 	// effective config has changed as a result of processing the Agent must also call
