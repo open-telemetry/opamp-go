@@ -2681,6 +2681,58 @@ func TestSetAvailableComponents(t *testing.T) {
 	}
 }
 
+func TestRequestedReportIncludesRefreshedAvailableComponents(t *testing.T) {
+	for _, flag := range []protobufs.ServerToAgentFlags{
+		protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportAvailableComponents,
+		protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState,
+	} {
+		t.Run(flag.String(), func(t *testing.T) {
+			testClients(t, func(t *testing.T, client OpAMPClient) {
+				srv := internal.StartMockServer(t)
+				defer srv.Close()
+
+				refreshed := generateTestAvailableComponents()
+				refreshed.Hash = []byte("refreshed-hash")
+				messages := make(chan *protobufs.AgentToServer, 4)
+				srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					messages <- msg
+					response := &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+					if msg.SequenceNum == 0 {
+						response.Flags = uint64(flag)
+					}
+					return response
+				})
+
+				require.NoError(t, client.SetAvailableComponents(generateTestAvailableComponents()))
+				settings := types.StartSettings{
+					OpAMPServerURL: "ws://" + srv.Endpoint,
+					Capabilities:   protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents,
+					Callbacks: types.Callbacks{OnMessage: func(_ context.Context, msg *types.MessageData) {
+						if msg.Flags&flag != 0 {
+							assert.NoError(t, client.SetAvailableComponents(refreshed))
+						}
+					}},
+				}
+				prepareClient(t, &settings, client)
+				require.NoError(t, client.Start(context.Background(), settings))
+				defer func() { assert.NoError(t, client.Stop(context.Background())) }()
+
+				deadline := time.After(5 * time.Second)
+				for {
+					select {
+					case msg := <-messages:
+						if proto.Equal(refreshed, msg.AvailableComponents) {
+							return
+						}
+					case <-deadline:
+						t.Fatal("server did not receive the full refreshed available components")
+					}
+				}
+			})
+		})
+	}
+}
+
 func TestValidateCapabilities(t *testing.T) {
 	testCases := []struct {
 		name          string
