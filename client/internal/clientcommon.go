@@ -29,6 +29,7 @@ var (
 	ErrPayloadVerifierWithoutCapability      = errors.New("PayloadTrustProvider set but RequiresPayloadTrustVerification capability is not enabled")
 	ErrPayloadVerifierInit                   = errors.New("PayloadTrustProvider.Verifier failed at startup")
 	ErrPayloadTrustProviderNoAnchor          = errors.New("PayloadTrustProvider returned no Verifier and does not support TOFU enrollment")
+	ErrDialContextAndProxyURL                = errors.New("DialContext and ProxyURL cannot both be set")
 
 	errAlreadyStarted                  = errors.New("already started")
 	errCannotStopNotStarted            = errors.New("cannot stop because not started")
@@ -132,6 +133,12 @@ func (c *ClientCommon) PrepareStart(
 ) error {
 	if c.isStarted {
 		return errAlreadyStarted
+	}
+
+	// DialContext replaces the dialing that proxying relies on, so the two
+	// cannot be combined.
+	if settings.DialContext != nil && settings.ProxyURL != "" {
+		return ErrDialContextAndProxyURL
 	}
 	// Deprecated: Use client.SetCapabilities() instead.
 	if settings.Capabilities != 0 {
