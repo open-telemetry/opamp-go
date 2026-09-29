@@ -13,18 +13,11 @@ import (
 // trust anchor PEM file.
 var ErrLoadCAFile = errors.New("signing: load CA file")
 
-// ErrParsePrivateKey wraps failures to decode a PEM-encoded private
-// key. Multiple PKCS encodings are tried in turn (PKCS#8, EC, PKCS#1).
+// ErrParsePrivateKey wraps failures to decode a PEM-encoded private key.
 var ErrParsePrivateKey = errors.New("signing: parse private key")
 
-// VerifierFromFile constructs a LocalVerifier whose trust anchor pool
-// is populated from a PEM file at caPath. The file MUST contain one or
-// more PEM-encoded X.509 certificates; any non-CERTIFICATE PEM blocks
-// (for example RSA PRIVATE KEY blocks accidentally left in the file)
-// are ignored.
-//
-// Typical use: the opamp-go client supervisor or extension calls this
-// at startup with the operator-supplied payload_ca path.
+// VerifierFromFile constructs a LocalVerifier trusting the PEM certificates
+// in the file at caPath. Non-CERTIFICATE blocks are ignored.
 func VerifierFromFile(caPath string) (*LocalVerifier, error) {
 	if caPath == "" {
 		return nil, fmt.Errorf("%w: empty path", ErrLoadCAFile)
@@ -40,9 +33,8 @@ func VerifierFromFile(caPath string) (*LocalVerifier, error) {
 	return NewLocalVerifier(pool)
 }
 
-// VerifierFromPEM constructs a LocalVerifier whose trust anchor pool is
-// populated from pemBytes. Useful when the CA certificate bytes are already
-// in memory (for example, after a TOFU enrollment).
+// VerifierFromPEM constructs a LocalVerifier trusting the PEM certificates
+// in pemBytes.
 func VerifierFromPEM(pemBytes []byte) (*LocalVerifier, error) {
 	if len(pemBytes) == 0 {
 		return nil, fmt.Errorf("%w: empty PEM bytes", ErrLoadCAFile)
@@ -54,17 +46,9 @@ func VerifierFromPEM(pemBytes []byte) (*LocalVerifier, error) {
 	return NewLocalVerifier(pool)
 }
 
-// LocalSignerFromFiles constructs a LocalSigner from PEM-encoded files:
-//
-//   - keyPath:   path to a PEM file containing the leaf signing private
-//     key. PKCS#8, EC, and PKCS#1 encodings are accepted.
-//   - chainPath: path to a PEM file containing the certificate chain.
-//     The chain MUST be ordered intermediates first, leaf last, and the
-//     leaf cert MUST correspond to the private key. The root MUST NOT
-//     be included.
-//
-// Intended for example servers, smoke tests, and any deployment that
-// stores signing material as PEM files on disk.
+// LocalSignerFromFiles constructs a LocalSigner from a PEM private key
+// (PKCS#8, EC, or PKCS#1) at keyPath and a PEM chain (intermediates first,
+// leaf last, root excluded) at chainPath.
 func LocalSignerFromFiles(keyPath, chainPath string) (*LocalSigner, error) {
 	if keyPath == "" {
 		return nil, errors.New("signing: empty key path")
@@ -91,10 +75,6 @@ func LocalSignerFromFiles(keyPath, chainPath string) (*LocalSigner, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(chain) == 0 {
-		return nil, ErrEmptyChain
-	}
-
 	return NewLocalSigner(key, chain)
 }
 
@@ -103,10 +83,7 @@ func parsePrivateKeyPEM(data []byte) (crypto.Signer, error) {
 	if block == nil {
 		return nil, fmt.Errorf("%w: no PEM block found", ErrParsePrivateKey)
 	}
-	// PKCS#8 first — covers RSA, ECDSA, and Ed25519 in one call. If it
-	// succeeds, we accept any key type that implements crypto.Signer
-	// (which all current and likely-future stdlib private-key types
-	// do).
+	// PKCS#8 covers RSA, ECDSA, and Ed25519; PKCS#1 and EC are legacy forms.
 	if k, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
 		s, ok := k.(crypto.Signer)
 		if !ok {
@@ -114,11 +91,9 @@ func parsePrivateKeyPEM(data []byte) (crypto.Signer, error) {
 		}
 		return s, nil
 	}
-	// PKCS#1 for legacy RSA private keys.
 	if k, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
 		return k, nil
 	}
-	// EC for legacy ECDSA private keys.
 	if k, err := x509.ParseECPrivateKey(block.Bytes); err == nil {
 		return k, nil
 	}
@@ -127,21 +102,28 @@ func parsePrivateKeyPEM(data []byte) (crypto.Signer, error) {
 
 func parseCertChainPEM(data []byte) ([]*x509.Certificate, error) {
 	var chain []*x509.Certificate
-	rest := data
-	for {
-		var block *pem.Block
-		block, rest = pem.Decode(rest)
-		if block == nil {
-			break
-		}
-		if block.Type != "CERTIFICATE" {
-			continue
-		}
-		cert, err := x509.ParseCertificate(block.Bytes)
+	for _, der := range pemCertificates(data) {
+		cert, err := x509.ParseCertificate(der)
 		if err != nil {
 			return nil, fmt.Errorf("signing: parse certificate in chain: %w", err)
 		}
 		chain = append(chain, cert)
 	}
 	return chain, nil
+}
+
+// pemCertificates returns the DER bytes of every CERTIFICATE block in data,
+// in order. Other PEM block types are skipped.
+func pemCertificates(data []byte) [][]byte {
+	var ders [][]byte
+	for {
+		var block *pem.Block
+		block, data = pem.Decode(data)
+		if block == nil {
+			return ders
+		}
+		if block.Type == "CERTIFICATE" {
+			ders = append(ders, block.Bytes)
+		}
+	}
 }

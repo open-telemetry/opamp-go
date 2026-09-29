@@ -13,26 +13,14 @@ import (
 // ErrNilKey is returned by NewLocalSigner when key is nil.
 var ErrNilKey = errors.New("signing: nil private key")
 
-// ErrKeyMismatch is returned by NewLocalSigner when the private key's
-// public key does not match the leaf certificate's public key. Such a
-// signer would produce signatures no Agent can verify, so it is
-// rejected at construction rather than failing on every connection.
+// ErrKeyMismatch is returned by NewLocalSigner when the private key does
+// not match the leaf certificate's public key.
 var ErrKeyMismatch = errors.New("signing: private key does not match leaf certificate public key")
 
-// LocalSigner is the in-process reference implementation of [Signer].
-// It holds a private key and certificate chain in memory and signs
-// requests synchronously without any network IO.
-//
-// LocalSigner is suitable for tests, the opamp-go example server, and
-// any deployment where the signing private key is colocated with the
-// OpAMP server process. Deployments that delegate signing to a hosted
-// platform (HSM-backed RPC, central signing service) should provide
-// their own Signer implementation; the wire-level opamp-go code is
-// agnostic to which Signer is in use.
-//
-// LocalSigner is safe for concurrent use: the underlying crypto.Signer
-// implementations in the Go standard library are themselves
-// concurrency-safe.
+// LocalSigner is the in-process reference implementation of [Signer]: it
+// signs with a crypto.Signer and a fixed certificate chain. The key may be
+// in memory or backed by hardware or a KMS. It is safe for concurrent use
+// if the crypto.Signer is.
 type LocalSigner struct {
 	key       crypto.Signer
 	alg       Algorithm
@@ -40,25 +28,14 @@ type LocalSigner struct {
 	rootCAPEM []byte // PEM-encoded, set via WithRootCA; nil unless TOFU is supported
 }
 
-// NewLocalSigner constructs a LocalSigner from the supplied private
-// key (typically a crypto.Signer implementation from the standard
-// library) and certificate chain.
+// NewLocalSigner constructs a LocalSigner from key and chain (intermediates
+// first, leaf last, root excluded). The algorithm is derived from the leaf's
+// public key.
 //
-// The chain MUST be ordered intermediates first, leaf last; the leaf
-// is the certificate whose private key signs payloads. The root MUST
-// NOT be included — the Agent supplies the root via its pre-configured
-// trust anchor pool.
-//
-// The signing algorithm is determined by the leaf certificate's public
-// key type and (for ECDSA) curve. ErrUnsupportedAlgorithm is returned
-// for any pubkey type/curve outside the supported baseline, or for RSA
-// keys below the minimum modulus (rsaMinModulusBits).
-//
-// The material is validated at construction so misconfiguration fails
-// at startup rather than as opaque client-side errors later: key's
-// public key MUST match the leaf (ErrKeyMismatch), and the chain MUST
-// be internally consistent (ErrChainValidation; see
-// verifyChainInternally).
+// The material is validated up front so misconfiguration fails at startup:
+// ErrUnsupportedAlgorithm for an unsupported leaf key, ErrKeyMismatch if key
+// does not match the leaf, and ErrChainValidation if the chain is not
+// internally consistent.
 func NewLocalSigner(key crypto.Signer, chain []*x509.Certificate) (*LocalSigner, error) {
 	if key == nil {
 		return nil, ErrNilKey
@@ -86,10 +63,7 @@ func NewLocalSigner(key crypto.Signer, chain []*x509.Certificate) (*LocalSigner,
 
 	chainDER := make([][]byte, len(chain))
 	for i, cert := range chain {
-		// cert.Raw is the DER bytes the certificate was parsed from
-		// (or that x509.CreateCertificate produced). Copy to defend
-		// against later mutation of cert.Raw by callers, even though
-		// it's expected to be immutable in practice.
+		// Copy so later mutation of cert.Raw cannot affect the signer.
 		raw := make([]byte, len(cert.Raw))
 		copy(raw, cert.Raw)
 		chainDER[i] = raw
@@ -102,12 +76,10 @@ func NewLocalSigner(key crypto.Signer, chain []*x509.Certificate) (*LocalSigner,
 	}, nil
 }
 
-// verifyChainInternally checks that the chain is well-formed: correct
-// order, each certificate issued by the next, leaf carrying
-// id-kp-codeSigning, and all valid at now. The top-most
-// supplied certificate is the trust anchor, since a signing chain
-// excludes the real root by design (the Agent holds it) — so this does
-// NOT prove the chain terminates at the Agent's trust anchor.
+// verifyChainInternally checks the chain is well-formed (ordered, each
+// certificate issuing the next, leaf carrying id-kp-codeSigning, all valid
+// at now), treating its top certificate as the anchor. It cannot prove the
+// chain reaches the Agent's trust anchor, which the signer never holds.
 func verifyChainInternally(chain []*x509.Certificate, now time.Time) error {
 	leaf := chain[len(chain)-1]
 	roots := x509.NewCertPool()
@@ -128,12 +100,8 @@ func verifyChainInternally(chain []*x509.Certificate, now time.Time) error {
 	return nil
 }
 
-// Sign implements [Signer]. It signs the caller's bytes unchanged and
-// returns them verbatim as SignResult.Payload: an in-process signer does not
-// re-marshal, so the bytes signed are exactly the bytes passed in. The chain
-// returned in SignResult.ChainDER is the one configured at construction. The
-// context is honoured only for cancellation; the in-process signing operation
-// itself does not block.
+// Sign implements [Signer]. It signs payload as-is, so SignResult.Payload is
+// the input, and returns the chain configured at construction.
 func (s *LocalSigner) Sign(ctx context.Context, payload []byte) (SignResult, error) {
 	if err := ctx.Err(); err != nil {
 		return SignResult{}, err
@@ -142,39 +110,31 @@ func (s *LocalSigner) Sign(ctx context.Context, payload []byte) (SignResult, err
 	if err != nil {
 		return SignResult{}, err
 	}
-	// Return a fresh slice header so a caller cannot reassign or reorder the
-	// signer's internal chain entries. The DER backing arrays are shared, not
-	// copied: they are immutable after construction, and per [SignResult] the
-	// caller must treat ChainDER as read-only.
+	// Copy the outer slice only; the DER bytes are shared and read-only.
 	chain := make([][]byte, len(s.chainDER))
 	copy(chain, s.chainDER)
 	return SignResult{Payload: payload, Signature: sig, ChainDER: chain}, nil
 }
 
-// Algorithm reports the algorithm dispatched by this signer (derived
-// from the leaf certificate). Exposed for diagnostics and tests.
+// Algorithm reports the signer's algorithm, derived from the leaf certificate.
 func (s *LocalSigner) Algorithm() Algorithm {
 	return s.alg
 }
 
-// WithRootCA attaches the root CA certificate to this signer, enabling
-// [TrustAnchorProvider] support. The root CA is included in
-// trust_chain_response.tofu_trust_anchor during TOFU enrollment so that
-// Agents with no pre-configured trust anchor can bootstrap and persist it.
-// Returns the receiver for chaining. The root CA is PEM-encoded once here
-// rather than on every TrustAnchorPEM call.
+// WithRootCA attaches the root CA, enabling [TrustAnchorProvider] so the
+// server can offer it to Agents performing TOFU enrollment. It returns the
+// receiver for chaining.
 func (s *LocalSigner) WithRootCA(ca *x509.Certificate) *LocalSigner {
 	s.rootCAPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw})
 	return s
 }
 
-// TrustAnchorPEM implements [TrustAnchorProvider]. Returns the PEM-encoded
-// root CA set by [WithRootCA]. Returns an error if WithRootCA was not called.
+// TrustAnchorPEM implements [TrustAnchorProvider], returning the root CA set
+// by [LocalSigner.WithRootCA], or an error if none was set.
 func (s *LocalSigner) TrustAnchorPEM(_ context.Context) ([]byte, error) {
 	if len(s.rootCAPEM) == 0 {
 		return nil, errors.New("signing: no root CA configured on LocalSigner (call WithRootCA first)")
 	}
-	// Return a copy so the caller cannot mutate the signer's stored PEM.
 	out := make([]byte, len(s.rootCAPEM))
 	copy(out, s.rootCAPEM)
 	return out, nil

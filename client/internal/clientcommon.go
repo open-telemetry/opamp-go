@@ -52,20 +52,14 @@ type ClientCommon struct {
 	// PackageSyncMutex makes sure only one package syncing operation happens at a time.
 	PackageSyncMutex sync.Mutex
 
-	// PayloadVerifier validates the trust chain delivered in
-	// SignedServerToAgent.trust_chain_response on the first message of
-	// a connection, and verifies the per-message signature on every
-	// subsequent ServerToAgent. nil when the Agent has not opted in to
-	// payload trust verification (the standard OpAMP wire path stays
-	// active), or when TOFU enrollment is pending (see PayloadTOFUEnroller).
-	// Resolved from StartSettings.PayloadTrustProvider in PrepareStart.
-	PayloadVerifier signing.Verifier
-
-	// PayloadTOFUEnroller, when non-nil, backs TOFU enrollment: the
-	// PayloadTrustProvider returned no pre-configured Verifier but supports
-	// enrolling a trust anchor from the first connection. Nil once the anchor
-	// has been enrolled and promoted to PayloadVerifier.
+	// PayloadVerifier and PayloadTOFUEnroller come from
+	// StartSettings.PayloadTrustProvider; at most one is set, and both are
+	// nil when attestation is disabled. A successful TOFU enrollment
+	// replaces the enroller with the enrolled Verifier. Once running, read
+	// them via PayloadTrust: payloadTrustMu guards them.
+	PayloadVerifier     signing.Verifier
 	PayloadTOFUEnroller signing.TOFUEnroller
+	payloadTrustMu      sync.Mutex
 
 	// The transport-specific sender.
 	sender Sender
@@ -116,7 +110,7 @@ func (c *ClientCommon) validateCapabilities(capabilities protobufs.AgentCapabili
 		}
 	}
 	requiresAttestation := capabilities&protobufs.AgentCapabilities_AgentCapabilities_RequiresPayloadTrustVerification != 0
-	attestationConfigured := c.PayloadVerifier != nil || c.PayloadTOFUEnroller != nil
+	attestationConfigured := c.PayloadTrustEnabled()
 	switch {
 	case requiresAttestation && !attestationConfigured:
 		return ErrPayloadVerifierMissing
@@ -124,6 +118,39 @@ func (c *ClientCommon) validateCapabilities(capabilities protobufs.AgentCapabili
 		return ErrPayloadVerifierWithoutCapability
 	}
 	return nil
+}
+
+// PayloadTrust returns the Verifier and TOFUEnroller for a new connection.
+func (c *ClientCommon) PayloadTrust() (signing.Verifier, signing.TOFUEnroller) {
+	c.payloadTrustMu.Lock()
+	defer c.payloadTrustMu.Unlock()
+	return c.PayloadVerifier, c.PayloadTOFUEnroller
+}
+
+// PayloadTrustEnabled reports whether payload trust verification is enabled.
+func (c *ClientCommon) PayloadTrustEnabled() bool {
+	v, e := c.PayloadTrust()
+	return v != nil || e != nil
+}
+
+// promotingEnroller makes a successful enrollment replace the enroller with
+// the enrolled Verifier, so later connections use the pinned anchor instead
+// of enrolling again.
+type promotingEnroller struct {
+	inner  signing.TOFUEnroller
+	common *ClientCommon
+}
+
+func (p *promotingEnroller) Enroll(anchorPEM []byte) (signing.Verifier, error) {
+	v, err := p.inner.Enroll(anchorPEM)
+	if err != nil {
+		return nil, err
+	}
+	p.common.payloadTrustMu.Lock()
+	p.common.PayloadVerifier = v
+	p.common.PayloadTOFUEnroller = nil
+	p.common.payloadTrustMu.Unlock()
+	return v, nil
 }
 
 // PrepareStart prepares the client state for the next Start() call.
@@ -167,13 +194,7 @@ func (c *ClientCommon) PrepareStart(
 
 	// Prepare package statuses.
 	c.PackagesStateProvider = settings.PackagesStateProvider
-	// Wire up payload trust verification from the single PayloadTrustProvider.
-	// The provider resolves its Verifier: a non-nil Verifier is the normal
-	// (fixed anchor, or previously-enrolled TOFU) path. A nil Verifier means
-	// no anchor is configured yet; if the provider also satisfies the optional
-	// TOFUEnroller interface, enter TOFU enrollment mode so the transport-level
-	// code bootstraps the anchor from the first connection. A provider with no
-	// anchor and no enrollment capability is a misconfiguration.
+	// A provider with no anchor yet must support TOFU enrollment.
 	c.PayloadVerifier = nil
 	c.PayloadTOFUEnroller = nil
 	if settings.PayloadTrustProvider != nil {
@@ -189,7 +210,7 @@ func (c *ClientCommon) PrepareStart(
 			if !ok {
 				return ErrPayloadTrustProviderNoAnchor
 			}
-			c.PayloadTOFUEnroller = enroller
+			c.PayloadTOFUEnroller = &promotingEnroller{inner: enroller, common: c}
 		}
 	}
 	if err := c.validateCapabilities(c.ClientSyncedState.Capabilities()); err != nil {

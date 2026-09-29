@@ -3,7 +3,7 @@ package signing
 import (
 	"bytes"
 	"context"
-	"encoding/pem"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,57 +13,40 @@ import (
 )
 
 // RemoteSigner implements [Signer] by delegating to an out-of-process HTTP
-// signing service. This is the recommended production deployment pattern
-// for Message Attestation: the OpAMP distribution server holds no private
-// key material, and signing is performed by a separate policy server that
-// is not reachable from the network edge.
+// signing service, so the OpAMP server holds no private key. The service
+// may also enforce policy on the payload before signing. It must expose:
 //
-// The signing service must expose two endpoints:
+//	POST /v1/sign  — body: payload bytes; response: raw signature bytes
+//	GET  /v1/chain — response: PEM chain (intermediates first, leaf last, no root)
+//	GET  /v1/ca    — response: PEM root CA (see TrustAnchorPEM)
 //
-//	POST /v1/sign  — request body: raw payload bytes to sign
-//	               — response body: raw signature bytes
-//	GET  /v1/chain — response body: PEM-encoded certificate chain
-//	               — (intermediates first, signing leaf last, root excluded)
-//
-// In production the policy server may additionally enforce organizational
-// policy — inspecting the decoded payload to deny message types, enforce
-// per-team permissions, or apply fleet-wide invariants — before delegating
-// to an HSM or secrets manager for the actual signature.
+// The chain is cached, and concurrent fetches are coalesced into one
+// request. Because signature and chain come from separate
+// requests, Sign checks the signature under the chain's leaf and refetches
+// the chain once on a mismatch (a leaf rotation), so it never returns a
+// signature paired with a stale chain.
 type RemoteSigner struct {
 	baseURL string
 	client  *http.Client
 
-	// Sign fetches the chain from /v1/chain on every outbound message (so the
-	// chain it returns tracks signing-chain rotation); the chain is cached for
-	// chainTTL so that only one /v1/chain fetch happens per interval. A shorter
-	// TTL detects rotation faster at the cost of more fetches.
 	chainTTL    time.Duration
 	mu          sync.Mutex
 	cachedChain [][]byte
 	cachedAt    time.Time
-	// inflight is non-nil while a chain fetch is in progress. Concurrent Sign
-	// callers that miss the cache wait on it instead of each issuing their own
-	// /v1/chain request (see chainDER).
-	inflight *chainFetch
+	// Concurrent callers share one in-flight fetch rather than each hitting
+	// /v1/chain: fetching on a cache miss, refreshing after a rotation is
+	// detected. Separate slots keep a refresh from joining a fetch that may
+	// have started before the rotation.
+	fetching   *chainFetch
+	refreshing *chainFetch
 }
 
-// chainFetch is a single in-flight /v1/chain request whose result is shared by
-// all callers that arrive while it runs. done is closed once chain/err are set.
+// chainFetch is one in-flight /v1/chain request; done is closed once chain
+// and err are set.
 type chainFetch struct {
 	done  chan struct{}
 	chain [][]byte
 	err   error
-}
-
-// wait blocks until the in-flight fetch completes and returns its shared
-// result, or returns early if the caller's context is cancelled first.
-func (f *chainFetch) wait(ctx context.Context) ([][]byte, error) {
-	select {
-	case <-f.done:
-		return f.chain, f.err
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
 }
 
 var (
@@ -93,38 +76,71 @@ func (s *RemoteSigner) SetChainCacheTTL(ttl time.Duration) {
 	s.chainTTL = ttl
 }
 
-// Sign implements [Signer] by POST-ing payload to /v1/sign for the detached
-// signature and pairing it with the current chain from chainDER. This stand-in
-// signs the exact bytes posted (it does not re-marshal), so SignResult.Payload
-// is the input payload unchanged. A production signing backend that serializes
-// server-side would instead return the bytes it actually signed here.
+// Sign implements [Signer]. The service signs the posted bytes as-is, so
+// SignResult.Payload is the input. If the signature does not verify under
+// the current chain even after a refetch, Sign returns an error.
 func (s *RemoteSigner) Sign(ctx context.Context, payload []byte) (SignResult, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		s.baseURL+"/v1/sign", bytes.NewReader(payload))
+	sig, err := s.sign(ctx, payload)
 	if err != nil {
-		return SignResult{}, fmt.Errorf("remote signer: build sign request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/octet-stream")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return SignResult{}, fmt.Errorf("remote signer: sign request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return SignResult{}, fmt.Errorf("remote signer: read sign response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return SignResult{}, fmt.Errorf("remote signer: sign returned HTTP %d: %s", resp.StatusCode, body)
+		return SignResult{}, err
 	}
 
 	chain, err := s.chainDER(ctx)
 	if err != nil {
 		return SignResult{}, err
 	}
-	return SignResult{Payload: payload, Signature: body, ChainDER: chain}, nil
+	if err := verifyUnderLeaf(chain, payload, sig); err != nil {
+		// The leaf most likely rotated after the chain was cached.
+		chain, err = s.refreshChain(ctx)
+		if err != nil {
+			return SignResult{}, err
+		}
+		if err := verifyUnderLeaf(chain, payload, sig); err != nil {
+			return SignResult{}, fmt.Errorf("remote signer: signature does not verify under the current chain: %w", err)
+		}
+	}
+	return SignResult{Payload: payload, Signature: sig, ChainDER: chain}, nil
+}
+
+// sign POSTs payload to /v1/sign and returns the raw signature bytes.
+func (s *RemoteSigner) sign(ctx context.Context, payload []byte) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		s.baseURL+"/v1/sign", bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("remote signer: build sign request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("remote signer: sign request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("remote signer: read sign response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("remote signer: sign returned HTTP %d: %s", resp.StatusCode, body)
+	}
+	return body, nil
+}
+
+// verifyUnderLeaf checks that signature verifies over payload under the
+// public key of chain's leaf (the last entry).
+func verifyUnderLeaf(chain [][]byte, payload, signature []byte) error {
+	leaf, err := x509.ParseCertificate(chain[len(chain)-1])
+	if err != nil {
+		return fmt.Errorf("%w: leaf: %v", ErrParseCertificate, err)
+	}
+	return verifyWithCert(leaf, payload, signature)
+}
+
+// refreshChain fetches and caches the current chain, bypassing the cache.
+func (s *RemoteSigner) refreshChain(ctx context.Context) ([][]byte, error) {
+	s.mu.Lock()
+	return s.sharedFetch(ctx, &s.refreshing)
 }
 
 // TrustAnchorPEM implements [TrustAnchorProvider] by GET-ing /v1/ca on the
@@ -150,15 +166,8 @@ func (s *RemoteSigner) TrustAnchorPEM(ctx context.Context) ([]byte, error) {
 	return body, nil
 }
 
-// chainDER returns the current signing chain by GET-ing /v1/chain and decoding
-// the returned PEM blob into DER byte slices ordered intermediates-first,
-// leaf-last. It is called by Sign on every outbound message; results are cached
-// for chainTTL to bound the fetch rate.
-//
-// On a cache miss a single caller (the leader) performs the HTTP request while
-// any other callers that arrive meanwhile wait for and share its result. This
-// collapses a burst of concurrent Sign calls into one /v1/chain request rather
-// than one per caller, sparing the backend signer.
+// chainDER returns the cached signing chain if it is younger than chainTTL,
+// and otherwise fetches and caches the current one.
 func (s *RemoteSigner) chainDER(ctx context.Context) ([][]byte, error) {
 	s.mu.Lock()
 	if s.cachedChain != nil && s.chainTTL > 0 && time.Since(s.cachedAt) < s.chainTTL {
@@ -166,16 +175,23 @@ func (s *RemoteSigner) chainDER(ctx context.Context) ([][]byte, error) {
 		s.mu.Unlock()
 		return chain, nil
 	}
-	if s.inflight != nil {
-		// A fetch is already running; wait for it rather than starting another.
-		f := s.inflight
+	return s.sharedFetch(ctx, &s.fetching)
+}
+
+// sharedFetch joins the fetch in *slot if one is running, or starts one and
+// caches its result. The caller must hold s.mu; sharedFetch releases it.
+func (s *RemoteSigner) sharedFetch(ctx context.Context, slot **chainFetch) ([][]byte, error) {
+	if f := *slot; f != nil {
 		s.mu.Unlock()
-		return f.wait(ctx)
+		select {
+		case <-f.done:
+			return f.chain, f.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
-	// We are the leader: publish an in-flight marker so concurrent callers wait
-	// on us, then fetch without holding the lock.
 	f := &chainFetch{done: make(chan struct{})}
-	s.inflight = f
+	*slot = f
 	s.mu.Unlock()
 
 	chain, err := s.fetchChainDER(ctx)
@@ -185,11 +201,10 @@ func (s *RemoteSigner) chainDER(ctx context.Context) ([][]byte, error) {
 		s.cachedChain = chain
 		s.cachedAt = time.Now()
 	}
-	s.inflight = nil
+	*slot = nil
 	f.chain, f.err = chain, err
 	close(f.done)
 	s.mu.Unlock()
-
 	return chain, err
 }
 
@@ -214,18 +229,7 @@ func (s *RemoteSigner) fetchChainDER(ctx context.Context) ([][]byte, error) {
 		return nil, fmt.Errorf("remote signer: chain returned HTTP %d: %s", resp.StatusCode, pemBytes)
 	}
 
-	var chain [][]byte
-	rest := pemBytes
-	for len(rest) > 0 {
-		var block *pem.Block
-		block, rest = pem.Decode(rest)
-		if block == nil {
-			break
-		}
-		if block.Type == "CERTIFICATE" {
-			chain = append(chain, block.Bytes)
-		}
-	}
+	chain := pemCertificates(pemBytes)
 	if len(chain) == 0 {
 		return nil, fmt.Errorf("remote signer: chain response contained no CERTIFICATE PEM blocks")
 	}

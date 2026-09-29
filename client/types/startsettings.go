@@ -90,26 +90,17 @@ type StartSettings struct {
 	// i.e. package status reporting and syncing from the Server will be disabled.
 	PackagesStateProvider PackagesStateProvider
 
-	// PayloadTrustProvider opts the Agent in to payload trust verification.
-	// When non-nil, the trust chain delivered in the initial
-	// SignedServerToAgent.trust_chain_response is validated and the detached
-	// signature on every subsequent ServerToAgent message is verified. MUST be
-	// set when the Agent's capability set includes
-	// AgentCapabilities_RequiresPayloadTrustVerification. When nil (the
-	// default), payload trust verification is disabled and the Server-to-Agent
-	// wire format is the standard ServerToAgent protobuf.
+	// PayloadTrustProvider enables payload trust verification (Message
+	// Attestation): the server's trust chain is validated and every message's
+	// signature verified. It MUST be set if and only if the capabilities
+	// include AgentCapabilities_RequiresPayloadTrustVerification.
 	//
-	// Construct one with the signing package helpers:
-	//   - signing.FixedAnchor(v) for a fixed, pre-configured trust anchor (see
-	//     signing.VerifierFromFile to build v from a PEM-encoded CA bundle).
-	//   - signing.TOFUAnchor(store) for Trust On First Use enrollment, where
-	//     the root CA is bootstrapped from the first connection and persisted
-	//     via store. TOFU provides no security on the first connection; enable
-	//     it only where that connection is considered sufficiently trusted.
+	// The leaf's SANs are matched against the host of OpAMPServerURL, even
+	// when DialContext connects elsewhere (for example a Unix socket).
 	//
-	// The provider is extensible: a custom implementation exposes optional
-	// capabilities (such as signing.TOFUEnroller) as additional interfaces the
-	// client detects via type assertion.
+	// Use signing.FixedAnchor for a pre-configured trust anchor, or
+	// signing.TOFUAnchor for Trust On First Use enrollment (which also
+	// requires the AcceptsPayloadTrustAnchorTOFU capability).
 	PayloadTrustProvider signing.PayloadTrustProvider
 
 	// Defines the capabilities of the Agent. AgentCapabilities_ReportsStatus bit does not need to

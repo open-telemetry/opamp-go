@@ -387,10 +387,8 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 //  1. sender will be cancelled by the ctx, send the close message to server and return the error via sender.Err().
 //  2. runOneCycle will handle that error and wait for the close message from server until timeout.
 //
-// Returns true if the cycle ended because of a payload trust verification
-// failure (wrong CA, bad signature, etc.). The caller should apply exponential
-// backoff before retrying in that case.
-func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) (attestationFailed bool, connectionFailed bool) {
+// The returned cycleResult says how the cycle ended, for reconnect backoff.
+func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) (res cycleResult) {
 	if err := c.ensureConnected(ctx); err != nil {
 		// Can't connect, so can't move forward. This currently happens when we
 		// are being stopped.
@@ -428,6 +426,7 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) (atte
 	}
 
 	// First status report sent. Now loop to receive and process messages.
+	payloadVerifier, tofuEnroller := c.common.PayloadTrust()
 	r := internal.NewWSReceiver(
 		c.common.Logger,
 		c.common.Callbacks,
@@ -437,9 +436,9 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) (atte
 		c.common.PackagesStateProvider,
 		&c.common.PackageSyncMutex,
 		c.common.DownloadReporterInterval,
-		c.common.PayloadVerifier,
+		payloadVerifier,
 		c.url.String(),
-		c.common.PayloadTOFUEnroller,
+		tofuEnroller,
 	)
 
 	// When the wsclient is closed, the context passed to runOneCycle will be canceled.
@@ -455,15 +454,14 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) (atte
 		if err := c.sender.StoppingErr(); err != nil {
 			c.common.Logger.Debugf(ctx, "Error stopping the sender: %v", err)
 
-			// If the sender noticed the broken connection first (before the
-			// receiver), still treat it as an abnormal connection failure
-			// when attestation is enabled so the caller backs off.
-			if c.common.PayloadVerifier != nil || c.common.PayloadTOFUEnroller != nil {
-				connectionFailed = true
+			// The sender saw the broken connection before the receiver.
+			if c.common.PayloadTrustEnabled() {
+				res.connectionFailed = true
 			}
 
 			stopReceiver()
 			<-r.IsStopped()
+			res.attested = r.WasAttested()
 			break
 		}
 
@@ -476,34 +474,34 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) (atte
 			stopReceiver()
 			<-r.IsStopped()
 		}
+		res.attested = r.WasAttested()
 	case <-r.IsStopped():
 		// If we exited receiverLoop it means there is a connection error, we cannot
 		// read messages anymore. We need to start over.
 
 		stopSender()
 		<-c.sender.IsStopped()
-		attestationFailed = r.WasAttestationFailure()
-		connectionFailed = r.WasConnectionError()
+		res.attestationFailed = r.WasAttestationFailure()
+		res.connectionFailed = r.WasConnectionError()
+		res.attested = r.WasAttested()
 	}
 	return
+}
+
+// cycleResult describes how a runOneCycle call ended.
+type cycleResult struct {
+	attestationFailed bool
+	connectionFailed  bool
+	attested          bool
 }
 
 func (c *wsClient) runUntilStopped(ctx context.Context) {
 	// Iterates until we detect that the client is stopping.
 	sendFirstMessage := true
 
-	// Separate backoff for application-level reconnects. ensureConnected
-	// already backs off TCP-level dial failures within a single
-	// runOneCycle call, but two failure modes connect successfully at the
-	// transport layer and only fail afterwards:
-	//   1. the client's own attestation check rejects a message, or
-	//   2. the server accepts the connection and then drops it abnormally
-	//      (with attestation on, this almost always means the server
-	//      cannot sign — e.g. its signing/policy backend is down).
-	// In both cases ensureConnected would immediately succeed again on the
-	// next call (TCP is fine). Without this outer backoff the client would
-	// spin in a tight reconnect loop as fast as the network allows, which
-	// is contrary to the spec's SHOULD-exponential-backoff requirement.
+	// ensureConnected only backs off dial failures. Attestation failures and
+	// abnormal closes happen after a successful dial, so without this the
+	// client would reconnect in a tight loop.
 	reconnectBackoff := backoff.NewExponentialBackOff()
 	reconnectBackoff.MaxElapsedTime = 0 // retry forever
 
@@ -512,23 +510,25 @@ func (c *wsClient) runUntilStopped(ctx context.Context) {
 			return
 		}
 
-		attestationFailed, connectionFailed := c.runOneCycle(ctx, sendFirstMessage)
+		res := c.runOneCycle(ctx, sendFirstMessage)
+		if res.attested {
+			// A server that attested ends any earlier failure streak.
+			reconnectBackoff.Reset()
+		}
 		switch {
-		case attestationFailed:
+		case res.attestationFailed:
 			interval := reconnectBackoff.NextBackOff()
 			c.common.Logger.Errorf(ctx, "Payload trust verification failed, will retry in %v.", interval)
 			if !c.sleepWithBackoff(ctx, interval) {
 				return
 			}
-		case connectionFailed:
+		case res.connectionFailed:
 			interval := reconnectBackoff.NextBackOff()
 			c.common.Logger.Errorf(ctx, "Connection closed abnormally, will retry in %v.", interval)
 			if !c.sleepWithBackoff(ctx, interval) {
 				return
 			}
 		default:
-			// Productive cycle: reset so the next failure starts backoff
-			// from the initial interval again.
 			reconnectBackoff.Reset()
 		}
 
@@ -536,9 +536,7 @@ func (c *wsClient) runUntilStopped(ctx context.Context) {
 	}
 }
 
-// sleepWithBackoff waits for the given interval or until the context is
-// cancelled. It returns true if the interval elapsed, or false if the
-// context was cancelled (the caller should stop).
+// sleepWithBackoff waits for interval, returning false if ctx is cancelled first.
 func (c *wsClient) sleepWithBackoff(ctx context.Context, interval time.Duration) bool {
 	timer := time.NewTimer(interval)
 	defer timer.Stop()

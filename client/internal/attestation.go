@@ -15,96 +15,73 @@ import (
 	"github.com/open-telemetry/opamp-go/signing"
 )
 
-// Sentinel errors returned by attestationState. Callers can use
-// errors.Is to distinguish failure modes when terminating the
-// connection.
+// Errors returned by the attestation path. Every one of them is also an
+// attestation failure (see isAttestationFailure).
 var (
-	// ErrMissingTrustChain is returned when the first
-	// SignedServerToAgent received on a connection does not carry a
-	// trust_chain_response field. Per the spec this is a fatal
-	// handshake error.
+	// ErrMissingTrustChain: the first signed message lacks trust_chain_response.
 	ErrMissingTrustChain = errors.New("client: first SignedServerToAgent missing trust_chain_response")
 
-	// ErrTrustChainErrorReported is returned when the Server populates
-	// trust_chain_response.error_message, signalling that it cannot
-	// satisfy the handshake.
+	// ErrTrustChainErrorReported: the server set trust_chain_response.error_message.
 	ErrTrustChainErrorReported = errors.New("client: server reported trust chain error")
 
-	// ErrTOFUAnchorMissing is returned during TOFU enrollment when the
-	// Server's TrustChainResponse does not include the expected
-	// tofu_trust_anchor field.
+	// ErrTOFUAnchorMissing: TOFU enrollment is pending but tofu_trust_anchor is absent.
 	ErrTOFUAnchorMissing = errors.New("client: TOFU enrollment requested but TrustChainResponse.tofu_trust_anchor is absent")
 
-	// ErrMissingSignature is returned when a SignedServerToAgent is
-	// missing its signature field. Every message MUST be signed,
-	// including the first.
+	// ErrMissingSignature: a signed envelope has no signature.
 	ErrMissingSignature = errors.New("client: SignedServerToAgent missing signature")
 
-	// ErrMissingPayload is returned when SignedServerToAgent.payload
-	// is empty. The payload carries the inner ServerToAgent; an empty
-	// payload would unmarshal into an empty ServerToAgent and is
-	// rejected eagerly.
+	// ErrMissingPayload: a signed envelope has no payload.
 	ErrMissingPayload = errors.New("client: SignedServerToAgent missing payload")
 
-	// ErrEmptyInnerServerToAgent is returned when the inner payload
-	// decodes to a ServerToAgent with all default values. Defends
-	// against the proto3 field-1 wire-type collision: a malicious
-	// server that downgrades by responding with a plain ServerToAgent
-	// has its InstanceUid bytes misinterpreted as
-	// SignedServerToAgent.payload; the inner decode of those random
-	// UUID bytes either errors or produces a default-valued message.
-	// Legitimate server responses always carry at least InstanceUid
-	// because handleWSConnection auto-fills it (see
-	// server/serverimpl.go).
-	ErrEmptyInnerServerToAgent = errors.New("client: inner ServerToAgent decoded to all default values; likely downgrade attempt")
+	// ErrEmptyInnerServerToAgent: a verified payload decodes to an empty
+	// ServerToAgent. Legitimate messages always carry at least InstanceUid.
+	ErrEmptyInnerServerToAgent = errors.New("client: inner ServerToAgent decoded to all default values")
 
-	// ErrUnsignedNonHeartbeat is returned when an attested connection
-	// receives a plain (unsigned) ServerToAgent that is not a heartbeat
-	// response. Only heartbeat responses (a ServerToAgent with only
-	// instance_uid set) MAY be sent unsigned; any other unsigned message
-	// is a downgrade and is rejected fail-closed. The allowlist is
-	// enforced here by the receiver — the server's cooperation is never
-	// trusted.
+	// ErrMalformedEnvelope: the message does not decode as a SignedServerToAgent.
+	ErrMalformedEnvelope = errors.New("client: malformed SignedServerToAgent envelope")
+
+	// ErrMalformedTrustChain: the delivered chain has no decodable certificates.
+	ErrMalformedTrustChain = errors.New("client: malformed trust_chain_response certificate chain")
+
+	// ErrTOFUEnrollment: the offered anchor is unusable, the chain or first
+	// signature does not verify under it, or it cannot be persisted.
+	ErrTOFUEnrollment = errors.New("client: TOFU enrollment failed")
+
+	// ErrUnsignedNonHeartbeat: an unsigned message other than a heartbeat
+	// response, treated as a downgrade attempt.
 	ErrUnsignedNonHeartbeat = errors.New("client: unsigned ServerToAgent is not a heartbeat; rejecting non-signed message")
 )
 
-// attestationState holds per-connection state for payload trust
-// verification on the Agent (client) side. Construct one per OpAMP
-// connection via newAttestationState and call ProcessEnvelope on each
-// inbound SignedServerToAgent.
-//
-// When Verifier is nil (the operator did not opt in), the OpAMP wire
-// format is the standard ServerToAgent protobuf and no attestationState
-// is created at all; payload trust is simply not negotiated.
+// attestationState holds the Agent's per-connection payload trust state. It
+// exists only when attestation is enabled.
 type attestationState struct {
 	verifier   signing.Verifier
-	serverName string               // hostname for SAN verification
-	enroller   signing.TOFUEnroller // non-nil when in TOFU enrollment mode
+	serverName string               // host matched against the leaf's SANs
+	enroller   signing.TOFUEnroller // non-nil while TOFU enrollment is pending
 
 	mu             sync.Mutex
 	firstSeen      bool
 	verified       *signing.VerifiedCertificate
 	pinnedChainPEM []byte
+	verifiedOnce   bool // not cleared by Reset
 }
 
-// newAttestationState constructs a per-connection attestation state.
-// verifier is nil in TOFU enrollment mode (enroller non-nil); in that case
-// the verifier is bootstrapped from the first TrustChainResponse via the
-// enroller. serverName is the hostname (without port) of the OpAMP server.
+// HasVerified reports whether any signed message has verified.
+func (s *attestationState) HasVerified() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.verifiedOnce
+}
+
+// newAttestationState returns state with either a verifier or, for TOFU, an
+// enroller. serverName is the server host, without port.
 func newAttestationState(verifier signing.Verifier, serverName string, enroller signing.TOFUEnroller) *attestationState {
 	return &attestationState{verifier: verifier, serverName: serverName, enroller: enroller}
 }
 
-// Reset clears the per-connection handshake state. After Reset, the
-// next call to ProcessEnvelope is treated as if it were the first
-// message on the connection — requiring trust_chain_response and
-// performing a fresh chain validation.
-//
-// Used by transports that lack a persistent connection (the HTTP
-// polling transport) to recover from server-side key rotation or
-// other mid-stream handshake faults. WebSocket callers do not need
-// to call Reset because a failure terminates the connection and the
-// next reconnect attempt constructs a new attestationState.
+// Reset clears the handshake state so the next message must carry a trust
+// chain again. The HTTP transport, which has no connection to drop, uses it
+// to recover after a failure; WebSocket reconnects get a fresh state.
 func (s *attestationState) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -113,49 +90,43 @@ func (s *attestationState) Reset() {
 	s.pinnedChainPEM = nil
 }
 
-// isAttestationFailure reports whether err originated from a payload
-// trust verification problem (envelope malformed, chain validation
-// failed, signature missing or invalid, etc.). Used by the WebSocket
-// receive loop to distinguish attestation failures — which require
-// explicit connection termination per the spec — from generic
-// transport-level errors.
-func isAttestationFailure(err error) bool {
-	if err == nil {
-		return false
+// attestationError marks an error as an attestation failure without changing
+// its message, so errors from a custom Verifier are classified too.
+type attestationError struct{ err error }
+
+func (e attestationError) Error() string { return e.err.Error() }
+func (e attestationError) Unwrap() error { return e.err }
+
+// failAttestation wraps err as an attestationError, except context
+// cancellation, which means shutdown rather than a verification failure.
+func failAttestation(err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
 	}
-	return errors.Is(err, ErrMissingTrustChain) ||
-		errors.Is(err, ErrTrustChainErrorReported) ||
-		errors.Is(err, ErrTOFUAnchorMissing) ||
-		errors.Is(err, ErrMissingSignature) ||
-		errors.Is(err, ErrMissingPayload) ||
-		errors.Is(err, ErrEmptyInnerServerToAgent) ||
-		errors.Is(err, ErrUnsignedNonHeartbeat) ||
-		errors.Is(err, signing.ErrChainValidation) ||
-		errors.Is(err, signing.ErrHostnameMismatch) ||
-		errors.Is(err, signing.ErrServerNameRequired) ||
-		errors.Is(err, signing.ErrSignatureMismatch) ||
-		errors.Is(err, signing.ErrEmptyChain) ||
-		errors.Is(err, signing.ErrParseCertificate) ||
-		errors.Is(err, signing.ErrUnsupportedAlgorithm)
+	return attestationError{err}
 }
 
-// ProcessEnvelope handles an incoming SignedServerToAgent received on
-// this connection. On the first call, the envelope's certificate
-// chain is validated against the verifier's pre-configured trust
-// anchor pool and the resulting leaf is cached on the state. On
-// subsequent calls, the envelope's signature is verified against the
-// cached leaf.
-//
-// On success it returns the inner ServerToAgent payload bytes, which
-// the caller unmarshals into a *protobufs.ServerToAgent for normal
-// dispatch.
-//
-// On any failure — missing trust chain, chain validation failure,
-// missing/invalid signature — it returns a non-nil error. Per the
-// spec the caller MUST then terminate the OpAMP connection.
+// isAttestationFailure reports whether err is an attestation failure, which
+// requires terminating the connection.
+func isAttestationFailure(err error) bool {
+	var ae attestationError
+	return errors.As(err, &ae)
+}
+
+// ProcessEnvelope validates the trust chain when one is delivered (first
+// message or rotation), verifies the signature, and returns the inner
+// ServerToAgent bytes. On error the caller MUST terminate the connection.
 func (s *attestationState) ProcessEnvelope(ctx context.Context, envelope *protobufs.SignedServerToAgent) ([]byte, error) {
+	payload, err := s.processEnvelope(ctx, envelope)
+	if err != nil {
+		return nil, failAttestation(err)
+	}
+	return payload, nil
+}
+
+func (s *attestationState) processEnvelope(ctx context.Context, envelope *protobufs.SignedServerToAgent) ([]byte, error) {
 	if envelope == nil {
-		return nil, errors.New("client: nil SignedServerToAgent envelope")
+		return nil, fmt.Errorf("%w: nil envelope", ErrMalformedEnvelope)
 	}
 	if len(envelope.Payload) == 0 {
 		return nil, ErrMissingPayload
@@ -171,19 +142,13 @@ func (s *attestationState) ProcessEnvelope(ctx context.Context, envelope *protob
 		}
 		chainDER, err := parsePEMChain(chainResp.CertificateChain)
 		if err != nil {
-			return nil, fmt.Errorf("client: parse trust chain PEM: %w", err)
+			return nil, fmt.Errorf("%w: %v", ErrMalformedTrustChain, err)
 		}
 
 		if s.enroller != nil {
-			if len(chainResp.TofuTrustAnchor) == 0 {
-				return nil, ErrTOFUAnchorMissing
+			if err := s.enroll(ctx, chainResp.TofuTrustAnchor, chainDER, envelope); err != nil {
+				return nil, err
 			}
-			v, err := s.enroller.Enroll(chainResp.TofuTrustAnchor)
-			if err != nil {
-				return nil, fmt.Errorf("client: TOFU enrollment: %w", err)
-			}
-			s.verifier = v
-			s.enroller = nil
 		}
 
 		verified, err := s.verifier.ValidateChain(ctx, chainDER, time.Now(), s.serverName)
@@ -197,19 +162,46 @@ func (s *attestationState) ProcessEnvelope(ctx context.Context, envelope *protob
 		return nil, ErrMissingTrustChain
 	}
 
-	// Every message — including the first — MUST carry a signature.
 	if len(envelope.Signature) == 0 {
 		return nil, ErrMissingSignature
 	}
 	if err := s.verifier.Verify(ctx, envelope.Payload, envelope.Signature, s.verified); err != nil {
 		return nil, fmt.Errorf("client: verify signature: %w", err)
 	}
+	s.verifiedOnce = true
 	return envelope.Payload, nil
 }
 
-// parsePEMChain decodes a concatenated PEM blob into individual DER byte
-// slices ordered intermediates-first, leaf-last — the form expected by
-// signing.Verifier.ValidateChain.
+// enroll performs TOFU enrollment. The anchor is persisted only after the
+// chain and this envelope's signature verify under it. Caller holds s.mu.
+func (s *attestationState) enroll(ctx context.Context, anchorPEM []byte, chainDER [][]byte, envelope *protobufs.SignedServerToAgent) error {
+	if len(anchorPEM) == 0 {
+		return ErrTOFUAnchorMissing
+	}
+	if len(envelope.Signature) == 0 {
+		return ErrMissingSignature
+	}
+	candidate, err := signing.VerifierFromPEM(anchorPEM)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrTOFUEnrollment, err)
+	}
+	verified, err := candidate.ValidateChain(ctx, chainDER, time.Now(), s.serverName)
+	if err != nil {
+		return fmt.Errorf("%w: validate trust chain against offered anchor: %w", ErrTOFUEnrollment, err)
+	}
+	if err := candidate.Verify(ctx, envelope.Payload, envelope.Signature, verified); err != nil {
+		return fmt.Errorf("%w: verify signature against offered anchor: %w", ErrTOFUEnrollment, err)
+	}
+	v, err := s.enroller.Enroll(anchorPEM)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrTOFUEnrollment, err)
+	}
+	s.verifier = v
+	s.enroller = nil
+	return nil
+}
+
+// parsePEMChain returns the DER bytes of each CERTIFICATE block, in order.
 func parsePEMChain(pemBytes []byte) ([][]byte, error) {
 	var chain [][]byte
 	rest := pemBytes
@@ -230,45 +222,29 @@ func parsePEMChain(pemBytes []byte) ([][]byte, error) {
 	return chain, nil
 }
 
-// unwrapServerToAgent is a convenience that combines ProcessEnvelope
-// with proto.Unmarshal of the resulting payload bytes into msg. If
-// state is nil, the input bytes are unmarshalled directly as a
-// ServerToAgent (the standard non-attestation path).
-//
-// rawProto is the protobuf bytes after any transport-level framing
-// has been stripped (for WebSocket, after the wsMsgHeader varint).
+// unwrapServerToAgent decodes rawProto (transport framing already removed)
+// into msg, verifying it first when state is non-nil.
 func unwrapServerToAgent(ctx context.Context, state *attestationState, rawProto []byte, msg *protobufs.ServerToAgent) error {
 	if state == nil {
 		return proto.Unmarshal(rawProto, msg)
 	}
 	var envelope protobufs.SignedServerToAgent
 	if err := proto.Unmarshal(rawProto, &envelope); err != nil {
-		return fmt.Errorf("client: decode SignedServerToAgent envelope: %w", err)
+		return failAttestation(fmt.Errorf("%w: %v", ErrMalformedEnvelope, err))
 	}
 
-	// Discriminate a signed envelope from an unsigned heartbeat.
-	// SignedServerToAgent uses field numbers 14/15/16, while a plain
-	// ServerToAgent heartbeat uses field 1 (instance_uid); decoding
-	// heartbeat bytes as an envelope therefore yields an empty
-	// payload/signature/trust_chain_response. When all three are empty
-	// this is not a signed message, so it is a candidate unsigned
-	// heartbeat rather than a malformed envelope. (A malformed signed
-	// envelope — e.g. one carrying a signature but no payload — has a
-	// non-empty signature/chain and falls through to ProcessEnvelope,
-	// which rejects it with ErrMissingPayload.)
+	// Envelope fields are 14-16, so a plain ServerToAgent decodes as an
+	// empty envelope: treat it as unsigned, accepted only if it is a
+	// heartbeat. A partial envelope falls through and is rejected below.
 	if len(envelope.Payload) == 0 && len(envelope.Signature) == 0 && envelope.TrustChainResponse == nil {
 		if err := proto.Unmarshal(rawProto, msg); err != nil {
 			return fmt.Errorf("client: decode unsigned ServerToAgent: %w", err)
 		}
-		// Receiver-enforced, default-deny allowlist: accept the unsigned
-		// message only if it is exactly a heartbeat (instance_uid only).
-		// Anything carrying actionable content is a downgrade attempt and
-		// is rejected fail-closed.
 		if protobufs.IsHeartbeatServerToAgent(msg) {
 			return nil
 		}
 		proto.Reset(msg)
-		return ErrUnsignedNonHeartbeat
+		return failAttestation(ErrUnsignedNonHeartbeat)
 	}
 
 	payload, err := state.ProcessEnvelope(ctx, &envelope)
@@ -278,14 +254,8 @@ func unwrapServerToAgent(ctx context.Context, state *attestationState, rawProto 
 	if err := proto.Unmarshal(payload, msg); err != nil {
 		return fmt.Errorf("client: decode inner ServerToAgent: %w", err)
 	}
-	// Defense in depth against proto3 field-1 wire-type collision.
-	// ProcessEnvelope's chain/signature checks already terminate the
-	// connection on the downgrade path that produces this state, but
-	// this check pins the contract: every legitimate ServerToAgent
-	// the agent processes has at least one non-default field
-	// (typically InstanceUid).
 	if proto.Equal(msg, &protobufs.ServerToAgent{}) {
-		return ErrEmptyInnerServerToAgent
+		return failAttestation(ErrEmptyInnerServerToAgent)
 	}
 	return nil
 }

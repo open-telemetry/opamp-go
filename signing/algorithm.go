@@ -7,8 +7,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/sha512"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -23,22 +21,25 @@ const rsaMinModulusBits = 2048
 // ECDSA curve, or an RSA key below rsaMinModulusBits.
 var ErrUnsupportedAlgorithm = errors.New("signing: unsupported signature algorithm")
 
-// algorithmFromCert derives the Algorithm to use for signature
-// operations involving cert, dispatching on the leaf's own public key
-// type and (for ECDSA) curve. This is the correct authority: the
-// Algorithm controls how a payload is signed/verified, so it must match
-// the leaf key's type and curve.
+// algorithmParams maps each supported Algorithm to its payload digest
+// (zero for Ed25519, which signs the payload directly) and the matching
+// x509.SignatureAlgorithm used for verification.
+var algorithmParams = map[Algorithm]struct {
+	hash   crypto.Hash
+	sigAlg x509.SignatureAlgorithm
+}{
+	AlgorithmECDSAP256SHA256:   {crypto.SHA256, x509.ECDSAWithSHA256},
+	AlgorithmECDSAP384SHA384:   {crypto.SHA384, x509.ECDSAWithSHA384},
+	AlgorithmRSAPKCS1v15SHA256: {crypto.SHA256, x509.SHA256WithRSA},
+	AlgorithmEd25519:           {0, x509.PureEd25519},
+}
+
+// algorithmFromCert derives the payload signature Algorithm from the
+// leaf's own public key type and (for ECDSA) curve.
 //
-// cert.SignatureAlgorithm is deliberately NOT consulted. That field
-// describes the algorithm the issuer used to sign this certificate,
-// which is independent of the leaf key: a P-384 CA may legitimately
-// issue a P-256 leaf, in which case cert.SignatureAlgorithm is
-// ECDSAWithSHA384 even though the leaf signs payloads with P-256/SHA-256.
-// The payload algorithm is fully determined by the leaf key returned
-// here, so the issuer's signing algorithm is irrelevant and checking it
-// would only reject valid cross-algorithm PKI hierarchies.
-//
-// Minimum RSA modulus is rsaMinModulusBits.
+// cert.SignatureAlgorithm is deliberately not consulted: it describes how
+// the issuer signed this certificate, which is independent of the leaf
+// key (a P-384 CA may issue a P-256 leaf).
 func algorithmFromCert(cert *x509.Certificate) (Algorithm, error) {
 	switch pub := cert.PublicKey.(type) {
 	case *ecdsa.PublicKey:
@@ -73,97 +74,33 @@ func algorithmFromCert(cert *x509.Certificate) (Algorithm, error) {
 	}
 }
 
-// signWithKey produces a detached signature over payload using key,
-// dispatching on alg. The caller is responsible for matching alg to
-// the type of key (private key types are not switchable at runtime).
+// signWithKey produces a detached signature over payload under alg. It uses
+// only the crypto.Signer interface, so hardware- or KMS-backed keys work as
+// well as in-memory standard library keys.
 func signWithKey(key crypto.Signer, alg Algorithm, payload []byte) ([]byte, error) {
-	switch alg {
-	case AlgorithmECDSAP256SHA256:
-		k, ok := key.(*ecdsa.PrivateKey)
-		if !ok {
-			return nil, fmt.Errorf("%w: ECDSA-P256 requires *ecdsa.PrivateKey, got %T", ErrUnsupportedAlgorithm, key)
-		}
-		h := sha256.Sum256(payload)
-		return ecdsa.SignASN1(rand.Reader, k, h[:])
-
-	case AlgorithmECDSAP384SHA384:
-		k, ok := key.(*ecdsa.PrivateKey)
-		if !ok {
-			return nil, fmt.Errorf("%w: ECDSA-P384 requires *ecdsa.PrivateKey, got %T", ErrUnsupportedAlgorithm, key)
-		}
-		h := sha512.Sum384(payload)
-		return ecdsa.SignASN1(rand.Reader, k, h[:])
-
-	case AlgorithmRSAPKCS1v15SHA256:
-		k, ok := key.(*rsa.PrivateKey)
-		if !ok {
-			return nil, fmt.Errorf("%w: RSA-PKCS1v15-SHA256 requires *rsa.PrivateKey, got %T", ErrUnsupportedAlgorithm, key)
-		}
-		h := sha256.Sum256(payload)
-		return rsa.SignPKCS1v15(rand.Reader, k, crypto.SHA256, h[:])
-
-	case AlgorithmEd25519:
-		k, ok := key.(ed25519.PrivateKey)
-		if !ok {
-			return nil, fmt.Errorf("%w: Ed25519 requires ed25519.PrivateKey, got %T", ErrUnsupportedAlgorithm, key)
-		}
-		return ed25519.Sign(k, payload), nil
-
-	default:
+	params, ok := algorithmParams[alg]
+	if !ok {
 		return nil, fmt.Errorf("%w: %d", ErrUnsupportedAlgorithm, alg)
 	}
+	if params.hash == 0 {
+		return key.Sign(rand.Reader, payload, crypto.Hash(0))
+	}
+	h := params.hash.New()
+	h.Write(payload)
+	return key.Sign(rand.Reader, h.Sum(nil), params.hash)
 }
 
-// verifyWithPub verifies signature over payload using the supplied
-// public key under alg. Returns ErrSignatureMismatch when the
-// signature does not verify, or ErrUnsupportedAlgorithm if alg or pub
-// is unsupported.
-func verifyWithPub(pub crypto.PublicKey, alg Algorithm, payload, signature []byte) error {
-	switch alg {
-	case AlgorithmECDSAP256SHA256:
-		p, ok := pub.(*ecdsa.PublicKey)
-		if !ok {
-			return fmt.Errorf("%w: ECDSA-P256 requires *ecdsa.PublicKey, got %T", ErrUnsupportedAlgorithm, pub)
-		}
-		h := sha256.Sum256(payload)
-		if !ecdsa.VerifyASN1(p, h[:], signature) {
-			return ErrSignatureMismatch
-		}
-		return nil
-
-	case AlgorithmECDSAP384SHA384:
-		p, ok := pub.(*ecdsa.PublicKey)
-		if !ok {
-			return fmt.Errorf("%w: ECDSA-P384 requires *ecdsa.PublicKey, got %T", ErrUnsupportedAlgorithm, pub)
-		}
-		h := sha512.Sum384(payload)
-		if !ecdsa.VerifyASN1(p, h[:], signature) {
-			return ErrSignatureMismatch
-		}
-		return nil
-
-	case AlgorithmRSAPKCS1v15SHA256:
-		p, ok := pub.(*rsa.PublicKey)
-		if !ok {
-			return fmt.Errorf("%w: RSA-PKCS1v15-SHA256 requires *rsa.PublicKey, got %T", ErrUnsupportedAlgorithm, pub)
-		}
-		h := sha256.Sum256(payload)
-		if err := rsa.VerifyPKCS1v15(p, crypto.SHA256, h[:], signature); err != nil {
-			return fmt.Errorf("%w: %v", ErrSignatureMismatch, err)
-		}
-		return nil
-
-	case AlgorithmEd25519:
-		p, ok := pub.(ed25519.PublicKey)
-		if !ok {
-			return fmt.Errorf("%w: Ed25519 requires ed25519.PublicKey, got %T", ErrUnsupportedAlgorithm, pub)
-		}
-		if !ed25519.Verify(p, payload, signature) {
-			return ErrSignatureMismatch
-		}
-		return nil
-
-	default:
-		return fmt.Errorf("%w: %d", ErrUnsupportedAlgorithm, alg)
+// verifyWithCert verifies signature over payload with leaf's public key,
+// using the Algorithm derived from that key. It returns
+// ErrUnsupportedAlgorithm for an unsupported key and ErrSignatureMismatch
+// when the signature does not verify.
+func verifyWithCert(leaf *x509.Certificate, payload, signature []byte) error {
+	alg, err := algorithmFromCert(leaf)
+	if err != nil {
+		return err
 	}
+	if err := leaf.CheckSignature(algorithmParams[alg].sigAlg, payload, signature); err != nil {
+		return fmt.Errorf("%w: %v", ErrSignatureMismatch, err)
+	}
+	return nil
 }

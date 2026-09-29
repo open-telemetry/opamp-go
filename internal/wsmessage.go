@@ -12,25 +12,24 @@ import (
 // Message header is currently uint64 zero value.
 const wsMsgHeader = uint64(0)
 
-// StripWSMessageHeader removes the optional varint header from a
-// WebSocket message and returns the protobuf payload bytes ready for
-// proto.Unmarshal. The header is currently always uint64(0). When the
-// header is absent (pre-2023 grace-period message format), the input
-// is returned unchanged.
-//
-// This helper exists so that callers that need to choose a proto type
-// at runtime (for example, the OpAMP client unwrapping a
-// SignedServerToAgent envelope vs. a plain ServerToAgent) can strip
-// the framing first and then unmarshal into the appropriate message
-// type.
+// StripWSMessageHeader returns the Protobuf bytes of a websocket message
+// without the optional header, for callers that choose the message type at
+// runtime.
 func StripWSMessageHeader(bytes []byte) ([]byte, error) {
+	// Message header is optional until the end of grace period that ends Feb 1, 2023.
+	// Check if the header is present.
 	if len(bytes) > 0 && bytes[0] == 0 {
+		// New message format. The Protobuf message is preceded by a zero byte header.
+		// Decode the header.
 		header, n := binary.Uvarint(bytes)
 		if header != wsMsgHeader {
 			return nil, errors.New("unexpected non-zero header")
 		}
-		return bytes[n:], nil
+		// Skip the header. It really is just a single zero byte for now.
+		bytes = bytes[n:]
 	}
+	// If no header was present (the "if" check above), then this is the old
+	// message format. No header is present.
 	return bytes, nil
 }
 

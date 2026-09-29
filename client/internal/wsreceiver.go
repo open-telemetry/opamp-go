@@ -22,38 +22,22 @@ type wsReceiver struct {
 	callbacks types.Callbacks
 	processor receivedProcessor
 
-	// attestation, when non-nil, decodes inbound messages as
-	// SignedServerToAgent envelopes, validates the trust chain on the
-	// first message, verifies the signature on subsequent ones, and
-	// surfaces the inner ServerToAgent for normal processing.
+	// attestation, when non-nil, verifies inbound messages.
 	attestation *attestationState
 
 	// Indicates that the receiver has fully stopped.
 	stopped chan struct{}
 
-	// Set to true (before stopped is closed) when the loop exits because
-	// of a payload trust verification failure. Safe to read only after
-	// <-IsStopped() returns.
+	// Why the loop exited; set before stopped is closed, so read only after
+	// <-IsStopped(). connectionError is an abnormal close with attestation
+	// enabled, which usually means the server cannot sign.
 	attestationFailure bool
-
-	// Set to true (before stopped is closed) when the loop exits because
-	// of an abnormal connection close while attestation is enabled. A
-	// server that accepts the connection and then drops it without a
-	// normal-closure handshake is, in an attestation deployment, almost
-	// always failing to sign (e.g. its signing/policy backend is down);
-	// the caller uses this to back off instead of reconnecting in a tight
-	// loop. Safe to read only after <-IsStopped() returns.
-	connectionError bool
+	connectionError    bool
 }
 
 // NewWSReceiver creates a new Receiver that uses WebSocket to receive
-// messages from the server. If payloadVerifier is non-nil, every
-// inbound message is treated as a SignedServerToAgent envelope: the
-// trust chain is validated on the first message, signatures are
-// verified on every subsequent one, and any failure terminates the
-// receive loop (and, by extension, the connection). When
-// payloadVerifier is nil, the receiver uses the standard ServerToAgent
-// wire format.
+// messages from the server. With a payloadVerifier or tofuEnroller, inbound
+// messages are verified and a failure terminates the connection.
 func NewWSReceiver(
 	logger types.Logger,
 	callbacks types.Callbacks,
@@ -78,9 +62,7 @@ func NewWSReceiver(
 	if payloadVerifier != nil || tofuEnroller != nil {
 		var serverName string
 		if parsed, err := url.Parse(serverURL); err != nil {
-			// Fail closed downstream: an empty serverName makes
-			// signing.ValidateChain reject the handshake with
-			// ErrServerNameRequired rather than skip SAN verification.
+			// An empty serverName fails closed in ValidateChain.
 			logger.Errorf(context.Background(), "Cannot parse server URL %q for SAN verification: %v", serverURL, err)
 		} else {
 			serverName = parsed.Hostname()
@@ -101,15 +83,20 @@ func (r *wsReceiver) IsStopped() <-chan struct{} {
 	return r.stopped
 }
 
-// WasAttestationFailure reports whether the receiver stopped because of a
-// payload trust verification failure. Only valid after <-IsStopped() returns.
+// WasAttestationFailure reports whether the receiver stopped on an
+// attestation failure. Only valid after <-IsStopped() returns.
 func (r *wsReceiver) WasAttestationFailure() bool {
 	return r.attestationFailure
 }
 
-// WasConnectionError reports whether the receiver stopped because of an
-// abnormal connection close while attestation is enabled. Only valid after
-// <-IsStopped() returns.
+// WasAttested reports whether any signed message verified on this
+// connection. Only valid after <-IsStopped() returns.
+func (r *wsReceiver) WasAttested() bool {
+	return r.attestation != nil && r.attestation.HasVerified()
+}
+
+// WasConnectionError reports whether the receiver stopped on an abnormal
+// close with attestation enabled. Only valid after <-IsStopped() returns.
 func (r *wsReceiver) WasConnectionError() bool {
 	return r.connectionError
 }
@@ -144,33 +131,19 @@ func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 			case res := <-result:
 				if res.err != nil {
 					if isAttestationFailure(res.err) {
-						// Per the Message Attestation spec, the Agent
-						// MUST terminate the connection on any
-						// payload-trust verification failure.
-						// Returning here ends the receive loop, but
-						// the sender goroutine might still write
-						// pending AgentToServer messages on the same
-						// conn until the wsclient owner observes the
-						// stopped signal and closes; eagerly closing
-						// the conn here prevents that small leak
-						// window of agent messages to an untrusted
-						// server.
+						// The spec requires terminating the connection.
+						// Close now so the sender cannot write more
+						// messages to the untrusted server meanwhile.
 						r.logger.Errorf(ctx, "Payload trust verification failed; terminating connection: %v", res.err)
 						if r.conn != nil {
 							_ = r.conn.Close()
 						}
-						// Mark before returning so the caller can read
-						// WasAttestationFailure() after <-IsStopped().
 						r.attestationFailure = true
 						return
 					}
 					if !websocket.IsCloseError(res.err, websocket.CloseNormalClosure) {
 						r.logger.Errorf(ctx, "Unexpected error while receiving: %v", res.err)
-						// When attestation is enabled, an abnormal close
-						// usually means the server terminated the connection
-						// because it could not attest (e.g. its signing/policy
-						// backend is unavailable). Signal the caller so it
-						// applies backoff instead of a tight reconnect loop.
+						// Likely a server that cannot sign; back off.
 						if r.attestation != nil {
 							r.connectionError = true
 						}

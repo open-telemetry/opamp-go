@@ -14,13 +14,10 @@ import (
 	"github.com/open-telemetry/opamp-go/server/types"
 )
 
-// ErrSendBeforeNegotiated is returned from Send when the server has
-// a PayloadSigner configured but no AgentToServer has been processed
-// yet on this connection. In that window the server cannot know
-// whether the agent will declare RequiresPayloadTrustVerification, so
-// emitting a message risks bypassing attestation. Push outbound
-// messages from OnMessage (or any callback that runs after the first
-// agent message), not from OnConnected.
+// ErrSendBeforeNegotiated is returned from Send when the server has a
+// PayloadSigner but has not yet processed the connection's first
+// AgentToServer, so it cannot know whether the Agent requires attestation.
+// Send from OnMessage rather than OnConnected.
 var ErrSendBeforeNegotiated = errors.New(
 	"server: Send called before Message Attestation negotiation completed; " +
 		"push outbound messages from OnMessage rather than OnConnected",
@@ -37,27 +34,14 @@ type wsConnection struct {
 
 	maxMessageSize int64
 
-	// requiresNegotiation is fixed at construction. When true the
-	// server has a PayloadSigner configured and Send is rejected until
-	// negotiated flips to true. When false (no server-side signer),
-	// Send is always permitted; the Server sends the standard
-	// ServerToAgent wire format.
+	// requiresNegotiation (server has a PayloadSigner) blocks Send until
+	// negotiated, i.e. until the first AgentToServer has been processed.
 	requiresNegotiation bool
+	negotiated          atomic.Bool
 
-	// negotiated flips to true after the connection's first
-	// AgentToServer has been processed by handleWSConnection. After
-	// that point the server has had its chance to decide whether to
-	// enable signing based on the agent's capability bits, so Send is
-	// safe to call.
-	negotiated atomic.Bool
-
-	// signing, when loaded as non-nil, indicates that this connection
-	// has negotiated payload trust verification with the Agent.
-	// Outbound ServerToAgent messages are wrapped in a
-	// SignedServerToAgent envelope and the first send carries the
-	// trust chain. atomic.Pointer because enableSigning and Send may
-	// be called from different goroutines (Send is part of the public
-	// Connection callback API and may be invoked by user code).
+	// signing is non-nil once the connection has negotiated attestation;
+	// Send then signs every non-heartbeat message. Atomic because user code
+	// may call Send from other goroutines.
 	signing atomic.Pointer[connectionSigningState]
 }
 
@@ -71,23 +55,18 @@ func newWSConnection(wsConn *websocket.Conn, maxMessageSize int64, requiresNegot
 	}
 }
 
-// enableSigning marks this connection as one that has negotiated
-// payload trust verification. Outbound Send calls will wrap their
-// ServerToAgent argument in a SignedServerToAgent envelope using the
-// supplied state.
+// enableSigning makes Send sign outbound messages with state.
 func (c *wsConnection) enableSigning(state *connectionSigningState) {
 	c.signing.Store(state)
 }
 
-// markNegotiated records that the connection has processed its first
-// AgentToServer message. After this point Send is no longer blocked
-// by the pre-negotiation guard.
+// markNegotiated records that the first AgentToServer has been processed,
+// unblocking Send.
 func (c *wsConnection) markNegotiated() {
 	c.negotiated.Store(true)
 }
 
-// isNegotiated reports whether the connection has processed its
-// first AgentToServer message.
+// isNegotiated reports whether markNegotiated has been called.
 func (c *wsConnection) isNegotiated() bool {
 	return c.negotiated.Load()
 }
@@ -105,12 +84,7 @@ func (c *wsConnection) Send(ctx context.Context, message *protobufs.ServerToAgen
 	defer c.connMutex.Unlock()
 
 	if state := c.signing.Load(); state != nil {
-		// Heartbeat exemption: a heartbeat response (only instance_uid
-		// set) MAY be sent unsigned on an attested connection. Write it
-		// as a plain ServerToAgent, skipping the signing round-trip. The
-		// Agent accepts this narrow, content-free shape unsigned and
-		// rejects any other unsigned message. Every substantive message
-		// is still wrapped and signed below.
+		// A heartbeat response (instance_uid only) MAY be sent unsigned.
 		if protobufs.IsHeartbeatServerToAgent(message) {
 			return internal.WriteWSMessage(c.wsConn, message, c.maxMessageSize)
 		}

@@ -37,18 +37,11 @@ type Settings struct {
 	// for more details.
 	CustomCapabilities []string
 
-	// PayloadSigner produces detached signatures over outbound
-	// ServerToAgent messages and supplies the certificate chain that
-	// authenticates the Server to the Agent. When non-nil and the
-	// connecting Agent declares
-	// AgentCapabilities_RequiresPayloadTrustVerification, every
-	// ServerToAgent the Server sends on that connection is wrapped in
-	// a SignedServerToAgent envelope per the Message Attestation
-	// section of the OpAMP specification. The
-	// ServerCapabilities_OffersPayloadTrustVerification bit is
-	// automatically set on outgoing capabilities when this field is
-	// non-nil. nil disables payload trust signing; the Server sends
-	// the standard ServerToAgent wire format.
+	// PayloadSigner, when non-nil, enables Message Attestation: the Server
+	// advertises OffersPayloadTrustVerification, and on connections whose
+	// Agent requires payload trust verification it sends every ServerToAgent
+	// signed, in a SignedServerToAgent envelope. nil keeps the standard wire
+	// format.
 	PayloadSigner signing.Signer
 }
 

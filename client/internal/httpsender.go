@@ -73,10 +73,7 @@ type HTTPSender struct {
 	// Processor to handle received messages.
 	receiveProcessor receivedProcessor
 
-	// attestation, when non-nil, decodes inbound responses as
-	// SignedServerToAgent envelopes — validates the trust chain on the
-	// first response and verifies the signature on every subsequent
-	// one. Set by Run when the StartSettings supplied a PayloadTrustProvider.
+	// attestation, when non-nil, verifies inbound responses.
 	attestation *attestationState
 
 	// backoffPolicy returns a fresh policy controlling the delay between
@@ -102,12 +99,6 @@ func NewHTTPSender(logger types.Logger) *HTTPSender {
 // It must be called before Run, SetProxy, SetDialContext, or AddTLSConfig.
 func (h *HTTPSender) SetHTTPClient(client *http.Client) {
 	h.client = client
-}
-
-// SetMaxMessageSize sets the maximum message size in bytes. Messages
-// larger than this limit are rejected before sending.
-func (h *HTTPSender) SetMaxMessageSize(maxMessageSize int64) {
-	h.maxMessageSize = internal.ResolveMaxMessageSize(maxMessageSize)
 }
 
 // SetProxy will force each request to use passed proxy and use the passed headers when making a CONNECT request to the proxy.
@@ -201,14 +192,8 @@ func (h *HTTPSender) Run(
 		}
 	}
 
-	// attestBackoff mirrors the pattern used by the WebSocket client's
-	// runUntilStopped: attestation failures at the application level
-	// are distinct from transport errors (the TCP connection is fine,
-	// the server just failed verification). Without a separate backoff
-	// the agent would retry at the full polling rate — up to 1 req/s
-	// for aggressive heartbeat intervals — against a potentially
-	// compromised server. Exponential backoff with no max elapsed time
-	// matches the WS client's behaviour.
+	// Back off after attestation failures rather than retrying at the
+	// polling rate against a server that fails verification.
 	attestBackoff := backoff.NewExponentialBackOff()
 	attestBackoff.MaxElapsedTime = 0
 
@@ -271,8 +256,8 @@ func (h *HTTPSender) SetRequestHeader(baseHeaders http.Header, headerFunc func(h
 
 // makeOneRequestRoundtrip sends a request and receives a response.
 // It will retry the request if the server responds with too many
-// requests or unavailable status. It returns true if the response
-// failed attestation verification so the caller can apply backoff.
+// requests or unavailable status. It returns true if the response failed
+// attestation.
 func (h *HTTPSender) makeOneRequestRoundtrip(ctx context.Context) bool {
 	resp, err := h.sendRequestWithRetries(ctx)
 	if err != nil {
@@ -464,9 +449,50 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 	return &req, nil
 }
 
-// receiveResponse decodes and processes a server response. It returns
-// true when the response failed payload trust verification so the
-// caller can apply attestation-specific backoff before retrying.
+func (h *HTTPSender) responseBodyReader(resp *http.Response) (io.Reader, func(), error) {
+	closeBody := func() {
+		_ = resp.Body.Close()
+	}
+	if resp.Header.Get(headerContentEncoding) != encodingTypeGZip {
+		return resp.Body, closeBody, nil
+	}
+
+	gzipReader, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		closeBody()
+		return nil, func() {}, err
+	}
+	return gzipReader, func() {
+		_ = gzipReader.Close()
+		_ = resp.Body.Close()
+	}, nil
+}
+
+func (h *HTTPSender) readResponseBody(resp *http.Response) ([]byte, error) {
+	body, closeBody, err := h.responseBodyReader(resp)
+	if err != nil {
+		return nil, err
+	}
+	defer closeBody()
+
+	// Do not drain oversized responses after the limit is hit. Reading to EOF
+	// would preserve HTTP/1 keep-alive, but would also let a peer force
+	// unbounded network and decompression work after MaxMessageSize is exceeded.
+	return internal.ReadAllLimited(body, h.maxMessageSize, "response body")
+}
+
+func (h *HTTPSender) discardResponseBody(resp *http.Response) error {
+	body, closeBody, err := h.responseBodyReader(resp)
+	if err != nil {
+		return err
+	}
+	defer closeBody()
+
+	return internal.CopyDiscardLimited(body, h.maxMessageSize, "response body")
+}
+
+// receiveResponse processes a server response, returning true if it failed
+// attestation.
 func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) bool {
 	msgBytes, err := h.readResponseBody(resp)
 	if err != nil {
@@ -476,21 +502,8 @@ func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) b
 
 	var response protobufs.ServerToAgent
 	if err := unwrapServerToAgent(ctx, h.attestation, msgBytes, &response); err != nil {
-		// When payload trust verification is enabled, a failure here
-		// means the response cannot be trusted; the spec says the
-		// connection MUST be terminated. For HTTP polling the agent
-		// has no persistent connection to drop, so we skip processing
-		// this response and Reset the per-connection attestation
-		// state. The next poll will re-attempt the trust-chain
-		// handshake, allowing the Agent to recover from mid-stream
-		// faults such as server-side key rotation. Without the Reset,
-		// the cached firstSeen flag would keep us in the "verify
-		// signature" branch and the Agent could be stuck rejecting
-		// every subsequent response.
-		//
-		// Use the same sentinel string the WebSocket receive path
-		// emits ("Payload trust verification failed") so operators
-		// can grep for one canonical phrase across both transports.
+		// There is no connection to terminate: drop the response and
+		// Reset, so the next poll redoes the trust-chain handshake.
 		if h.attestation != nil && isAttestationFailure(err) {
 			h.logger.Errorf(ctx, "Payload trust verification failed; resetting attestation state: %v", err)
 			h.attestation.Reset()
@@ -502,37 +515,6 @@ func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) b
 
 	h.receiveProcessor.ProcessReceivedMessage(ctx, &response)
 	return false
-}
-
-// readResponseBody reads the response body, decompressing gzip if indicated
-// by Content-Encoding, and enforces maxMessageSize.
-func (h *HTTPSender) readResponseBody(resp *http.Response) ([]byte, error) {
-	defer resp.Body.Close()
-	if resp.Header.Get(headerContentEncoding) == encodingTypeGZip {
-		gr, err := gzip.NewReader(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		defer gr.Close()
-		return internal.ReadAllLimited(gr, h.maxMessageSize, "response body")
-	}
-	return internal.ReadAllLimited(resp.Body, h.maxMessageSize, "response body")
-}
-
-// discardResponseBody drains and closes the response body, decompressing
-// gzip if indicated by Content-Encoding and enforcing maxMessageSize. This
-// allows the underlying TCP connection to be reused for subsequent requests.
-func (h *HTTPSender) discardResponseBody(resp *http.Response) error {
-	defer resp.Body.Close()
-	if resp.Header.Get(headerContentEncoding) == encodingTypeGZip {
-		gr, err := gzip.NewReader(resp.Body)
-		if err != nil {
-			return err
-		}
-		defer gr.Close()
-		return internal.CopyDiscardLimited(gr, h.maxMessageSize, "response body")
-	}
-	return internal.CopyDiscardLimited(resp.Body, h.maxMessageSize, "response body")
 }
 
 func (h *HTTPSender) SetHeartbeatInterval(duration time.Duration) error {
@@ -563,6 +545,10 @@ func (h *HTTPSender) EnableCompression() {
 // each request retry sequence.
 func (h *HTTPSender) SetBackoffPolicy(p types.BackoffPolicyFunc) {
 	h.backoffPolicy = p
+}
+
+func (h *HTTPSender) SetMaxMessageSize(maxMessageSize int64) {
+	h.maxMessageSize = internal.ResolveMaxMessageSize(maxMessageSize)
 }
 
 // AddTLSConfig sets the TLS configuration on the client's transport.
