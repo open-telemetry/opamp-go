@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sync"
@@ -91,7 +92,7 @@ func NewHTTPSender(logger types.Logger) *HTTPSender {
 }
 
 // SetHTTPClient sets the HTTP client used to send OpAMP requests.
-// It must be called before Run, SetProxy, or AddTLSConfig.
+// It must be called before Run, SetProxy, SetDialContext, or AddTLSConfig.
 func (h *HTTPSender) SetHTTPClient(client *http.Client) {
 	h.client = client
 }
@@ -111,18 +112,44 @@ func (h *HTTPSender) SetProxy(proxy string, headers http.Header) error {
 		return url.InvalidHostError(proxy)
 	}
 
-	proxyTransport := &http.Transport{}
-	if h.client.Transport != nil {
-		transport, ok := h.client.Transport.(*http.Transport)
-		if !ok {
-			return fmt.Errorf("unable to coorce client transport as *http.Transport detected type is: %T", h.client.Transport)
-		}
-		proxyTransport = transport.Clone()
+	proxyTransport, err := h.cloneTransport()
+	if err != nil {
+		return err
 	}
 	proxyTransport.Proxy = http.ProxyURL(proxyURL)
 	proxyTransport.ProxyConnectHeader = headers
 	h.client.Transport = proxyTransport
 	return nil
+}
+
+// SetDialContext overrides how the underlying network connection is established,
+// e.g. to dial a Unix domain socket.
+// This method is not thread safe and must be called before h.client is used.
+func (h *HTTPSender) SetDialContext(dialContext func(ctx context.Context, network, addr string) (net.Conn, error)) error {
+	if dialContext == nil {
+		return nil
+	}
+	transport, err := h.cloneTransport()
+	if err != nil {
+		return err
+	}
+	transport.DialContext = dialContext
+	h.client.Transport = transport
+	return nil
+}
+
+// cloneTransport returns a copy of the client's transport suitable for modification,
+// or a fresh transport if none is set. It returns an error if the transport is not
+// an *http.Transport, since its settings could not be preserved.
+func (h *HTTPSender) cloneTransport() (*http.Transport, error) {
+	if h.client.Transport == nil {
+		return &http.Transport{}, nil
+	}
+	transport, ok := h.client.Transport.(*http.Transport)
+	if !ok {
+		return nil, fmt.Errorf("unable to coerce client transport as *http.Transport detected type is: %T", h.client.Transport)
+	}
+	return transport.Clone(), nil
 }
 
 // Run starts the processing loop that will perform the HTTP request/response.
@@ -483,15 +510,17 @@ func (h *HTTPSender) SetMaxMessageSize(maxMessageSize int64) {
 	h.maxMessageSize = internal.ResolveMaxMessageSize(maxMessageSize)
 }
 
-func (h *HTTPSender) AddTLSConfig(config *tls.Config) {
-	if config != nil {
-		tlsTransport := &http.Transport{}
-		if h.client.Transport != nil {
-			if transport, ok := h.client.Transport.(*http.Transport); ok {
-				tlsTransport = transport.Clone()
-			}
-		}
-		tlsTransport.TLSClientConfig = config
-		h.client.Transport = tlsTransport
+// AddTLSConfig sets the TLS configuration on the client's transport.
+// This method is not thread safe and must be called before h.client is used.
+func (h *HTTPSender) AddTLSConfig(config *tls.Config) error {
+	if config == nil {
+		return nil
 	}
+	tlsTransport, err := h.cloneTransport()
+	if err != nil {
+		return err
+	}
+	tlsTransport.TLSClientConfig = config
+	h.client.Transport = tlsTransport
+	return nil
 }

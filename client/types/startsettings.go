@@ -1,7 +1,9 @@
 package types
 
 import (
+	"context"
 	"crypto/tls"
+	"net"
 	"net/http"
 	"time"
 
@@ -41,6 +43,24 @@ type StartSettings struct {
 
 	// Optional TLS config for HTTP connection.
 	TLSConfig *tls.Config
+
+	// DialContext, if set, overrides how the client establishes the underlying
+	// network connection. The network and addr arguments passed to it are
+	// derived from OpAMPServerURL but may be ignored by the implementation,
+	// e.g. to dial a filesystem-path Unix domain socket regardless of the
+	// (cosmetic) OpAMPServerURL host:
+	//
+	//   DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+	//       return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+	//   }
+	//
+	// In that case OpAMPServerURL still supplies the scheme, path, and Host
+	// header (e.g. "ws://localhost/v1/opamp" or "http://localhost/v1/opamp").
+	// For the HTTP transport, Client.Transport must be an *http.Transport (or
+	// nil) so the dialer can be applied; Start() returns an error otherwise.
+	// Setting both DialContext and ProxyURL is not supported; Start() returns
+	// an error if both are set.
+	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 
 	// Optional Proxy configuration
 	// The ProxyURL may be http(s) or socks5; if no schema is specified http is assumed.
