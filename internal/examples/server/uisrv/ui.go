@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,20 +28,52 @@ var logger = log.New(log.Default().Writer(), "[UI] ", log.Default().Flags()|log.
 func Start(rootDir string) {
 	htmlDir = path.Join(rootDir, "uisrv/html")
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", renderRoot)
-	mux.HandleFunc("/agent", renderAgent)
-	mux.HandleFunc("/save_config", saveCustomConfigForInstance)
-	mux.HandleFunc("/rotate_client_cert", rotateInstanceClientCert)
-	mux.HandleFunc("/opamp_connection_settings", opampConnectionSettings)
-	mux.HandleFunc("/send_custom_message", sendCustomMessage)
 	srv = &http.Server{
 		Addr:    "0.0.0.0:4321",
-		Handler: mux,
+		Handler: newUIHandler(),
 	}
 	go srv.ListenAndServe()
 
 	logger.Printf("Admin UI started, available at http://localhost:4321")
+}
+
+func newUIHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", renderRoot)
+	mux.HandleFunc("/agent", renderAgent)
+	mux.HandleFunc("/save_config", mutationOnly(saveCustomConfigForInstance))
+	mux.HandleFunc("/rotate_client_cert", mutationOnly(rotateInstanceClientCert))
+	mux.HandleFunc("/opamp_connection_settings", mutationOnly(opampConnectionSettings))
+	mux.HandleFunc("/send_custom_message", mutationOnly(sendCustomMessage))
+	return mux
+}
+
+func mutationOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+			return
+		}
+		if !hasSameOrigin(r) {
+			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func hasSameOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+
+	parsed, err := url.Parse(origin)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return false
+	}
+	return strings.EqualFold(parsed.Host, r.Host)
 }
 
 func Shutdown() {
