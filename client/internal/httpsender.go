@@ -22,6 +22,7 @@ import (
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"github.com/open-telemetry/opamp-go/signing"
 )
 
 const (
@@ -71,6 +72,9 @@ type HTTPSender struct {
 
 	// Processor to handle received messages.
 	receiveProcessor receivedProcessor
+
+	// attestation, when non-nil, verifies inbound responses.
+	attestation *attestationState
 
 	// backoffPolicy returns a fresh policy controlling the delay between
 	// request retry attempts for each request sequence.
@@ -160,16 +164,25 @@ func (h *HTTPSender) cloneTransport() (*http.Transport, error) {
 // Run continues until ctx is cancelled.
 func (h *HTTPSender) Run(
 	ctx context.Context,
-	url string,
+	serverURL string,
 	callbacks types.Callbacks,
 	clientSyncedState *ClientSyncedState,
 	packagesStateProvider types.PackagesStateProvider,
 	packageSyncMutex *sync.Mutex,
 	reporterInterval time.Duration,
+	payloadVerifier signing.Verifier,
+	tofuEnroller signing.TOFUEnroller,
 ) {
-	h.url = url
+	h.url = serverURL
 	h.callbacks = callbacks
 	h.receiveProcessor = newReceivedProcessor(h.logger, callbacks, h, clientSyncedState, packagesStateProvider, packageSyncMutex, reporterInterval)
+	if payloadVerifier != nil || tofuEnroller != nil {
+		var serverName string
+		if parsed, err := url.Parse(h.url); err == nil {
+			serverName = parsed.Hostname()
+		}
+		h.attestation = newAttestationState(payloadVerifier, serverName, tofuEnroller)
+	}
 
 	// we need to detect if the redirect was ever set, if not, we want default behaviour
 	if callbacks.CheckRedirect != nil {
@@ -179,13 +192,30 @@ func (h *HTTPSender) Run(
 		}
 	}
 
+	// Back off after attestation failures rather than retrying at the
+	// polling rate against a server that fails verification.
+	attestBackoff := backoff.NewExponentialBackOff()
+	attestBackoff.MaxElapsedTime = 0
+
 	for {
 		pollingTimer := time.NewTimer(time.Millisecond * time.Duration(h.pollingIntervalMs.Load()))
 		select {
 		case <-h.hasPendingMessage:
 			// Have something to send. Stop the polling timer and send what we have.
 			pollingTimer.Stop()
-			h.makeOneRequestRoundtrip(ctx)
+			if attestationFailed := h.makeOneRequestRoundtrip(ctx); attestationFailed {
+				interval := attestBackoff.NextBackOff()
+				h.logger.Errorf(ctx, "Payload trust verification failed, will retry in %v.", interval)
+				timer := time.NewTimer(interval)
+				select {
+				case <-timer.C:
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				}
+			} else {
+				attestBackoff.Reset()
+			}
 
 		case <-pollingTimer.C:
 			// Polling interval has passed. Force a status update.
@@ -226,18 +256,19 @@ func (h *HTTPSender) SetRequestHeader(baseHeaders http.Header, headerFunc func(h
 
 // makeOneRequestRoundtrip sends a request and receives a response.
 // It will retry the request if the server responds with too many
-// requests or unavailable status.
-func (h *HTTPSender) makeOneRequestRoundtrip(ctx context.Context) {
+// requests or unavailable status. It returns true if the response failed
+// attestation.
+func (h *HTTPSender) makeOneRequestRoundtrip(ctx context.Context) bool {
 	resp, err := h.sendRequestWithRetries(ctx)
 	if err != nil {
 		h.logger.Errorf(ctx, "%v", err)
-		return
+		return false
 	}
 	if resp == nil {
 		// No request was sent and nothing to receive.
-		return
+		return false
 	}
-	h.receiveResponse(ctx, resp)
+	return h.receiveResponse(ctx, resp)
 }
 
 // requestResult represents the outcome of a single HTTP request attempt.
@@ -460,20 +491,30 @@ func (h *HTTPSender) discardResponseBody(resp *http.Response) error {
 	return internal.CopyDiscardLimited(body, h.maxMessageSize, "response body")
 }
 
-func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
+// receiveResponse processes a server response, returning true if it failed
+// attestation.
+func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) bool {
 	msgBytes, err := h.readResponseBody(resp)
 	if err != nil {
 		h.logger.Errorf(ctx, "cannot read response body: %v", err)
-		return
+		return false
 	}
 
 	var response protobufs.ServerToAgent
-	if err := proto.Unmarshal(msgBytes, &response); err != nil {
+	if err := unwrapServerToAgent(ctx, h.attestation, msgBytes, &response); err != nil {
+		// There is no connection to terminate: drop the response and
+		// Reset, so the next poll redoes the trust-chain handshake.
+		if h.attestation != nil && isAttestationFailure(err) {
+			h.logger.Errorf(ctx, "Payload trust verification failed; resetting attestation state: %v", err)
+			h.attestation.Reset()
+			return true
+		}
 		h.logger.Errorf(ctx, "cannot unmarshal response: %v", err)
-		return
+		return false
 	}
 
 	h.receiveProcessor.ProcessReceivedMessage(ctx, &response)
+	return false
 }
 
 func (h *HTTPSender) SetHeartbeatInterval(duration time.Duration) error {

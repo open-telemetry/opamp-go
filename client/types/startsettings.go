@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"github.com/open-telemetry/opamp-go/signing"
 )
 
 // BackoffPolicy controls the delay between consecutive connection or request
@@ -88,6 +89,19 @@ type StartSettings struct {
 	// If nil then ReportsPackageStatuses and AcceptsPackages capabilities will be disabled,
 	// i.e. package status reporting and syncing from the Server will be disabled.
 	PackagesStateProvider PackagesStateProvider
+
+	// PayloadTrustProvider enables payload trust verification (Message
+	// Attestation): the server's trust chain is validated and every message's
+	// signature verified. It MUST be set if and only if the capabilities
+	// include AgentCapabilities_RequiresPayloadTrustVerification.
+	//
+	// The leaf's SANs are matched against the host of OpAMPServerURL, even
+	// when DialContext connects elsewhere (for example a Unix socket).
+	//
+	// Use signing.FixedAnchor for a pre-configured trust anchor, or
+	// signing.TOFUAnchor for Trust On First Use enrollment (which also
+	// requires the AcceptsPayloadTrustAnchorTOFU capability).
+	PayloadTrustProvider signing.PayloadTrustProvider
 
 	// Defines the capabilities of the Agent. AgentCapabilities_ReportsStatus bit does not need to
 	// be set in this field, it will be set automatically since it is required by OpAMP protocol.

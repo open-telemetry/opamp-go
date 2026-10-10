@@ -386,7 +386,9 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 // When Stop() is called (ctx is cancelled, isStopping is set), wsClient will shutdown gracefully:
 //  1. sender will be cancelled by the ctx, send the close message to server and return the error via sender.Err().
 //  2. runOneCycle will handle that error and wait for the close message from server until timeout.
-func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
+//
+// The returned cycleResult says how the cycle ended, for reconnect backoff.
+func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) (res cycleResult) {
 	if err := c.ensureConnected(ctx); err != nil {
 		// Can't connect, so can't move forward. This currently happens when we
 		// are being stopped.
@@ -424,6 +426,7 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 	}
 
 	// First status report sent. Now loop to receive and process messages.
+	payloadVerifier, tofuEnroller := c.common.PayloadTrust()
 	r := internal.NewWSReceiver(
 		c.common.Logger,
 		c.common.Callbacks,
@@ -433,6 +436,9 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 		c.common.PackagesStateProvider,
 		&c.common.PackageSyncMutex,
 		c.common.DownloadReporterInterval,
+		payloadVerifier,
+		c.url.String(),
+		tofuEnroller,
 	)
 
 	// When the wsclient is closed, the context passed to runOneCycle will be canceled.
@@ -448,8 +454,14 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 		if err := c.sender.StoppingErr(); err != nil {
 			c.common.Logger.Debugf(ctx, "Error stopping the sender: %v", err)
 
+			// The sender saw the broken connection before the receiver.
+			if c.common.PayloadTrustEnabled() {
+				res.connectionFailed = true
+			}
+
 			stopReceiver()
 			<-r.IsStopped()
+			res.attested = r.WasAttested()
 			break
 		}
 
@@ -462,25 +474,77 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 			stopReceiver()
 			<-r.IsStopped()
 		}
+		res.attested = r.WasAttested()
 	case <-r.IsStopped():
 		// If we exited receiverLoop it means there is a connection error, we cannot
 		// read messages anymore. We need to start over.
 
 		stopSender()
 		<-c.sender.IsStopped()
+		res.attestationFailed = r.WasAttestationFailure()
+		res.connectionFailed = r.WasConnectionError()
+		res.attested = r.WasAttested()
 	}
+	return
+}
+
+// cycleResult describes how a runOneCycle call ended.
+type cycleResult struct {
+	attestationFailed bool
+	connectionFailed  bool
+	attested          bool
 }
 
 func (c *wsClient) runUntilStopped(ctx context.Context) {
 	// Iterates until we detect that the client is stopping.
 	sendFirstMessage := true
+
+	// ensureConnected only backs off dial failures. Attestation failures and
+	// abnormal closes happen after a successful dial, so without this the
+	// client would reconnect in a tight loop.
+	reconnectBackoff := backoff.NewExponentialBackOff()
+	reconnectBackoff.MaxElapsedTime = 0 // retry forever
+
 	for {
 		if c.common.IsStopping() {
 			return
 		}
 
-		c.runOneCycle(ctx, sendFirstMessage)
+		res := c.runOneCycle(ctx, sendFirstMessage)
+		if res.attested {
+			// A server that attested ends any earlier failure streak.
+			reconnectBackoff.Reset()
+		}
+		switch {
+		case res.attestationFailed:
+			interval := reconnectBackoff.NextBackOff()
+			c.common.Logger.Errorf(ctx, "Payload trust verification failed, will retry in %v.", interval)
+			if !c.sleepWithBackoff(ctx, interval) {
+				return
+			}
+		case res.connectionFailed:
+			interval := reconnectBackoff.NextBackOff()
+			c.common.Logger.Errorf(ctx, "Connection closed abnormally, will retry in %v.", interval)
+			if !c.sleepWithBackoff(ctx, interval) {
+				return
+			}
+		default:
+			reconnectBackoff.Reset()
+		}
+
 		sendFirstMessage = false
+	}
+}
+
+// sleepWithBackoff waits for interval, returning false if ctx is cancelled first.
+func (c *wsClient) sleepWithBackoff(ctx context.Context, interval time.Duration) bool {
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 
