@@ -38,6 +38,10 @@ type requestWrapper struct {
 	*http.Request
 
 	bodyReader func() io.ReadCloser
+	// instanceUID is the value of the OpAMP instance UID header, if any.
+	// Headers are (re)built for every attempt in attemptRequest, so the
+	// UID has to be kept outside of http.Request.Header.
+	instanceUID string
 }
 
 func bodyReader(buf []byte) func() io.ReadCloser {
@@ -311,6 +315,13 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 // whether to retry or return.
 func (h *HTTPSender) attemptRequest(ctx context.Context, req *requestWrapper, currentInterval time.Duration) requestResult {
 	req.rewind(ctx)
+	// Rebuild the headers for every attempt so that HeaderFunc is invoked per
+	// request actually sent, allowing time-sensitive values such as short-lived
+	// auth tokens to be refreshed on retries.
+	req.Header = h.getHeader()
+	if req.instanceUID != "" {
+		req.Header.Set(headerOpAMPInstanceUID, req.instanceUID)
+	}
 
 	resp, err := h.client.Do(req.Request)
 	if err != nil {
@@ -405,14 +416,12 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 	// 307/308 redirects (which preserve the request method).
 	r.GetBody = func() (io.ReadCloser, error) { return req.bodyReader(), nil }
 
-	req.Header = h.getHeader()
-
 	if msgToSend.InstanceUid != nil {
 		uid, err := uuid.FromBytes(msgToSend.InstanceUid)
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set(headerOpAMPInstanceUID, uid.String())
+		req.instanceUID = uid.String()
 	}
 
 	return &req, nil
