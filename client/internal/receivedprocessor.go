@@ -74,12 +74,8 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 		}
 	}
 
-	scheduled, err := r.rcvFlags(ctx, protobufs.ServerToAgentFlags(msg.Flags))
-	if err != nil {
-		r.logger.Errorf(ctx, "cannot processed received flags:%v", err)
-	}
-
-	msgData := &types.MessageData{}
+	msgData := &types.MessageData{Flags: protobufs.ServerToAgentFlags(msg.Flags)}
+	scheduled := false
 
 	if msg.RemoteConfig != nil {
 		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig) {
@@ -202,6 +198,12 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 
 		r.rcvConnectionSettings(ctx, msg.ConnectionSettings)
 	}
+
+	flagsScheduled, err := r.rcvFlags(ctx, msgData.Flags)
+	if err != nil {
+		r.logger.Errorf(ctx, "cannot process received flags: %v", err)
+	}
+	scheduled = scheduled || flagsScheduled
 
 	if scheduled {
 		r.sender.ScheduleSend()

@@ -1121,21 +1121,35 @@ func TestReportAgentHealth(t *testing.T) {
 		srv := internal.StartMockServer(t)
 		srv.EnableExpectMode()
 
+		sendHealth := &protobufs.ComponentHealth{
+			Healthy:            true,
+			StartTimeUnixNano:  123,
+			StatusTimeUnixNano: 1,
+			LastError:          "bad error",
+		}
+		refreshedHealth := proto.Clone(sendHealth).(*protobufs.ComponentHealth)
+		refreshedHealth.StatusTimeUnixNano = 2
+		fullStateFlag := protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState
+
 		// Start a client.
 		settings := types.StartSettings{
 			OpAMPServerURL: "ws://" + srv.Endpoint,
 			Capabilities: protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig |
 				protobufs.AgentCapabilities_AgentCapabilities_ReportsHealth,
+			Callbacks: types.Callbacks{
+				OnMessage: func(_ context.Context, msg *types.MessageData) {
+					if msg.Flags == 0 {
+						return
+					}
+					assert.Equal(t, fullStateFlag, msg.Flags)
+					assert.NoError(t, client.SetHealth(refreshedHealth))
+				},
+			},
 		}
 		prepareClient(t, &settings, client)
 
 		assert.Error(t, client.SetHealth(nil))
 
-		sendHealth := &protobufs.ComponentHealth{
-			Healthy:           true,
-			StartTimeUnixNano: 123,
-			LastError:         "bad error",
-		}
 		assert.NoError(t, client.SetHealth(sendHealth))
 
 		// Client --->
@@ -1174,7 +1188,7 @@ func TestReportAgentHealth(t *testing.T) {
 			assert.EqualValues(t, 2, msg.SequenceNum)
 			// The status report must again have full Health
 			// because the Server asked for it.
-			assert.True(t, proto.Equal(sendHealth, msg.Health))
+			assert.True(t, proto.Equal(refreshedHealth, msg.Health))
 			return &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
 		})
 
@@ -2662,6 +2676,58 @@ func TestSetAvailableComponents(t *testing.T) {
 				// Shutdown the client.
 				err := client.Stop(context.Background())
 				assert.NoError(t, err)
+			})
+		})
+	}
+}
+
+func TestRequestedReportIncludesRefreshedAvailableComponents(t *testing.T) {
+	for _, flag := range []protobufs.ServerToAgentFlags{
+		protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportAvailableComponents,
+		protobufs.ServerToAgentFlags_ServerToAgentFlags_ReportFullState,
+	} {
+		t.Run(flag.String(), func(t *testing.T) {
+			testClients(t, func(t *testing.T, client OpAMPClient) {
+				srv := internal.StartMockServer(t)
+				defer srv.Close()
+
+				refreshed := generateTestAvailableComponents()
+				refreshed.Hash = []byte("refreshed-hash")
+				messages := make(chan *protobufs.AgentToServer, 4)
+				srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					messages <- msg
+					response := &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+					if msg.SequenceNum == 0 {
+						response.Flags = uint64(flag)
+					}
+					return response
+				})
+
+				require.NoError(t, client.SetAvailableComponents(generateTestAvailableComponents()))
+				settings := types.StartSettings{
+					OpAMPServerURL: "ws://" + srv.Endpoint,
+					Capabilities:   protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents,
+					Callbacks: types.Callbacks{OnMessage: func(_ context.Context, msg *types.MessageData) {
+						if msg.Flags&flag != 0 {
+							assert.NoError(t, client.SetAvailableComponents(refreshed))
+						}
+					}},
+				}
+				prepareClient(t, &settings, client)
+				require.NoError(t, client.Start(context.Background(), settings))
+				defer func() { assert.NoError(t, client.Stop(context.Background())) }()
+
+				deadline := time.After(5 * time.Second)
+				for {
+					select {
+					case msg := <-messages:
+						if proto.Equal(refreshed, msg.AvailableComponents) {
+							return
+						}
+					case <-deadline:
+						t.Fatal("server did not receive the full refreshed available components")
+					}
+				}
 			})
 		})
 	}
