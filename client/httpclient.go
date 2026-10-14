@@ -163,6 +163,7 @@ func (c *httpClient) runUntilStopped(ctx context.Context) {
 	// Start the HTTP sender. This will make request/responses with retries for
 	// failures and will wait with configured polling interval if there is nothing
 	// to send.
+	payloadVerifier, tofuEnroller := c.common.PayloadTrust()
 	c.sender.Run(
 		ctx,
 		c.opAMPServerURL,
@@ -171,6 +172,8 @@ func (c *httpClient) runUntilStopped(ctx context.Context) {
 		c.common.PackagesStateProvider,
 		&c.common.PackageSyncMutex,
 		c.common.DownloadReporterInterval,
+		payloadVerifier,
+		tofuEnroller,
 	)
 }
 

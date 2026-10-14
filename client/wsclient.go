@@ -316,19 +316,21 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinterna
 	return sharedinternal.OptionalDuration{Defined: false}, nil
 }
 
-// Continuously try until connected. Will return nil when successfully
-// connected. Will return error if it is cancelled via context.
-func (c *wsClient) ensureConnected(ctx context.Context) error {
-	var bpolicy types.BackoffPolicy
+// newBackoffPolicy returns a fresh policy for a retry sequence.
+func (c *wsClient) newBackoffPolicy() types.BackoffPolicy {
 	if c.backoffPolicy != nil {
-		bpolicy = c.backoffPolicy()
-	} else {
-		b := backoff.NewExponentialBackOff()
-		b.MaxElapsedTime = 0
-		bpolicy = b
+		return c.backoffPolicy()
 	}
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = 0
+	return b
+}
 
-	interval := time.Duration(0)
+// ensureConnected retries until connected, waiting delay first and bpolicy's
+// intervals between failures. On success it returns the next interval it
+// already drew from bpolicy; it returns an error if ctx is cancelled.
+func (c *wsClient) ensureConnected(ctx context.Context, bpolicy types.BackoffPolicy, delay time.Duration) (time.Duration, error) {
+	interval := delay
 
 	for {
 		timer := time.NewTimer(interval)
@@ -336,7 +338,7 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 		if next < 0 {
 			err := errors.New("invalid backoff policy time")
 			c.lastInternalErr.Store(&err)
-			return err
+			return 0, err
 		}
 		interval = next
 
@@ -347,7 +349,7 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 					c.lastInternalErr.Store(&err)
 					if errors.Is(err, context.Canceled) {
 						c.common.Logger.Debugf(ctx, "Client is stopped, will not try anymore.")
-						return err
+						return 0, err
 					} else {
 						c.common.Logger.Errorf(ctx, "Connection failed (%v), will retry.", err)
 					}
@@ -363,13 +365,13 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 					continue
 				}
 				// Connected successfully.
-				return nil
+				return interval, nil
 			}
 
 		case <-ctx.Done():
 			c.common.Logger.Debugf(ctx, "Client is stopped, will not try anymore.")
 			timer.Stop()
-			return ctx.Err()
+			return 0, ctx.Err()
 		}
 	}
 }
@@ -386,12 +388,16 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 // When Stop() is called (ctx is cancelled, isStopping is set), wsClient will shutdown gracefully:
 //  1. sender will be cancelled by the ctx, send the close message to server and return the error via sender.Err().
 //  2. runOneCycle will handle that error and wait for the close message from server until timeout.
-func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
-	if err := c.ensureConnected(ctx); err != nil {
+//
+// The returned cycleResult says how the cycle ended, for reconnect backoff.
+func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool, bpolicy types.BackoffPolicy, delay time.Duration) (res cycleResult) {
+	next, err := c.ensureConnected(ctx, bpolicy, delay)
+	if err != nil {
 		// Can't connect, so can't move forward. This currently happens when we
 		// are being stopped.
 		return
 	}
+	res.nextDelay = next
 	// Close the underlying connection.
 	defer c.conn.Close()
 
@@ -420,10 +426,12 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 	if err := c.sender.Start(senderCtx, c.conn); err != nil {
 		c.common.Logger.Errorf(senderCtx, "Failed to send message after connection: %v", err)
 		// We could not send the report, the only thing we can do is start over.
+		res.connectionFailed = c.common.PayloadTrustEnabled()
 		return
 	}
 
 	// First status report sent. Now loop to receive and process messages.
+	payloadVerifier, tofuEnroller := c.common.PayloadTrust()
 	r := internal.NewWSReceiver(
 		c.common.Logger,
 		c.common.Callbacks,
@@ -433,6 +441,9 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 		c.common.PackagesStateProvider,
 		&c.common.PackageSyncMutex,
 		c.common.DownloadReporterInterval,
+		payloadVerifier,
+		c.url.String(),
+		tofuEnroller,
 	)
 
 	// When the wsclient is closed, the context passed to runOneCycle will be canceled.
@@ -448,8 +459,14 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 		if err := c.sender.StoppingErr(); err != nil {
 			c.common.Logger.Debugf(ctx, "Error stopping the sender: %v", err)
 
+			// The sender saw the broken connection before the receiver.
+			if c.common.PayloadTrustEnabled() {
+				res.connectionFailed = true
+			}
+
 			stopReceiver()
 			<-r.IsStopped()
+			res.attested = r.WasAttested()
 			break
 		}
 
@@ -462,24 +479,72 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 			stopReceiver()
 			<-r.IsStopped()
 		}
+		res.attested = r.WasAttested()
 	case <-r.IsStopped():
 		// If we exited receiverLoop it means there is a connection error, we cannot
 		// read messages anymore. We need to start over.
 
 		stopSender()
 		<-c.sender.IsStopped()
+		res.attestationFailed = r.WasAttestationFailure()
+		res.connectionFailed = r.WasConnectionError()
+		res.attested = r.WasAttested()
 	}
+	return
+}
+
+// cycleResult describes how a runOneCycle call ended.
+type cycleResult struct {
+	attestationFailed bool
+	connectionFailed  bool
+	attested          bool
+	nextDelay         time.Duration // next interval of the retry sequence
 }
 
 func (c *wsClient) runUntilStopped(ctx context.Context) {
 	// Iterates until we detect that the client is stopping.
 	sendFirstMessage := true
+
+	// One backoff policy spans a retry sequence: dial failures and, with
+	// payload trust enabled, post-dial failures advance the same curve. A
+	// productive or attested cycle ends the sequence.
+	var bpolicy types.BackoffPolicy
+	var delay time.Duration
+
 	for {
 		if c.common.IsStopping() {
 			return
 		}
+		if bpolicy == nil {
+			bpolicy = c.newBackoffPolicy()
+		}
 
-		c.runOneCycle(ctx, sendFirstMessage)
+		res := c.runOneCycle(ctx, sendFirstMessage, bpolicy, delay)
+		failed := res.attestationFailed || res.connectionFailed
+		if res.attested || !failed {
+			// A server that attested ends any earlier failure streak.
+			bpolicy, delay = nil, 0
+		}
+		if failed {
+			if bpolicy == nil {
+				bpolicy = c.newBackoffPolicy()
+				delay = bpolicy.NextBackOff()
+			} else {
+				delay = res.nextDelay
+			}
+			reason := "Connection closed abnormally"
+			if res.attestationFailed {
+				reason = "Payload trust verification failed"
+			}
+			if delay < 0 {
+				// The policy is exhausted: end the sequence and retry now.
+				bpolicy, delay = nil, 0
+				c.common.Logger.Errorf(ctx, "%s, will retry now.", reason)
+			} else {
+				c.common.Logger.Errorf(ctx, "%s, will retry in %v.", reason, delay)
+			}
+		}
+
 		sendFirstMessage = false
 	}
 }

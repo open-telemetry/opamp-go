@@ -11,6 +11,7 @@ import (
 
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"github.com/open-telemetry/opamp-go/signing"
 )
 
 var (
@@ -24,6 +25,10 @@ var (
 	ErrAcceptsPackagesNotSet                 = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 	ErrAvailableComponentsMissing            = errors.New("AvailableComponents is nil")
 	ErrReportsConnectionSettingsStatusNotSet = errors.New("ReportsConnectionSettingsStatus capability is not set")
+	ErrPayloadVerifierMissing                = errors.New("PayloadTrustProvider must be set when RequiresPayloadTrustVerification capability is enabled")
+	ErrPayloadVerifierWithoutCapability      = errors.New("PayloadTrustProvider set but RequiresPayloadTrustVerification capability is not enabled")
+	ErrPayloadVerifierInit                   = errors.New("PayloadTrustProvider.Verifier failed at startup")
+	ErrPayloadTrustProviderNoAnchor          = errors.New("PayloadTrustProvider returned no Verifier and does not support TOFU enrollment")
 	ErrDialContextAndProxyURL                = errors.New("DialContext and ProxyURL cannot both be set")
 
 	errAlreadyStarted                  = errors.New("already started")
@@ -46,6 +51,19 @@ type ClientCommon struct {
 
 	// PackageSyncMutex makes sure only one package syncing operation happens at a time.
 	PackageSyncMutex sync.Mutex
+
+	// PayloadVerifier and PayloadTOFUEnroller come from
+	// StartSettings.PayloadTrustProvider; at most one is set, and both are
+	// nil when attestation is disabled. A successful TOFU enrollment
+	// replaces the enroller with the enrolled Verifier. Once running, read
+	// them via PayloadTrust: payloadTrustMu guards them.
+	PayloadVerifier     signing.Verifier
+	PayloadTOFUEnroller signing.TOFUEnroller
+	payloadTrustMu      sync.Mutex
+
+	// capabilitiesMu serializes capability updates, so SetCapabilities cannot
+	// store a TOFU bit computed before a concurrent enrollment cleared it.
+	capabilitiesMu sync.Mutex
 
 	// The transport-specific sender.
 	sender Sender
@@ -95,7 +113,76 @@ func (c *ClientCommon) validateCapabilities(capabilities protobufs.AgentCapabili
 			return ErrPackagesStateProviderNotSet
 		}
 	}
+	requiresAttestation := capabilities&protobufs.AgentCapabilities_AgentCapabilities_RequiresPayloadTrustVerification != 0
+	attestationConfigured := c.PayloadTrustEnabled()
+	switch {
+	case requiresAttestation && !attestationConfigured:
+		return ErrPayloadVerifierMissing
+	case !requiresAttestation && attestationConfigured:
+		return ErrPayloadVerifierWithoutCapability
+	}
 	return nil
+}
+
+// PayloadTrust returns the Verifier and TOFUEnroller for a new connection.
+func (c *ClientCommon) PayloadTrust() (signing.Verifier, signing.TOFUEnroller) {
+	c.payloadTrustMu.Lock()
+	defer c.payloadTrustMu.Unlock()
+	return c.PayloadVerifier, c.PayloadTOFUEnroller
+}
+
+// PayloadTrustEnabled reports whether payload trust verification is enabled.
+func (c *ClientCommon) PayloadTrustEnabled() bool {
+	v, e := c.PayloadTrust()
+	return v != nil || e != nil
+}
+
+const tofuCapability = protobufs.AgentCapabilities_AgentCapabilities_AcceptsPayloadTrustAnchorTOFU
+
+// withTOFUCapability sets AcceptsPayloadTrustAnchorTOFU exactly while TOFU
+// enrollment is pending. Once an anchor is pinned the server must not be asked
+// for one again: a signer that cannot provide it would fail the connection.
+func (c *ClientCommon) withTOFUCapability(caps protobufs.AgentCapabilities) protobufs.AgentCapabilities {
+	if _, enroller := c.PayloadTrust(); enroller != nil {
+		return caps | tofuCapability
+	}
+	return caps &^ tofuCapability
+}
+
+// dropTOFUCapability clears AcceptsPayloadTrustAnchorTOFU after enrollment,
+// in the stored state and in the next message to the server.
+func (c *ClientCommon) dropTOFUCapability() {
+	c.capabilitiesMu.Lock()
+	defer c.capabilitiesMu.Unlock()
+	caps := c.ClientSyncedState.Capabilities() &^ tofuCapability
+	if err := c.ClientSyncedState.SetCapabilities(&caps); err != nil {
+		c.Logger.Errorf(context.Background(), "Cannot clear TOFU capability: %v", err)
+		return
+	}
+	c.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.Capabilities = uint64(caps)
+	})
+}
+
+// promotingEnroller makes a successful enrollment replace the enroller with
+// the enrolled Verifier, so later connections use the pinned anchor instead
+// of enrolling again.
+type promotingEnroller struct {
+	inner  signing.TOFUEnroller
+	common *ClientCommon
+}
+
+func (p *promotingEnroller) Enroll(anchorPEM []byte) (signing.Verifier, error) {
+	v, err := p.inner.Enroll(anchorPEM)
+	if err != nil {
+		return nil, err
+	}
+	p.common.payloadTrustMu.Lock()
+	p.common.PayloadVerifier = v
+	p.common.PayloadTOFUEnroller = nil
+	p.common.payloadTrustMu.Unlock()
+	p.common.dropTOFUCapability()
+	return v, nil
 }
 
 // PrepareStart prepares the client state for the next Start() call.
@@ -139,7 +226,33 @@ func (c *ClientCommon) PrepareStart(
 
 	// Prepare package statuses.
 	c.PackagesStateProvider = settings.PackagesStateProvider
-	if err := c.validateCapabilities(c.ClientSyncedState.Capabilities()); err != nil {
+	// A provider with no anchor yet must support TOFU enrollment.
+	c.PayloadVerifier = nil
+	c.PayloadTOFUEnroller = nil
+	if settings.PayloadTrustProvider != nil {
+		v, err := settings.PayloadTrustProvider.Verifier()
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrPayloadVerifierInit, err)
+		}
+		switch {
+		case v != nil:
+			c.PayloadVerifier = v
+		default:
+			enroller, ok := settings.PayloadTrustProvider.(signing.TOFUEnroller)
+			if !ok {
+				return ErrPayloadTrustProviderNoAnchor
+			}
+			c.PayloadTOFUEnroller = &promotingEnroller{inner: enroller, common: c}
+		}
+	}
+	c.capabilitiesMu.Lock()
+	caps := c.withTOFUCapability(c.ClientSyncedState.Capabilities())
+	err := c.ClientSyncedState.SetCapabilities(&caps)
+	c.capabilitiesMu.Unlock()
+	if err != nil {
+		return err
+	}
+	if err := c.validateCapabilities(caps); err != nil {
 		return err
 	}
 
@@ -587,8 +700,12 @@ func (c *ClientCommon) SetCapabilities(capabilities *protobufs.AgentCapabilities
 	if capabilities == nil {
 		return nil
 	}
+	c.capabilitiesMu.Lock()
+	defer c.capabilitiesMu.Unlock()
+
 	// According to OpAMP spec this capability MUST be set, since all Agents MUST report status.
 	*capabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
+	*capabilities = c.withTOFUCapability(*capabilities)
 
 	// validate capabilities only if the client has been started as validation logic depends on
 	// StartSettings being set.

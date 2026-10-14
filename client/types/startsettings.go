@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
+	"github.com/open-telemetry/opamp-go/signing"
 )
 
 // BackoffPolicy controls the delay between consecutive connection or request
@@ -89,6 +90,20 @@ type StartSettings struct {
 	// i.e. package status reporting and syncing from the Server will be disabled.
 	PackagesStateProvider PackagesStateProvider
 
+	// PayloadTrustProvider enables payload trust verification (Message
+	// Attestation): the server's trust chain is validated and every message's
+	// signature verified. It MUST be set if and only if the capabilities
+	// include AgentCapabilities_RequiresPayloadTrustVerification.
+	//
+	// The leaf's SANs are matched against the host of OpAMPServerURL, even
+	// when DialContext connects elsewhere (for example a Unix socket).
+	//
+	// Use signing.FixedAnchor for a pre-configured trust anchor, or
+	// signing.TOFUAnchor for Trust On First Use enrollment. The client
+	// manages AcceptsPayloadTrustAnchorTOFU itself, advertising it only while
+	// enrollment is pending.
+	PayloadTrustProvider signing.PayloadTrustProvider
+
 	// Defines the capabilities of the Agent. AgentCapabilities_ReportsStatus bit does not need to
 	// be set in this field, it will be set automatically since it is required by OpAMP protocol.
 	// Deprecated: Use client.SetCapabilities() instead.
@@ -124,9 +139,12 @@ type StartSettings struct {
 
 	// Optional BackoffPolicy returns a fresh policy controlling the delay between
 	// consecutive retry attempts when a connection (WebSocket) or request
-	// (HTTP) fails. It is invoked at the start of each retry sequence, so every
-	// sequence begins from the returned policy's initial state. If nil, a
-	// default exponential backoff is used that retries indefinitely.
+	// (HTTP) fails. With payload trust verification enabled, it also paces
+	// reconnects (WebSocket) and requests (HTTP) after attestation failures,
+	// and on WebSocket after abnormal closes. It is invoked at the start of
+	// each retry sequence, so every sequence begins from the returned policy's
+	// initial state. If nil, a default exponential backoff is used that
+	// retries indefinitely.
 	// See BackoffPolicy and BackoffPolicyFunc for details.
 	BackoffPolicy BackoffPolicyFunc
 }
