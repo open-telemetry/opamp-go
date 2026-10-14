@@ -316,19 +316,21 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinterna
 	return sharedinternal.OptionalDuration{Defined: false}, nil
 }
 
-// Continuously try until connected. Will return nil when successfully
-// connected. Will return error if it is cancelled via context.
-func (c *wsClient) ensureConnected(ctx context.Context) error {
-	var bpolicy types.BackoffPolicy
+// newBackoffPolicy returns a fresh policy for a retry sequence.
+func (c *wsClient) newBackoffPolicy() types.BackoffPolicy {
 	if c.backoffPolicy != nil {
-		bpolicy = c.backoffPolicy()
-	} else {
-		b := backoff.NewExponentialBackOff()
-		b.MaxElapsedTime = 0
-		bpolicy = b
+		return c.backoffPolicy()
 	}
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = 0
+	return b
+}
 
-	interval := time.Duration(0)
+// ensureConnected retries until connected, waiting delay first and bpolicy's
+// intervals between failures. On success it returns the next interval it
+// already drew from bpolicy; it returns an error if ctx is cancelled.
+func (c *wsClient) ensureConnected(ctx context.Context, bpolicy types.BackoffPolicy, delay time.Duration) (time.Duration, error) {
+	interval := delay
 
 	for {
 		timer := time.NewTimer(interval)
@@ -336,7 +338,7 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 		if next < 0 {
 			err := errors.New("invalid backoff policy time")
 			c.lastInternalErr.Store(&err)
-			return err
+			return 0, err
 		}
 		interval = next
 
@@ -347,7 +349,7 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 					c.lastInternalErr.Store(&err)
 					if errors.Is(err, context.Canceled) {
 						c.common.Logger.Debugf(ctx, "Client is stopped, will not try anymore.")
-						return err
+						return 0, err
 					} else {
 						c.common.Logger.Errorf(ctx, "Connection failed (%v), will retry.", err)
 					}
@@ -363,13 +365,13 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 					continue
 				}
 				// Connected successfully.
-				return nil
+				return interval, nil
 			}
 
 		case <-ctx.Done():
 			c.common.Logger.Debugf(ctx, "Client is stopped, will not try anymore.")
 			timer.Stop()
-			return ctx.Err()
+			return 0, ctx.Err()
 		}
 	}
 }
@@ -388,12 +390,14 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 //  2. runOneCycle will handle that error and wait for the close message from server until timeout.
 //
 // The returned cycleResult says how the cycle ended, for reconnect backoff.
-func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) (res cycleResult) {
-	if err := c.ensureConnected(ctx); err != nil {
+func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool, bpolicy types.BackoffPolicy, delay time.Duration) (res cycleResult) {
+	next, err := c.ensureConnected(ctx, bpolicy, delay)
+	if err != nil {
 		// Can't connect, so can't move forward. This currently happens when we
 		// are being stopped.
 		return
 	}
+	res.nextDelay = next
 	// Close the underlying connection.
 	defer c.conn.Close()
 
@@ -422,6 +426,7 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) (res 
 	if err := c.sender.Start(senderCtx, c.conn); err != nil {
 		c.common.Logger.Errorf(senderCtx, "Failed to send message after connection: %v", err)
 		// We could not send the report, the only thing we can do is start over.
+		res.connectionFailed = c.common.PayloadTrustEnabled()
 		return
 	}
 
@@ -493,58 +498,54 @@ type cycleResult struct {
 	attestationFailed bool
 	connectionFailed  bool
 	attested          bool
+	nextDelay         time.Duration // next interval of the retry sequence
 }
 
 func (c *wsClient) runUntilStopped(ctx context.Context) {
 	// Iterates until we detect that the client is stopping.
 	sendFirstMessage := true
 
-	// ensureConnected only backs off dial failures. Attestation failures and
-	// abnormal closes happen after a successful dial, so without this the
-	// client would reconnect in a tight loop.
-	reconnectBackoff := backoff.NewExponentialBackOff()
-	reconnectBackoff.MaxElapsedTime = 0 // retry forever
+	// One backoff policy spans a retry sequence: dial failures and, with
+	// payload trust enabled, post-dial failures advance the same curve. A
+	// productive or attested cycle ends the sequence.
+	var bpolicy types.BackoffPolicy
+	var delay time.Duration
 
 	for {
 		if c.common.IsStopping() {
 			return
 		}
-
-		res := c.runOneCycle(ctx, sendFirstMessage)
-		if res.attested {
-			// A server that attested ends any earlier failure streak.
-			reconnectBackoff.Reset()
+		if bpolicy == nil {
+			bpolicy = c.newBackoffPolicy()
 		}
-		switch {
-		case res.attestationFailed:
-			interval := reconnectBackoff.NextBackOff()
-			c.common.Logger.Errorf(ctx, "Payload trust verification failed, will retry in %v.", interval)
-			if !c.sleepWithBackoff(ctx, interval) {
-				return
+
+		res := c.runOneCycle(ctx, sendFirstMessage, bpolicy, delay)
+		failed := res.attestationFailed || res.connectionFailed
+		if res.attested || !failed {
+			// A server that attested ends any earlier failure streak.
+			bpolicy, delay = nil, 0
+		}
+		if failed {
+			if bpolicy == nil {
+				bpolicy = c.newBackoffPolicy()
+				delay = bpolicy.NextBackOff()
+			} else {
+				delay = res.nextDelay
 			}
-		case res.connectionFailed:
-			interval := reconnectBackoff.NextBackOff()
-			c.common.Logger.Errorf(ctx, "Connection closed abnormally, will retry in %v.", interval)
-			if !c.sleepWithBackoff(ctx, interval) {
-				return
+			reason := "Connection closed abnormally"
+			if res.attestationFailed {
+				reason = "Payload trust verification failed"
 			}
-		default:
-			reconnectBackoff.Reset()
+			if delay < 0 {
+				// The policy is exhausted: end the sequence and retry now.
+				bpolicy, delay = nil, 0
+				c.common.Logger.Errorf(ctx, "%s, will retry now.", reason)
+			} else {
+				c.common.Logger.Errorf(ctx, "%s, will retry in %v.", reason, delay)
+			}
 		}
 
 		sendFirstMessage = false
-	}
-}
-
-// sleepWithBackoff waits for interval, returning false if ctx is cancelled first.
-func (c *wsClient) sleepWithBackoff(ctx context.Context, interval time.Duration) bool {
-	timer := time.NewTimer(interval)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return true
-	case <-ctx.Done():
-		return false
 	}
 }
 

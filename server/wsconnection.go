@@ -85,7 +85,7 @@ func (c *wsConnection) Send(ctx context.Context, message *protobufs.ServerToAgen
 
 	if state := c.signing.Load(); state != nil {
 		// A heartbeat response (instance_uid only) MAY be sent unsigned.
-		if protobufs.IsHeartbeatServerToAgent(message) {
+		if internal.IsHeartbeatServerToAgent(message) {
 			return internal.WriteWSMessage(c.wsConn, message, c.maxMessageSize)
 		}
 		env, err := state.signOutgoing(ctx, message)

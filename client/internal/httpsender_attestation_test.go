@@ -73,6 +73,12 @@ func TestHTTPSenderReceiveResponseNonAttestationErrors(t *testing.T) {
 // runAttestedSender runs Run against a mock server whose responses come from respond.
 func runAttestedSender(t *testing.T, respond func(n int32) []byte) (*HTTPSender, *atomic.Int32, context.CancelFunc, chan struct{}) {
 	t.Helper()
+	return runAttestedSenderWith(t, nil, respond)
+}
+
+// runAttestedSenderWith is runAttestedSender with configure applied before Run.
+func runAttestedSenderWith(t *testing.T, configure func(*HTTPSender), respond func(n int32) []byte) (*HTTPSender, *atomic.Int32, context.CancelFunc, chan struct{}) {
+	t.Helper()
 	pki := newTestPKI(t)
 	var requests atomic.Int32
 	srv := StartMockServer(t)
@@ -83,6 +89,9 @@ func runAttestedSender(t *testing.T, respond func(n int32) []byte) (*HTTPSender,
 	})
 
 	sender := newTestHTTPSender()
+	if configure != nil {
+		configure(sender)
+	}
 	queueMessage(sender)
 	callbacks := types.Callbacks{}
 	callbacks.SetDefaults()
@@ -144,4 +153,43 @@ func TestHTTPSenderMakeOneRequestRoundtripWithoutResponse(t *testing.T) {
 	sender.url = "://bad url"
 	queueMessage(sender)
 	assert.False(t, sender.makeOneRequestRoundtrip(context.Background()), "request cannot be built")
+}
+
+func TestHTTPSenderAttestationBackoffUsesConfiguredPolicy(t *testing.T) {
+	unsigned := mustMarshal(t, plainMsg)
+	var created atomic.Int32
+	sender, requests, cancel, done := runAttestedSenderWith(t, func(s *HTTPSender) {
+		s.SetBackoffPolicy(func() types.BackoffPolicy {
+			created.Add(1)
+			return &mockBackoffPolicy{interval: time.Hour}
+		})
+	}, func(int32) []byte { return unsigned })
+
+	require.Eventually(t, func() bool { return requests.Load() == 1 && created.Load() >= 2 }, 5*time.Second, 10*time.Millisecond)
+	queueMessage(sender)
+	require.Never(t, func() bool { return requests.Load() > 1 }, time.Second, 20*time.Millisecond,
+		"the configured policy's interval must hold back the retry")
+	cancel()
+	<-done
+}
+
+func TestHTTPSenderAttestationBackoffExhaustedPolicy(t *testing.T) {
+	unsigned := mustMarshal(t, plainMsg)
+	var created atomic.Int32
+	sender, requests, cancel, done := runAttestedSenderWith(t, func(s *HTTPSender) {
+		s.SetBackoffPolicy(func() types.BackoffPolicy {
+			// The second policy is the attestation streak's (the first is the request's).
+			if created.Add(1) == 2 {
+				return &mockBackoffPolicy{interval: -1}
+			}
+			return &mockBackoffPolicy{interval: time.Hour}
+		})
+	}, func(int32) []byte { return unsigned })
+
+	require.Eventually(t, func() bool { return requests.Load() == 1 }, 5*time.Second, 10*time.Millisecond)
+	queueMessage(sender)
+	require.Eventually(t, func() bool { return requests.Load() >= 2 }, 5*time.Second, 10*time.Millisecond,
+		"an exhausted policy ends the streak instead of blocking sends")
+	cancel()
+	<-done
 }

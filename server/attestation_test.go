@@ -229,7 +229,7 @@ func TestServerPlainHTTPAttestation(t *testing.T) {
 		_, body := postHTTP(t, settings, requiresBit)
 		var msg protobufs.ServerToAgent
 		require.NoError(t, proto.Unmarshal(body, &msg))
-		assert.True(t, protobufs.IsHeartbeatServerToAgent(&msg))
+		assert.True(t, sharedinternal.IsHeartbeatServerToAgent(&msg))
 		assert.Equal(t, testInstanceUid, msg.InstanceUid)
 	})
 

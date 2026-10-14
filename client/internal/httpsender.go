@@ -193,9 +193,10 @@ func (h *HTTPSender) Run(
 	}
 
 	// Back off after attestation failures rather than retrying at the
-	// polling rate against a server that fails verification.
-	attestBackoff := backoff.NewExponentialBackOff()
-	attestBackoff.MaxElapsedTime = 0
+	// polling rate against a server that fails verification. A failure streak
+	// uses one policy from the configured BackoffPolicy; a successful round
+	// trip, or an exhausted policy, ends it.
+	var attestBackoff types.BackoffPolicy
 
 	for {
 		pollingTimer := time.NewTimer(time.Millisecond * time.Duration(h.pollingIntervalMs.Load()))
@@ -204,7 +205,15 @@ func (h *HTTPSender) Run(
 			// Have something to send. Stop the polling timer and send what we have.
 			pollingTimer.Stop()
 			if attestationFailed := h.makeOneRequestRoundtrip(ctx); attestationFailed {
+				if attestBackoff == nil {
+					attestBackoff = h.newBackoffPolicy()
+				}
 				interval := attestBackoff.NextBackOff()
+				if interval < 0 {
+					attestBackoff = nil
+					h.logger.Errorf(ctx, "Payload trust verification failed, will retry at the polling interval.")
+					continue
+				}
 				h.logger.Errorf(ctx, "Payload trust verification failed, will retry in %v.", interval)
 				timer := time.NewTimer(interval)
 				select {
@@ -214,7 +223,7 @@ func (h *HTTPSender) Run(
 					return
 				}
 			} else {
-				attestBackoff.Reset()
+				attestBackoff = nil
 			}
 
 		case <-pollingTimer.C:
@@ -295,14 +304,7 @@ func (h *HTTPSender) sendRequestWithRetries(ctx context.Context) (*http.Response
 	}
 
 	// Repeatedly try requests with a backoff strategy.
-	var bpolicy types.BackoffPolicy
-	if h.backoffPolicy != nil {
-		bpolicy = h.backoffPolicy()
-	} else {
-		b := backoff.NewExponentialBackOff()
-		b.MaxElapsedTime = 0
-		bpolicy = b
-	}
+	bpolicy := h.newBackoffPolicy()
 
 	interval := time.Duration(0)
 
@@ -541,8 +543,18 @@ func (h *HTTPSender) EnableCompression() {
 	h.compressionEnabled = true
 }
 
+// newBackoffPolicy returns a fresh policy for a retry sequence.
+func (h *HTTPSender) newBackoffPolicy() types.BackoffPolicy {
+	if h.backoffPolicy != nil {
+		return h.backoffPolicy()
+	}
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = 0
+	return b
+}
+
 // SetBackoffPolicy sets the factory that produces a fresh backoff policy for
-// each request retry sequence.
+// each retry sequence: request retries and attestation failure streaks.
 func (h *HTTPSender) SetBackoffPolicy(p types.BackoffPolicyFunc) {
 	h.backoffPolicy = p
 }

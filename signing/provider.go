@@ -16,8 +16,8 @@ type PayloadTrustProvider interface {
 // First Use enrollment. When Verifier returns nil, the client takes the root
 // CA from the first trust_chain_response.tofu_trust_anchor, checks that the
 // delivered chain and signature verify under it, then calls Enroll and uses
-// the returned Verifier for all later connections. The Agent must also set
-// the AcceptsPayloadTrustAnchorTOFU capability.
+// the returned Verifier for all later connections. The client advertises
+// AcceptsPayloadTrustAnchorTOFU only while enrollment is pending.
 type TOFUEnroller interface {
 	// Enroll persists anchorPEM and returns a Verifier for the stored
 	// anchor. It MUST NOT overwrite an anchor that is already stored, and

@@ -11,6 +11,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/open-telemetry/opamp-go/signing"
 )
@@ -240,7 +241,7 @@ func unwrapServerToAgent(ctx context.Context, state *attestationState, rawProto 
 		if err := proto.Unmarshal(rawProto, msg); err != nil {
 			return fmt.Errorf("client: decode unsigned ServerToAgent: %w", err)
 		}
-		if protobufs.IsHeartbeatServerToAgent(msg) {
+		if internal.IsHeartbeatServerToAgent(msg) {
 			return nil
 		}
 		proto.Reset(msg)

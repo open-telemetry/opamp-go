@@ -146,3 +146,48 @@ func TestPromotingEnroller(t *testing.T) {
 		assert.Same(t, pe, e)
 	})
 }
+
+func TestTOFUCapabilityManagedByClient(t *testing.T) {
+	pki := newTestPKI(t)
+	ctx := context.Background()
+	hasTOFU := func(c *ClientCommon) bool { return c.ClientSyncedState.Capabilities()&tofuCapability != 0 }
+
+	t.Run("pending enrollment adds it", func(t *testing.T) {
+		_, enroller := newTOFUStore(t)
+		c := newTestClientCommon(t, requiresAttestation)
+		require.NoError(t, c.PrepareStart(ctx, startSettings(enroller.(signing.PayloadTrustProvider))))
+		assert.True(t, hasTOFU(c))
+	})
+
+	t.Run("stored anchor removes it", func(t *testing.T) {
+		store, enroller := newTOFUStore(t)
+		require.NoError(t, store.Save(pki.caPEM))
+		c := newTestClientCommon(t, requiresAttestation|tofuCapability)
+		require.NoError(t, c.PrepareStart(ctx, startSettings(enroller.(signing.PayloadTrustProvider))))
+		assert.False(t, hasTOFU(c))
+	})
+
+	t.Run("fixed anchor removes it", func(t *testing.T) {
+		c := newTestClientCommon(t, requiresAttestation|tofuCapability)
+		require.NoError(t, c.PrepareStart(ctx, startSettings(signing.FixedAnchor(pki.verifier(t)))))
+		assert.False(t, hasTOFU(c))
+	})
+
+	t.Run("enrollment removes it", func(t *testing.T) {
+		_, enroller := newTOFUStore(t)
+		c := newTestClientCommon(t, requiresAttestation)
+		require.NoError(t, c.PrepareStart(ctx, startSettings(enroller.(signing.PayloadTrustProvider))))
+		_, e := c.PayloadTrust()
+		_, err := e.Enroll(pki.caPEM)
+		require.NoError(t, err)
+
+		assert.False(t, hasTOFU(c))
+		var sent uint64
+		c.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) { sent = msg.Capabilities })
+		assert.Zero(t, sent&uint64(tofuCapability), "next message must not request an anchor")
+
+		caps := requiresAttestation | tofuCapability
+		require.NoError(t, c.SetCapabilities(&caps))
+		assert.False(t, hasTOFU(c))
+	})
+}

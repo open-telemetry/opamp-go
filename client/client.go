@@ -171,6 +171,9 @@ type OpAMPClient interface {
 	//
 	// The capabilities parameter must not be nil; passing a nil value will result in an error.
 	//
+	// AcceptsPayloadTrustAnchorTOFU is managed by the client: it is set only while
+	// TOFU enrollment is pending, whatever value is passed here.
+	//
 	// For more details, refer to the OpAMP specification:
 	// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#agenttoservercapabilities
 	SetCapabilities(capabilities *protobufs.AgentCapabilities) error

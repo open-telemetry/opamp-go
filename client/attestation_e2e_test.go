@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,7 +58,7 @@ func TestAttestationE2ETOFU(t *testing.T) {
 			srv := startE2EServer(t, testhelpers.GetAvailableLocalAddress(), e2eServerOpts{signer: pki.signer})
 			path := filepath.Join(t.TempDir(), "anchor.pem")
 
-			c := startE2EClient(t, tr, srv.addr, signing.TOFUAnchor(signing.NewFileTOFUStore(path)), tofuCaps)
+			c := startE2EClient(t, tr, srv.addr, signing.TOFUAnchor(signing.NewFileTOFUStore(path)), attestedCaps)
 			c.requireReceived(t, "server")
 			stored, err := os.ReadFile(path)
 			require.NoError(t, err)
@@ -66,7 +67,7 @@ func TestAttestationE2ETOFU(t *testing.T) {
 
 			// A restarted client loads the stored anchor instead of enrolling.
 			store := &countingStore{TOFUStore: signing.NewFileTOFUStore(path)}
-			c2 := startE2EClient(t, tr, srv.addr, signing.TOFUAnchor(store), tofuCaps)
+			c2 := startE2EClient(t, tr, srv.addr, signing.TOFUAnchor(store), attestedCaps)
 			c2.requireReceived(t, "server")
 			assert.Zero(t, store.saves.Load())
 		})
@@ -84,7 +85,7 @@ func TestAttestationE2ETOFUReconnectDoesNotReenroll(t *testing.T) {
 		},
 	})
 	store := &countingStore{TOFUStore: signing.NewFileTOFUStore(filepath.Join(t.TempDir(), "anchor.pem"))}
-	c := startE2EClient(t, transports[0], srv.addr, signing.TOFUAnchor(store), tofuCaps)
+	c := startE2EClient(t, transports[0], srv.addr, signing.TOFUAnchor(store), attestedCaps)
 	c.requireReceived(t, "msg1")
 
 	srv.disconnect()
@@ -94,14 +95,13 @@ func TestAttestationE2ETOFUReconnectDoesNotReenroll(t *testing.T) {
 	assert.Equal(t, int32(1), store.saves.Load(), "reconnect must not re-enroll")
 }
 
-// A reconnect to a server under a different CA must not be trusted, even
-// though the client still advertises AcceptsPayloadTrustAnchorTOFU.
+// A reconnect to a server under a different CA must not be trusted.
 func TestAttestationE2ETOFUPinnedAcrossReconnect(t *testing.T) {
 	addr := testhelpers.GetAvailableLocalAddress()
 	first := newE2EPKI(t)
 	srvA := startE2EServer(t, addr, e2eServerOpts{signer: first.signer, name: "first"})
 	path := filepath.Join(t.TempDir(), "anchor.pem")
-	c := startE2EClient(t, transports[0], addr, signing.TOFUAnchor(signing.NewFileTOFUStore(path)), tofuCaps)
+	c := startE2EClient(t, transports[0], addr, signing.TOFUAnchor(signing.NewFileTOFUStore(path)), attestedCaps)
 	c.requireReceived(t, "first")
 
 	srvA.stop()
@@ -115,6 +115,37 @@ func TestAttestationE2ETOFUPinnedAcrossReconnect(t *testing.T) {
 	stored, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.Equal(t, first.caPEM, stored, "the pinned anchor must not be replaced")
+}
+
+// The client advertises AcceptsPayloadTrustAnchorTOFU only while enrolling,
+// so after enrollment a server whose signer cannot provide an anchor still
+// serves it.
+func TestAttestationE2ETOFUCapabilityOnlyWhileEnrolling(t *testing.T) {
+	const tofuBit = uint64(protobufs.AgentCapabilities_AgentCapabilities_AcceptsPayloadTrustAnchorTOFU)
+	for _, tr := range transports {
+		t.Run(tr.name, func(t *testing.T) {
+			addr := testhelpers.GetAvailableLocalAddress()
+			pki := newE2EPKI(t)
+			srvA := startE2EServer(t, addr, e2eServerOpts{signer: pki.signer, name: "first"})
+			store := signing.NewFileTOFUStore(filepath.Join(t.TempDir(), "anchor.pem"))
+			c := startE2EClient(t, tr, addr, signing.TOFUAnchor(store), attestedCaps)
+			c.requireReceived(t, "first")
+			srvA.stop()
+
+			var sawTOFU atomic.Bool
+			startE2EServer(t, addr, e2eServerOpts{
+				signer: signOnly{pki.signer},
+				onMessage: func(_ int32, msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+					if msg.Capabilities&tofuBit != 0 {
+						sawTOFU.Store(true)
+					}
+					return &protobufs.ServerToAgent{RemoteConfig: remoteConfig("second")}
+				},
+			})
+			c.requireReceived(t, "second")
+			assert.False(t, sawTOFU.Load())
+		})
+	}
 }
 
 func TestAttestationE2EWrongAnchor(t *testing.T) {

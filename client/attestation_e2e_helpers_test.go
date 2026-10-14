@@ -30,8 +30,6 @@ var attestedCaps = protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus |
 	protobufs.AgentCapabilities_AgentCapabilities_AcceptsRemoteConfig |
 	protobufs.AgentCapabilities_AgentCapabilities_RequiresPayloadTrustVerification
 
-var tofuCaps = attestedCaps | protobufs.AgentCapabilities_AgentCapabilities_AcceptsPayloadTrustAnchorTOFU
-
 // e2ePKI is a CA plus a signing leaf issued by it.
 type e2ePKI struct {
 	ca     *x509.Certificate
@@ -90,6 +88,9 @@ func (r *rotatingSigner) Sign(ctx context.Context, payload []byte) (signing.Sign
 	}
 	return r.a.Sign(ctx, payload)
 }
+
+// signOnly hides any TrustAnchorProvider implementation of the wrapped signer.
+type signOnly struct{ signing.Signer }
 
 type failingSigner struct{}
 
