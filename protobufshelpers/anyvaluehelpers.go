@@ -50,12 +50,12 @@ func IsEqualAnyValue(v1, v2 *protobufs.AnyValue) bool {
 		for i, e1 := range v1.ArrayValue.Values {
 			e2 := v2.ArrayValue.Values[i]
 			if e1 == e2 {
-				return true
+				continue
 			}
 			if e1 == nil || e2 == nil {
 				return false
 			}
-			if IsEqualAnyValue(e1, e2) {
+			if !IsEqualAnyValue(e1, e2) {
 				return false
 			}
 		}
@@ -69,7 +69,7 @@ func IsEqualAnyValue(v1, v2 *protobufs.AnyValue) bool {
 		}
 		for i, e1 := range v1.KvlistValue.Values {
 			e2 := v2.KvlistValue.Values[i]
-			if IsEqualKeyValue(e1, e2) {
+			if !IsEqualKeyValue(e1, e2) {
 				return false
 			}
 		}
