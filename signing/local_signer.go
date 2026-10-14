@@ -34,8 +34,9 @@ type LocalSigner struct {
 //
 // The material is validated up front so misconfiguration fails at startup:
 // ErrUnsupportedAlgorithm for an unsupported leaf key, ErrKeyMismatch if key
-// does not match the leaf, and ErrChainValidation if the chain is not
-// internally consistent.
+// does not match the leaf, and ErrChainValidation if the leaf has no DNS or IP
+// SAN, the chain includes a self-signed root, or it is not internally
+// consistent.
 func NewLocalSigner(key crypto.Signer, chain []*x509.Certificate) (*LocalSigner, error) {
 	if key == nil {
 		return nil, ErrNilKey
@@ -57,6 +58,14 @@ func NewLocalSigner(key crypto.Signer, chain []*x509.Certificate) (*LocalSigner,
 		return nil, ErrKeyMismatch
 	}
 
+	if len(leaf.DNSNames) == 0 && len(leaf.IPAddresses) == 0 {
+		return nil, fmt.Errorf("%w: signing leaf has no DNS or IP SAN", ErrChainValidation)
+	}
+	for i, cert := range chain {
+		if isSelfSigned(cert) {
+			return nil, fmt.Errorf("%w: chain[%d] is a self-signed root, which must not be included", ErrChainValidation, i)
+		}
+	}
 	if err := verifyChainInternally(chain, time.Now()); err != nil {
 		return nil, err
 	}

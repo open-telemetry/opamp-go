@@ -150,8 +150,11 @@ func TestNewLocalSignerFullChain(t *testing.T) {
 	}, root, &interKey.PublicKey, rootKey)
 	leaf, key := newTestLeaf(t, AlgorithmECDSAP256SHA256, inter, interKey)
 
-	_, err = NewLocalSigner(key, []*x509.Certificate{root, inter, leaf})
+	_, err = NewLocalSigner(key, []*x509.Certificate{inter, leaf})
 	require.NoError(t, err)
+
+	_, err = NewLocalSigner(key, []*x509.Certificate{root, inter, leaf})
+	assert.ErrorIs(t, err, ErrChainValidation, "the root must not be included")
 }
 
 func TestLocalSignerSignCancelledContext(t *testing.T) {
@@ -187,4 +190,12 @@ func TestLocalSignerTrustAnchorPEM(t *testing.T) {
 	again, err := s.TrustAnchorPEM(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, pemCert(root), again)
+}
+
+func TestNewLocalSignerRequiresSAN(t *testing.T) {
+	root, rootKey := newTestCA(t, AlgorithmECDSAP256SHA256)
+	leaf, key, err := GenerateLeaf(AlgorithmECDSAP256SHA256, root, rootKey, CertOptions{})
+	require.NoError(t, err)
+	_, err = NewLocalSigner(key, []*x509.Certificate{leaf})
+	assert.ErrorIs(t, err, ErrChainValidation)
 }

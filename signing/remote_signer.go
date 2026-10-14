@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,31 @@ import (
 	"sync"
 	"time"
 )
+
+// Limits on responses from the signing service, so a faulty or compromised
+// service cannot exhaust memory. A signature response is capped at 64 KiB,
+// far above the largest signature (512 bytes for RSA-4096). A chain or CA
+// response is capped at 1 MiB; a PEM chain or root is a few kilobytes, so
+// this leaves room for long chains and large keys.
+const (
+	maxSignResponseSize = 64 << 10
+	maxCertResponseSize = 1 << 20
+)
+
+var errResponseTooLarge = errors.New("remote signer: response too large")
+
+// readLimited reads all of r, failing rather than truncating when it holds
+// more than limit bytes.
+func readLimited(r io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("%w: more than %d bytes", errResponseTooLarge, limit)
+	}
+	return data, nil
+}
 
 // RemoteSigner implements [Signer] by delegating to an out-of-process HTTP
 // signing service, so the OpAMP server holds no private key. The service
@@ -117,7 +143,7 @@ func (s *RemoteSigner) sign(ctx context.Context, payload []byte) ([]byte, error)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimited(resp.Body, maxSignResponseSize)
 	if err != nil {
 		return nil, fmt.Errorf("remote signer: read sign response: %w", err)
 	}
@@ -156,7 +182,7 @@ func (s *RemoteSigner) TrustAnchorPEM(ctx context.Context) ([]byte, error) {
 		return nil, fmt.Errorf("remote signer: CA request: %w", err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimited(resp.Body, maxCertResponseSize)
 	if err != nil {
 		return nil, fmt.Errorf("remote signer: read CA response: %w", err)
 	}
@@ -181,22 +207,29 @@ func (s *RemoteSigner) chainDER(ctx context.Context) ([][]byte, error) {
 // sharedFetch joins the fetch in *slot if one is running, or starts one and
 // caches its result. The caller must hold s.mu; sharedFetch releases it.
 func (s *RemoteSigner) sharedFetch(ctx context.Context, slot **chainFetch) ([][]byte, error) {
-	if f := *slot; f != nil {
-		s.mu.Unlock()
-		select {
-		case <-f.done:
-			return f.chain, f.err
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+	f := *slot
+	if f == nil {
+		f = &chainFetch{done: make(chan struct{})}
+		*slot = f
+		// The fetch serves every waiter, so one caller's cancellation must not
+		// fail it; the HTTP client timeout still bounds it.
+		go s.runFetch(context.WithoutCancel(ctx), slot, f)
 	}
-	f := &chainFetch{done: make(chan struct{})}
-	*slot = f
 	s.mu.Unlock()
+	select {
+	case <-f.done:
+		return f.chain, f.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
 
+// runFetch performs the fetch for f, caches a successful result, and
+// publishes it to f's waiters.
+func (s *RemoteSigner) runFetch(ctx context.Context, slot **chainFetch, f *chainFetch) {
 	chain, err := s.fetchChainDER(ctx)
-
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err == nil {
 		s.cachedChain = chain
 		s.cachedAt = time.Now()
@@ -204,8 +237,6 @@ func (s *RemoteSigner) sharedFetch(ctx context.Context, slot **chainFetch) ([][]
 	*slot = nil
 	f.chain, f.err = chain, err
 	close(f.done)
-	s.mu.Unlock()
-	return chain, err
 }
 
 func (s *RemoteSigner) fetchChainDER(ctx context.Context) ([][]byte, error) {
@@ -221,7 +252,7 @@ func (s *RemoteSigner) fetchChainDER(ctx context.Context) ([][]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	pemBytes, err := io.ReadAll(resp.Body)
+	pemBytes, err := readLimited(resp.Body, maxCertResponseSize)
 	if err != nil {
 		return nil, fmt.Errorf("remote signer: read chain response: %w", err)
 	}
@@ -232,6 +263,15 @@ func (s *RemoteSigner) fetchChainDER(ctx context.Context) ([][]byte, error) {
 	chain := pemCertificates(pemBytes)
 	if len(chain) == 0 {
 		return nil, fmt.Errorf("remote signer: chain response contained no CERTIFICATE PEM blocks")
+	}
+	for i, der := range chain {
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			return nil, fmt.Errorf("%w: chain[%d]: %v", ErrParseCertificate, i, err)
+		}
+		if isSelfSigned(cert) {
+			return nil, fmt.Errorf("%w: chain[%d] is a self-signed root, which must not be included", ErrChainValidation, i)
+		}
 	}
 	return chain, nil
 }

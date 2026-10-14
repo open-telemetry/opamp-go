@@ -1,12 +1,14 @@
 package signing
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/x509"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -29,8 +31,9 @@ type policyServer struct {
 	chainStatus int
 	caStatus    int
 	chainGate   func() // runs before each /v1/chain response, outside mu
-	// broken maps a path to "hangup" (close without responding) or
-	// "truncate" (promise more body than is sent).
+	// broken maps a path to "hangup" (close without responding),
+	// "truncate" (promise more body than is sent), or "oversize" (send one
+	// byte more than the client's limit for that path).
 	broken map[string]string
 
 	signs        atomic.Int32
@@ -60,6 +63,14 @@ func (p *policyServer) handle(w http.ResponseWriter, r *http.Request) {
 	p.mu.Lock()
 	mode := p.broken[r.URL.Path]
 	p.mu.Unlock()
+	if mode == "oversize" {
+		limit := maxCertResponseSize
+		if r.URL.Path == "/v1/sign" {
+			limit = maxSignResponseSize
+		}
+		_, _ = w.Write(bytes.Repeat([]byte{'a'}, limit+1))
+		return
+	}
 	if mode != "" {
 		conn, _, err := w.(http.Hijacker).Hijack()
 		if !assert.NoError(p.t, err) {
@@ -344,4 +355,79 @@ func TestRemoteSignerTrustAnchorPEM(t *testing.T) {
 	p.srv.Close()
 	_, err = NewRemoteSigner(p.srv.URL).TrustAnchorPEM(t.Context())
 	assert.Error(t, err)
+}
+
+func TestReadLimited(t *testing.T) {
+	got, err := readLimited(strings.NewReader("abcd"), 4)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("abcd"), got)
+
+	_, err = readLimited(strings.NewReader("abcde"), 4)
+	assert.ErrorIs(t, err, errResponseTooLarge)
+}
+
+func TestRemoteSignerRejectsOversizedResponses(t *testing.T) {
+	for _, path := range []string{"/v1/sign", "/v1/chain", "/v1/ca"} {
+		t.Run(path, func(t *testing.T) {
+			p := newPolicyServer(t)
+			p.set(func(p *policyServer) { p.broken = map[string]string{path: "oversize"} })
+			rs := NewRemoteSigner(p.srv.URL)
+			var err error
+			if path == "/v1/ca" {
+				_, err = rs.TrustAnchorPEM(t.Context())
+			} else {
+				_, err = rs.Sign(t.Context(), []byte("p"))
+			}
+			assert.ErrorIs(t, err, errResponseTooLarge)
+		})
+	}
+}
+
+func TestRemoteSignerRejectsRootInChain(t *testing.T) {
+	p := newPolicyServer(t)
+	p.set(func(p *policyServer) { p.chainPEM = append(pemCert(p.root), p.chainPEM...) })
+	_, err := NewRemoteSigner(p.srv.URL).Sign(t.Context(), []byte("p"))
+	assert.ErrorIs(t, err, ErrChainValidation)
+}
+
+// Cancelling the caller that started a shared chain fetch must not fail other
+// callers waiting on it.
+func TestRemoteSignerSharedFetchSurvivesCallerCancel(t *testing.T) {
+	p := newPolicyServer(t)
+	release := make(chan struct{})
+	entered := make(chan struct{}, 1)
+	p.set(func(p *policyServer) {
+		p.chainGate = func() {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			<-release
+		}
+	})
+	rs := NewRemoteSigner(p.srv.URL)
+
+	firstCtx, cancelFirst := context.WithCancel(t.Context())
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := rs.Sign(firstCtx, []byte("p"))
+		firstDone <- err
+	}()
+	<-entered
+
+	secondDone := make(chan error, 1)
+	go func() {
+		_, err := rs.Sign(t.Context(), []byte("p"))
+		secondDone <- err
+	}()
+	for p.signs.Load() < 2 {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(20 * time.Millisecond) // let the second caller join the in-flight fetch
+	cancelFirst()
+	assert.ErrorIs(t, <-firstDone, context.Canceled)
+
+	close(release)
+	assert.NoError(t, <-secondDone)
+	assert.EqualValues(t, 1, p.chainFetches.Load(), "the second caller shares the first fetch")
 }

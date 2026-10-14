@@ -84,5 +84,10 @@ func (s *FileTOFUStore) Save(pemBytes []byte) error {
 		}
 		return fmt.Errorf("%w: %v", ErrTOFUStoreSave, err)
 	}
+	// Persist the new directory entry, or a crash could lose the anchor and
+	// let the next start enroll a different one.
+	if err := syncDir(filepath.Dir(s.path)); err != nil {
+		return fmt.Errorf("%w: %v", ErrTOFUStoreSave, err)
+	}
 	return nil
 }

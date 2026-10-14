@@ -452,9 +452,11 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 	// Over HTTP every signed response carries the chain; the Agent ignores
 	// it once pinned.
 	var responseMessage proto.Message = response
-	if s.settings.PayloadSigner != nil && agentRequiresAttestation(request.Capabilities) && isNoOp {
+	if s.settings.PayloadSigner != nil && agentRequiresAttestation(request.Capabilities) && isNoOp &&
+		len(s.settings.CustomCapabilities) == 0 {
 		// A no-op response is sent as an unsigned heartbeat (instance_uid
-		// only), so it omits CustomCapabilities and the Offers bit.
+		// only). Custom capabilities make the response substantive, so it is
+		// signed instead; the Offers bit adds nothing for an attested Agent.
 		responseMessage = &protobufs.ServerToAgent{InstanceUid: response.InstanceUid}
 	} else {
 		// Return the CustomCapabilities

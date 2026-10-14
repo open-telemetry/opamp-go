@@ -176,9 +176,14 @@ func TestWSConnectionSendSignerError(t *testing.T) {
 // startAttestedServer starts a server with signer whose OnMessage returns respond(msg).
 func startAttestedServer(t *testing.T, signer signing.Signer, respond func(*protobufs.AgentToServer) *protobufs.ServerToAgent) *StartSettings {
 	t.Helper()
+	return startAttestedServerWithCaps(t, signer, respond, []string{"local.test.capability"})
+}
+
+func startAttestedServerWithCaps(t *testing.T, signer signing.Signer, respond func(*protobufs.AgentToServer) *protobufs.ServerToAgent, customCaps []string) *StartSettings {
+	t.Helper()
 	settings := &StartSettings{Settings: Settings{
 		PayloadSigner:      signer,
-		CustomCapabilities: []string{"local.test.capability"},
+		CustomCapabilities: customCaps,
 		Callbacks: types.Callbacks{
 			OnConnecting: func(*http.Request) types.ConnectionResponse {
 				return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
@@ -224,13 +229,24 @@ func TestServerPlainHTTPAttestation(t *testing.T) {
 		assert.Equal(t, settings.CustomCapabilities, inner.CustomCapabilities.Capabilities)
 	})
 
+	noOp := func(*protobufs.AgentToServer) *protobufs.ServerToAgent { return nil }
+
 	t.Run("no-op response is an unsigned heartbeat", func(t *testing.T) {
-		settings := startAttestedServer(t, pki.signer(t), func(*protobufs.AgentToServer) *protobufs.ServerToAgent { return nil })
+		settings := startAttestedServerWithCaps(t, pki.signer(t), noOp, nil)
 		_, body := postHTTP(t, settings, requiresBit)
 		var msg protobufs.ServerToAgent
 		require.NoError(t, proto.Unmarshal(body, &msg))
 		assert.True(t, sharedinternal.IsHeartbeatServerToAgent(&msg))
 		assert.Equal(t, testInstanceUid, msg.InstanceUid)
+	})
+
+	t.Run("no-op response with custom capabilities is signed", func(t *testing.T) {
+		settings := startAttestedServer(t, pki.signer(t), noOp)
+		_, body := postHTTP(t, settings, requiresBit)
+		var env protobufs.SignedServerToAgent
+		require.NoError(t, proto.Unmarshal(body, &env))
+		inner := pki.verifyEnvelope(t, &env)
+		assert.Equal(t, settings.CustomCapabilities, inner.CustomCapabilities.Capabilities)
 	})
 
 	t.Run("signer error", func(t *testing.T) {

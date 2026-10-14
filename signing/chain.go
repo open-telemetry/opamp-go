@@ -1,6 +1,7 @@
 package signing
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"errors"
@@ -88,6 +89,12 @@ func ValidateChain(_ context.Context, chainDER [][]byte, roots *x509.CertPool, n
 		return nil, err
 	}
 	return &VerifiedCertificate{leaf: leaf, chain: certs, roots: roots, dnsName: dnsName}, nil
+}
+
+// isSelfSigned reports whether cert is signed by its own key, i.e. a root.
+func isSelfSigned(cert *x509.Certificate) bool {
+	return bytes.Equal(cert.RawIssuer, cert.RawSubject) &&
+		cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature) == nil
 }
 
 // verifyParsedChain validates a parsed chain (intermediates first, leaf
