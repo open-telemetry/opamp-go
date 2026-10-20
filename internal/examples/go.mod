@@ -7,7 +7,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/knadh/koanf v1.3.3
 	github.com/oklog/ulid/v2 v2.1.0
-	github.com/open-telemetry/opamp-go v0.1.0
+	github.com/open-telemetry/opamp-go v0.25.0
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/stretchr/testify v1.12.0
 	go.opentelemetry.io/collector/config/configopaque v1.38.0
