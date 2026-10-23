@@ -1729,3 +1729,90 @@ func TestParseEncoding(t *testing.T) {
 		})
 	}
 }
+
+func TestServerWebSocketSendsPings(t *testing.T) {
+	callback := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true}
+		},
+	}
+	settings := &StartSettings{Settings: Settings{
+		Callbacks:             callback,
+		WebSocketPingInterval: 20 * time.Millisecond,
+		WebSocketPongTimeout:  5 * time.Second,
+	}}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	conn, _, err := dialClient(settings)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	pings := int32(0)
+	conn.SetPingHandler(func(string) error {
+		atomic.AddInt32(&pings, 1)
+		return conn.WriteControl(websocket.PongMessage, nil, time.Now().Add(time.Second))
+	})
+	// Reading is required for the client to process control frames.
+	go func() {
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	eventually(t, func() bool { return atomic.LoadInt32(&pings) >= 2 })
+}
+
+func TestServerWebSocketClosesUnresponsiveConnection(t *testing.T) {
+	closed := int32(0)
+	callback := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnConnectionClose: func(conn types.Connection) {
+					atomic.StoreInt32(&closed, 1)
+				},
+			}}
+		},
+	}
+	settings := &StartSettings{Settings: Settings{
+		Callbacks:             callback,
+		WebSocketPingInterval: 20 * time.Millisecond,
+		WebSocketPongTimeout:  100 * time.Millisecond,
+	}}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	// The client never reads, so it never answers the pings.
+	conn, _, err := dialClient(settings)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	eventually(t, func() bool { return atomic.LoadInt32(&closed) == 1 })
+}
+
+func TestServerWebSocketNoPingsByDefault(t *testing.T) {
+	callback := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true}
+		},
+	}
+	settings := &StartSettings{Settings: Settings{Callbacks: callback}}
+	srv := startServer(t, settings)
+	defer srv.Stop(context.Background())
+
+	conn, _, err := dialClient(settings)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	pings := int32(0)
+	conn.SetPingHandler(func(string) error {
+		atomic.AddInt32(&pings, 1)
+		return nil
+	})
+	_ = conn.SetReadDeadline(time.Now().Add(150 * time.Millisecond))
+	_, _, err = conn.ReadMessage()
+	require.Error(t, err) // read timeout, nothing was sent
+	assert.Equal(t, int32(0), atomic.LoadInt32(&pings))
+}

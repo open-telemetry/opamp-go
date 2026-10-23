@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -250,6 +251,17 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 	}
 	agentConn := newWSConnection(wsConn, s.settings.MaxMessageSize)
 
+	extendReadDeadline := func() {}
+	if interval := s.settings.WebSocketPingInterval; interval > 0 {
+		timeout := s.settings.WebSocketPongTimeout
+		if timeout <= 0 {
+			timeout = 2 * interval
+		}
+		stop := startWSKeepalive(wsConn, interval, timeout)
+		defer stop()
+		extendReadDeadline = func() { _ = wsConn.SetReadDeadline(time.Now().Add(timeout)) }
+	}
+
 	defer func() {
 		// Close the connection when all is done.
 		defer func() {
@@ -277,6 +289,9 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 
 		// Block until the next message can be read.
 		mt, msgBytes, err := wsConn.ReadMessage()
+		if err == nil {
+			extendReadDeadline()
+		}
 		isBreak, err := func() (bool, error) {
 			if err != nil {
 				if !websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure) {
@@ -334,6 +349,50 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			break
 		}
 	}
+}
+
+// startWSKeepalive makes the connection detect dead peers. It sends a ping every
+// interval and requires some traffic (a message, ping or pong) from the peer within
+// timeout, otherwise reads fail with a timeout and the connection is closed by the
+// caller. The returned func stops the ping loop.
+func startWSKeepalive(wsConn *websocket.Conn, interval, timeout time.Duration) func() {
+	extend := func() { _ = wsConn.SetReadDeadline(time.Now().Add(timeout)) }
+	extend()
+	wsConn.SetPongHandler(func(string) error {
+		extend()
+		return nil
+	})
+	// Same as the default ping handler, but also refreshes the read deadline.
+	wsConn.SetPingHandler(func(appData string) error {
+		extend()
+		err := wsConn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(time.Second))
+		if errors.Is(err, websocket.ErrCloseSent) {
+			return nil
+		}
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			return nil
+		}
+		return err
+	})
+
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if err := wsConn.WriteControl(websocket.PingMessage, nil, time.Now().Add(timeout)); err != nil {
+					return
+				}
+			}
+		}
+	}()
+	var once sync.Once
+	return func() { once.Do(func() { close(done) }) }
 }
 
 func readAllLimited(w http.ResponseWriter, r io.ReadCloser, limit int64, kind string) ([]byte, error) {

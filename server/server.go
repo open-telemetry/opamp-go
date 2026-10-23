@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/open-telemetry/opamp-go/server/types"
 )
@@ -35,6 +36,17 @@ type Settings struct {
 	// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#customcapabilities
 	// for more details.
 	CustomCapabilities []string
+
+	// WebSocketPingInterval, if greater than zero, makes the Server send a WebSocket
+	// ping control frame to every connected Agent at this interval, so that broken
+	// connections (for example behind a load balancer) are detected and closed.
+	// If zero, no pings are sent and no read deadline is applied (default).
+	WebSocketPingInterval time.Duration
+
+	// WebSocketPongTimeout is how long the Server waits for any message or pong from
+	// the Agent before it considers the connection dead and closes it. It only applies
+	// when WebSocketPingInterval is set. If zero, 2 * WebSocketPingInterval is used.
+	WebSocketPongTimeout time.Duration
 }
 
 // StartSettings contains the settings for starting an OpAMP Server.
