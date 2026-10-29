@@ -57,7 +57,13 @@ func (c *httpClient) Start(ctx context.Context, settings types.StartSettings) er
 	c.sender.SetMaxMessageSize(settings.MaxMessageSize)
 
 	// Add TLS configuration into httpClient
-	c.sender.AddTLSConfig(settings.TLSConfig)
+	if err := c.sender.AddTLSConfig(settings.TLSConfig); err != nil {
+		return err
+	}
+
+	if err := c.sender.SetDialContext(settings.DialContext); err != nil {
+		return err
+	}
 
 	if settings.EnableCompression {
 		c.sender.EnableCompression()

@@ -114,6 +114,14 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 	}
 	c.dialer.TLSClientConfig = settings.TLSConfig
 
+	// Allow the caller to override how the underlying network connection is
+	// established, e.g. to dial a Unix domain socket. PrepareStart rejects
+	// combining this with ProxyURL, so this cannot clash with the
+	// NetDialContext that useProxy installs.
+	if settings.DialContext != nil {
+		c.dialer.NetDialContext = settings.DialContext
+	}
+
 	headerFunc := settings.HeaderFunc
 	if headerFunc == nil {
 		headerFunc = func(h http.Header) http.Header {
