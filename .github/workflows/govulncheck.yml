@@ -23,6 +23,7 @@ jobs:
       - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
         with:
           repo-checkout: false
-          go-version-file: "go.mod"
+          # The action's go-version-input defaults to "stable", which setup-go prefers over go-version-file.
+          # govulncheck@latest also needs a newer Go than go.mod's minimum.
           cache: false
           go-package: ./...
