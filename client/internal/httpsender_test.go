@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -1104,4 +1105,68 @@ func TestHTTPSenderOpAMPInstanceUIDHeader(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	srv.Close()
+}
+
+// TestHTTPSenderHeaderFuncInvokedOnRetry verifies that HeaderFunc is invoked
+// for every HTTP request that is actually sent, including retries, so that
+// time-sensitive headers (for example short-lived auth tokens) are refreshed
+// per attempt instead of reusing the values from the first attempt.
+func TestHTTPSenderHeaderFuncInvokedOnRetry(t *testing.T) {
+	uidBytes := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+	uid, err := uuid.FromBytes(uidBytes)
+	require.NoError(t, err)
+
+	var headerFuncCalls atomic.Int64
+	headerFunc := func(h http.Header) http.Header {
+		// Embed the call count in the header so the server can observe
+		// whether each attempt carried a freshly generated value.
+		h.Set("Authorization", fmt.Sprintf("Bearer token-%d", headerFuncCalls.Add(1)))
+		return h
+	}
+
+	var (
+		attempts     atomic.Int64
+		mu           sync.Mutex
+		authHeaders  []string
+		uidHeaders   []string
+		totalAttempt = int64(3)
+	)
+	srv := StartMockServer(t)
+	t.Cleanup(srv.Close)
+	srv.SetOnRequest(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		authHeaders = append(authHeaders, r.Header.Get("Authorization"))
+		uidHeaders = append(uidHeaders, r.Header.Get(headerOpAMPInstanceUID))
+		mu.Unlock()
+		// Fail with a retryable status until the last attempt.
+		if attempts.Add(1) < totalAttempt {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	sender := newTestHTTPSender()
+	sender.SetRequestHeader(nil, headerFunc)
+	sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.InstanceUid = uidBytes
+	})
+	sender.callbacks = types.Callbacks{
+		OnConnect:       func(ctx context.Context) {},
+		OnConnectFailed: func(ctx context.Context, _ error) {},
+	}
+	sender.url = "http://" + srv.Endpoint
+
+	resp, err := sender.sendRequestWithRetries(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	require.Equal(t, totalAttempt, attempts.Load())
+	require.Equal(t, totalAttempt, headerFuncCalls.Load(), "HeaderFunc must be invoked once per attempt")
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []string{"Bearer token-1", "Bearer token-2", "Bearer token-3"}, authHeaders)
+	require.Equal(t, []string{uid.String(), uid.String(), uid.String()}, uidHeaders)
 }
