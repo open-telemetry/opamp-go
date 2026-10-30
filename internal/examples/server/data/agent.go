@@ -410,7 +410,7 @@ func (agent *Agent) processStatusUpdate(
 			// We need to recalculate the config.
 			configChanged = agent.calcRemoteConfig()
 			if agent.Status.RemoteConfigStatus != nil {
-				configChanged = configChanged || bytes.Equal(agent.Status.RemoteConfigStatus.LastRemoteConfigHash, agent.remoteConfig.ConfigHash)
+				configChanged = configChanged || !bytes.Equal(agent.Status.RemoteConfigStatus.LastRemoteConfigHash, agent.remoteConfig.ConfigHash)
 			}
 		}
 
