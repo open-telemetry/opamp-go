@@ -51,6 +51,13 @@ type server struct {
 
 	// The network address Server is listening on. Nil if not started.
 	addr net.Addr
+
+	// Open WebSocket connections. http.Server.Shutdown does not close hijacked
+	// connections, so Stop closes these and waits for their handlers to return.
+	wsConnsMu      sync.Mutex
+	wsConns        map[*websocket.Conn]struct{}
+	wsConnsWg      sync.WaitGroup
+	wsConnsStopped bool
 }
 
 var _ OpAMPServer = (*server)(nil)
@@ -72,7 +79,8 @@ func New(logger types.Logger) *server {
 	}
 
 	return &server{
-		logger: logger,
+		logger:  logger,
+		wsConns: map[*websocket.Conn]struct{}{},
 		gwPool: sync.Pool{
 			New: func() any {
 				return gzip.NewWriter(io.Discard)
@@ -88,6 +96,9 @@ func (s *server) Attach(settings Settings) (HTTPHandlerFunc, ConnContext, error)
 	s.wsUpgrader = websocket.Upgrader{
 		EnableCompression: settings.EnableCompression,
 	}
+	s.wsConnsMu.Lock()
+	s.wsConnsStopped = false
+	s.wsConnsMu.Unlock()
 	return s.httpHandler, contextWithConn, nil
 }
 
@@ -188,8 +199,7 @@ func (s *server) startHttpServer(listenAddr string, listener net.Listener, serve
 func (s *server) Stop(ctx context.Context) error {
 	if s.httpServer != nil {
 		defer func() { s.httpServer = nil }()
-		// This stops accepting new connections. TODO: close existing
-		// connections and wait them to be terminated.
+		// This stops accepting new connections and closes plain HTTP connections.
 		err := s.httpServer.Shutdown(ctx)
 		if err != nil {
 			return err
@@ -201,7 +211,50 @@ func (s *server) Stop(ctx context.Context) error {
 			s.httpServerServeWg.Wait()
 		}
 	}
-	return nil
+	return s.closeWSConnections(ctx)
+}
+
+// closeWSConnections closes all open WebSocket connections and waits until
+// their handlers return. Connections upgraded after this are closed right away.
+func (s *server) closeWSConnections(ctx context.Context) error {
+	s.wsConnsMu.Lock()
+	s.wsConnsStopped = true
+	for conn := range s.wsConns {
+		_ = conn.Close()
+	}
+	s.wsConnsMu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		s.wsConnsWg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// trackWSConnection registers conn so that Stop can close it. It returns false
+// if the server is stopped, in which case the caller must close conn.
+func (s *server) trackWSConnection(conn *websocket.Conn) bool {
+	s.wsConnsMu.Lock()
+	defer s.wsConnsMu.Unlock()
+	if s.wsConnsStopped {
+		return false
+	}
+	s.wsConns[conn] = struct{}{}
+	s.wsConnsWg.Add(1)
+	return true
+}
+
+func (s *server) untrackWSConnection(conn *websocket.Conn) {
+	s.wsConnsMu.Lock()
+	delete(s.wsConns, conn)
+	s.wsConnsMu.Unlock()
+	s.wsConnsWg.Done()
 }
 
 func (s *server) Addr() net.Addr {
@@ -239,9 +292,17 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if !s.trackWSConnection(conn) {
+		_ = conn.Close()
+		return
+	}
+
 	// Return from this func to reduce memory usage.
 	// Handle the connection on a separate goroutine.
-	go s.handleWSConnection(req.Context(), conn, &connectionCallbacks)
+	go func() {
+		defer s.untrackWSConnection(conn)
+		s.handleWSConnection(req.Context(), conn, &connectionCallbacks)
+	}()
 }
 
 func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Conn, connectionCallbacks *serverTypes.ConnectionCallbacks) {
