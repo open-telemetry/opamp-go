@@ -1,6 +1,7 @@
 package testhelpers
 
 import (
+	"errors"
 	"log"
 	"net"
 	"sync/atomic"
@@ -15,6 +16,7 @@ type TCPProxy struct {
 	incomingHostPort string
 
 	stopSignal chan struct{}
+	listener   net.Listener
 
 	// Byte counters in both directions.
 	clientToServerBytes int64
@@ -34,6 +36,7 @@ func (p *TCPProxy) Start() error {
 
 	// Remember the port that we listen on.
 	p.incomingHostPort = ln.Addr().String()
+	p.listener = ln
 
 	p.stopSignal = make(chan struct{})
 
@@ -46,6 +49,9 @@ func (p *TCPProxy) Start() error {
 			default:
 			}
 			conn, err := ln.Accept()
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
 			if err != nil {
 				log.Printf("Failed to Accept TCP connection: %v\n", err.Error())
 				return
@@ -59,6 +65,8 @@ func (p *TCPProxy) Start() error {
 
 func (p *TCPProxy) Stop() {
 	close(p.stopSignal)
+	// Unblock Accept, which does not observe stopSignal.
+	p.listener.Close()
 }
 
 func (p *TCPProxy) IncomingEndpoint() string {

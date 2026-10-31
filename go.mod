@@ -9,10 +9,12 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/madflojo/testcerts v1.5.0
 	github.com/stretchr/testify v1.12.0
+	go.uber.org/goleak v1.3.0
 	google.golang.org/protobuf v1.36.11
 )
 
 require (
+	github.com/kr/text v0.2.0 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

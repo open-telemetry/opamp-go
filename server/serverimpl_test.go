@@ -124,6 +124,30 @@ func TestServerStartStopWithMiddleware(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestServerStopClosesWebSocketConnections(t *testing.T) {
+	var connected, closed atomic.Bool
+	callbacks := types.Callbacks{
+		OnConnecting: func(request *http.Request) types.ConnectionResponse {
+			return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+				OnConnected:       func(ctx context.Context, conn types.Connection) { connected.Store(true) },
+				OnConnectionClose: func(conn types.Connection) { closed.Store(true) },
+			}}
+		},
+	}
+	settings := &StartSettings{Settings: Settings{Callbacks: callbacks}}
+	srv := startServer(t, settings)
+
+	conn, _, err := dialClient(settings)
+	require.NoError(t, err)
+	defer conn.Close()
+	eventually(t, func() bool { return connected.Load() })
+
+	require.NoError(t, srv.Stop(context.Background()))
+
+	// Stop must not return before the connection is closed.
+	assert.True(t, closed.Load())
+}
+
 func TestServerAddrWithNonZeroPort(t *testing.T) {
 	srv := New(&sharedinternal.NopLogger{})
 	require.NotNil(t, srv)
@@ -661,7 +685,8 @@ func TestServerReceiveSendMessageWithCompression(t *testing.T) {
 			// We use a transparent TCP proxy to be able to count the actual bytes transferred so that
 			// we can test the number of actual bytes vs number of expected bytes with and without compression.
 			proxy := testhelpers.NewProxy(settings.ListenEndpoint)
-			assert.NoError(t, proxy.Start())
+			require.NoError(t, proxy.Start())
+			defer proxy.Stop()
 
 			serverSettings := *settings
 			serverSettings.ListenEndpoint = proxy.IncomingEndpoint()
@@ -1317,23 +1342,25 @@ func TestServerCallsHTTPMiddlewareOverHTTP(t *testing.T) {
 	sendMsg1 := protobufs.AgentToServer{InstanceUid: []byte("0123456789123456")}
 	serializedProtoBytes1, err := proto.Marshal(&sendMsg1)
 	require.NoError(t, err)
-	_, err = http.Post(
+	resp, err := http.Post(
 		"http://"+settings.ListenEndpoint+settings.ListenPath,
 		contentTypeProtobuf,
 		bytes.NewReader(serializedProtoBytes1),
 	)
 	require.NoError(t, err)
+	resp.Body.Close()
 
 	// Send another AgentToServer message to the Server
 	sendMsg2 := protobufs.AgentToServer{InstanceUid: []byte("0123456789000000")}
 	serializedProtoBytes2, err := proto.Marshal(&sendMsg2)
 	require.NoError(t, err)
-	_, err = http.Post(
+	resp, err = http.Post(
 		"http://"+settings.ListenEndpoint+settings.ListenPath,
 		contentTypeProtobuf,
 		bytes.NewReader(serializedProtoBytes2),
 	)
 	require.NoError(t, err)
+	resp.Body.Close()
 
 	// Verify middleware was triggered for each HTTP call
 	eventually(t, func() bool { return atomic.LoadInt32(&middlewareCalled) == int32(2) })
