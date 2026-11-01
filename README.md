@@ -46,7 +46,6 @@ For more information about the maintainer role, see the [community repository](h
 ### Approvers
 
 - [Evan Bradley](https://github.com/evan-bradley), Dynatrace
-- [Michel Laterman](https://github.com/michel-laterman), Elastic
 
 For more information about the approver role, see the [community repository](https://github.com/open-telemetry/community/blob/main/guides/contributor/membership.md#approver).
 
@@ -64,3 +63,10 @@ For more information about the emeritus role, see the [community repository](htt
 <a href="https://github.com/open-telemetry/opamp-go/graphs/contributors">
   <img alt="Repo contributors" src="https://contrib.rocks/image?repo=open-telemetry/opamp-go" />
 </a>
+
+### Emeritus
+
+- [Michel Laterman](https://github.com/michel-laterman), Approver
+
+For more information about the emeritus role, see the
+[community repository](https://github.com/open-telemetry/community/blob/main/guides/contributor/membership.md#emeritus-maintainerapprovertriager).
