@@ -129,6 +129,11 @@ func (c *httpClient) SetConnectionSettingsStatus(status *protobufs.ConnectionSet
 	return c.common.SetConnectionSettingsStatus(status)
 }
 
+// SetCommandStatus implements OpAMPClient.SetCommandStatus.
+func (c *httpClient) SetCommandStatus(status *protobufs.CommandStatus) error {
+	return c.common.SetCommandStatus(status)
+}
+
 // SetPackageStatuses implements OpAMPClient.SetPackageStatuses.
 func (c *httpClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) error {
 	return c.common.SetPackageStatuses(statuses)

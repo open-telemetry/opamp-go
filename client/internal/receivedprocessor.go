@@ -258,6 +258,9 @@ func (r *receivedProcessor) rcvFlags(
 				if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) {
 					msg.ConnectionSettingsStatus = r.clientSyncedState.ConnectionSettingsStatus()
 				}
+				if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsCommandStatus) {
+					msg.CommandStatus = r.clientSyncedState.CommandStatus()
+				}
 
 				// The logic for EffectiveConfig is similar to the previous 6 sub-messages however
 				// the EffectiveConfig is fetched using GetEffectiveConfig instead of
@@ -369,7 +372,44 @@ func (r *receivedProcessor) rcvAgentIdentification(ctx context.Context, agentId 
 }
 
 func (r *receivedProcessor) rcvCommand(ctx context.Context, command *protobufs.ServerToAgentCommand) {
-	if command != nil {
-		r.callbacks.OnCommand(ctx, command)
+	if command == nil {
+		return
 	}
+
+	reportsStatus := r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsCommandStatus)
+	if reportsStatus {
+		r.setCommandStatus(ctx, &protobufs.CommandStatus{
+			CommandId: command.CommandId,
+			Type:      command.Type,
+			Status:    protobufs.CommandStatuses_CommandStatuses_EXECUTING,
+		})
+	}
+
+	err := r.callbacks.OnCommand(ctx, command)
+	if err == nil {
+		// The Agent is responsible for reporting COMPLETED, since the command
+		// may still be in progress after OnCommand returns.
+		return
+	}
+
+	r.logger.Errorf(ctx, "Failed to execute command %s: %v", command.Type, err)
+	if reportsStatus {
+		r.setCommandStatus(ctx, &protobufs.CommandStatus{
+			CommandId:    command.CommandId,
+			Type:         command.Type,
+			Status:       protobufs.CommandStatuses_CommandStatuses_FAILED,
+			ErrorMessage: err.Error(),
+		})
+	}
+}
+
+func (r *receivedProcessor) setCommandStatus(ctx context.Context, status *protobufs.CommandStatus) {
+	if err := r.clientSyncedState.SetCommandStatus(status); err != nil {
+		r.logger.Errorf(ctx, "Unable to persist command status: %v", err)
+		return
+	}
+	r.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.CommandStatus = status
+	})
+	r.sender.ScheduleSend()
 }

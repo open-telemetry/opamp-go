@@ -187,6 +187,11 @@ func (c *wsClient) SetConnectionSettingsStatus(status *protobufs.ConnectionSetti
 	return c.common.SetConnectionSettingsStatus(status)
 }
 
+// SetCommandStatus sets the current CommandStatus and sends it to the Server.
+func (c *wsClient) SetCommandStatus(status *protobufs.CommandStatus) error {
+	return c.common.SetCommandStatus(status)
+}
+
 func (c *wsClient) SetPackageStatuses(statuses *protobufs.PackageStatuses) error {
 	return c.common.SetPackageStatuses(statuses)
 }
