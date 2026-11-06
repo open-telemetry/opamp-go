@@ -98,6 +98,15 @@ type OpAMPClient interface {
 	// asynchronously after the callback returns.
 	SetConnectionSettingsStatus(status *protobufs.ConnectionSettingsStatus) error
 
+	// SetCommandStatus sets the current CommandStatus and sends it to the Server.
+	// Requires the ReportsCommandStatus capability.
+	// May be called anytime after Start(), including from OnCommand handler.
+	// nil values are not allowed and will return an error.
+	// The client automatically reports EXECUTING when a command is received and
+	// FAILED if OnCommand returns an error. The Agent must report COMPLETED
+	// once the command is done, which may happen after OnCommand returns.
+	SetCommandStatus(status *protobufs.CommandStatus) error
+
 	// SetCustomCapabilities modifies the set of customCapabilities supported by the client.
 	// The new customCapabilities will be sent with the next message to the server. If
 	// custom capabilities are used SHOULD be called before Start(). If not called before

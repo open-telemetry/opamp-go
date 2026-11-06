@@ -122,6 +122,11 @@ type Callbacks struct {
 	GetEffectiveConfig func(ctx context.Context) (*protobufs.EffectiveConfig, error)
 
 	// OnCommand is called when the Server requests that the connected Agent perform a command.
+	//
+	// If the Agent has the ReportsCommandStatus capability, the client reports
+	// EXECUTING before calling OnCommand and FAILED if OnCommand returns an error.
+	// The Agent must report COMPLETED via OpAMPClient.SetCommandStatus once the
+	// command is done, which may happen after OnCommand returns.
 	OnCommand func(ctx context.Context, command *protobufs.ServerToAgentCommand) error
 
 	// CheckRedirect is called before following a redirect, allowing the client

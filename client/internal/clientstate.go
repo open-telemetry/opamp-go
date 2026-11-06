@@ -13,6 +13,7 @@ var (
 	errRemoteConfigStatusMissing        = errors.New("RemoteConfigStatus is not set")
 	errLastRemoteConfigHashNil          = errors.New("LastRemoteConfigHash is nil")
 	errConnectionSettingsStatusMissing  = errors.New("ConnectionSettingsStatus is not set")
+	errCommandStatusMissing             = errors.New("CommandStatus is not set")
 	errPackageStatusesMissing           = errors.New("PackageStatuses is not set")
 	errServerProvidedAllPackagesHashNil = errors.New("ServerProvidedAllPackagesHash is nil")
 	errCustomCapabilitiesMissing        = errors.New("CustomCapabilities is not set")
@@ -41,6 +42,7 @@ type ClientSyncedState struct {
 	health                   *protobufs.ComponentHealth
 	remoteConfigStatus       *protobufs.RemoteConfigStatus
 	connectionSettingsStatus *protobufs.ConnectionSettingsStatus
+	commandStatus            *protobufs.CommandStatus
 	// lastConnectionSettingsHash is the hash of the last ConnectionSettingsOffers
 	// the client processed. Tracked independently of connectionSettingsStatus so
 	// that hash-based skip logic works even when the ReportsConnectionSettingsStatus
@@ -75,6 +77,12 @@ func (s *ClientSyncedState) ConnectionSettingsStatus() *protobufs.ConnectionSett
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	return s.connectionSettingsStatus
+}
+
+func (s *ClientSyncedState) CommandStatus() *protobufs.CommandStatus {
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	return s.commandStatus
 }
 
 // LastConnectionSettingsHash returns the hash of the last ConnectionSettingsOffers
@@ -183,6 +191,20 @@ func (s *ClientSyncedState) SetConnectionSettingsStatus(status *protobufs.Connec
 	defer s.mutex.Unlock()
 	s.mutex.Lock()
 	s.connectionSettingsStatus = clone
+	return nil
+}
+
+// SetCommandStatus sets the CommandStatus in the state.
+func (s *ClientSyncedState) SetCommandStatus(status *protobufs.CommandStatus) error {
+	if status == nil {
+		return errCommandStatusMissing
+	}
+
+	clone := proto.Clone(status).(*protobufs.CommandStatus)
+
+	defer s.mutex.Unlock()
+	s.mutex.Lock()
+	s.commandStatus = clone
 	return nil
 }
 
