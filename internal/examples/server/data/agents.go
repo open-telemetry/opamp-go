@@ -83,23 +83,47 @@ func (agents *Agents) FindAgent(agentId InstanceId) *Agent {
 }
 
 func (agents *Agents) FindOrCreateAgent(agentId InstanceId, conn types.Connection) *Agent {
+	return agents.findOrCreateAgent(agentId, conn, false)
+}
+
+// FindOrCreateHTTPAgent retains an Agent across HTTP requests and TCP connections.
+func (agents *Agents) FindOrCreateHTTPAgent(agentId InstanceId, conn types.Connection) *Agent {
+	return agents.findOrCreateAgent(agentId, conn, true)
+}
+
+func (agents *Agents) findOrCreateAgent(agentId InstanceId, conn types.Connection, isHTTP bool) *Agent {
 	agents.mux.Lock()
 	defer agents.mux.Unlock()
 
 	// Ensure the Agent is in the agentsById map.
 	agent := agents.agentsById[agentId]
 	if agent == nil {
+		if isHTTP {
+			conn = &httpAgentConnection{conn: conn}
+		}
 		agent = NewAgent(agentId, conn)
 		agents.agentsById[agentId] = agent
 
 		// Ensure the Agent's instance id is associated with the connection.
-		if agents.connections[conn] == nil {
-			agents.connections[conn] = map[InstanceId]bool{}
+		if !isHTTP {
+			if agents.connections[conn] == nil {
+				agents.connections[conn] = map[InstanceId]bool{}
+			}
+			agents.connections[conn][agentId] = true
 		}
-		agents.connections[conn][agentId] = true
 	}
 
 	return agent
+}
+
+func (agents *Agents) RemoveHTTPAgent(agentId InstanceId) {
+	agents.mux.Lock()
+	defer agents.mux.Unlock()
+	if agent := agents.agentsById[agentId]; agent != nil {
+		if _, ok := agent.conn.(*httpAgentConnection); ok {
+			delete(agents.agentsById, agentId)
+		}
+	}
 }
 
 func (agents *Agents) GetAgentReadonlyClone(agentId InstanceId) *Agent {

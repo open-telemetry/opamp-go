@@ -232,6 +232,12 @@ func (agent *Agent) UpdateStatus(
 
 	statusUpdateWatchers := agent.statusUpdateWatchers
 	agent.statusUpdateWatchers = nil
+	if conn, ok := agent.conn.(*httpAgentConnection); ok {
+		if notify := conn.addPendingMessage(response); notify != nil {
+			// The next status update can acknowledge the config sent in this response.
+			agent.statusUpdateWatchers = append(agent.statusUpdateWatchers, notify)
+		}
+	}
 
 	agent.mux.Unlock()
 
@@ -448,6 +454,14 @@ func (agent *Agent) SetCustomConfig(
 
 	configChanged := agent.calcRemoteConfig()
 	if configChanged {
+		msg := &protobufs.ServerToAgent{
+			RemoteConfig: agent.remoteConfig,
+		}
+		if conn, ok := agent.conn.(*httpAgentConnection); ok {
+			conn.enqueue(msg, notifyWhenConfigIsApplied)
+			agent.mux.Unlock()
+			return
+		}
 		if notifyWhenConfigIsApplied != nil {
 			// The caller wants to be notified when the Agent reports a status
 			// update next time. This is typically used in the UI to wait until
@@ -456,9 +470,6 @@ func (agent *Agent) SetCustomConfig(
 				agent.statusUpdateWatchers,
 				notifyWhenConfigIsApplied,
 			)
-		}
-		msg := &protobufs.ServerToAgent{
-			RemoteConfig: agent.remoteConfig,
 		}
 		agent.mux.Unlock()
 

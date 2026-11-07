@@ -55,12 +55,18 @@ func (srv *Server) Start(noTLS bool) {
 		Settings: server.Settings{
 			Callbacks: types.Callbacks{
 				OnConnecting: func(request *http.Request) types.ConnectionResponse {
+					onMessage := srv.onMessage
+					onClose := srv.onDisconnect
+					if request.Header.Get("Content-Type") == "application/x-protobuf" {
+						onMessage = srv.onHTTPMessage
+						onClose = func(types.Connection) { srv.metrics.OnDisconnect(context.Background()) }
+					}
 					return types.ConnectionResponse{
 						Accept: true,
 						ConnectionCallbacks: types.ConnectionCallbacks{
 							OnConnected:       func(ctx context.Context, _ types.Connection) { srv.metrics.OnConnected(ctx) },
-							OnMessage:         srv.onMessage,
-							OnConnectionClose: srv.onDisconnect,
+							OnMessage:         onMessage,
+							OnConnectionClose: onClose,
 							OnReadMessageError: func(_ types.Connection, _ int, _ []byte, _ error) {
 								srv.metrics.OnReadMessageError(context.Background())
 							},
@@ -117,6 +123,14 @@ const serverCapabilities = uint64(protobufs.ServerCapabilities_ServerCapabilitie
 	protobufs.ServerCapabilities_ServerCapabilities_AcceptsConnectionSettingsRequest)
 
 func (srv *Server) onMessage(ctx context.Context, conn types.Connection, msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+	return srv.handleMessage(ctx, conn, msg, false)
+}
+
+func (srv *Server) onHTTPMessage(ctx context.Context, conn types.Connection, msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+	return srv.handleMessage(ctx, conn, msg, true)
+}
+
+func (srv *Server) handleMessage(ctx context.Context, conn types.Connection, msg *protobufs.AgentToServer, isHTTP bool) *protobufs.ServerToAgent {
 	// Start building the response.
 	response := &protobufs.ServerToAgent{Capabilities: serverCapabilities}
 
@@ -139,10 +153,18 @@ func (srv *Server) onMessage(ctx context.Context, conn types.Connection, msg *pr
 
 	srv.logger.Debugf(ctx, "AgentToServer: InstanceUid=%x, %s", instanceId, formatAgentToServer(msg))
 
-	agent := srv.agents.FindOrCreateAgent(instanceId, conn)
+	var agent *data.Agent
+	if isHTTP {
+		agent = srv.agents.FindOrCreateHTTPAgent(instanceId, conn)
+	} else {
+		agent = srv.agents.FindOrCreateAgent(instanceId, conn)
+	}
 
 	// Process the status report and continue building the response.
 	agent.UpdateStatus(msg, response)
+	if isHTTP && msg.AgentDisconnect != nil {
+		srv.agents.RemoveHTTPAgent(instanceId)
+	}
 
 	// Send the response back to the Agent.
 	srv.logger.Debugf(ctx, "ServerToAgent: InstanceUid=%x, %s", instanceId, formatServerToAgent(response))
