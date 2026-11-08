@@ -8,5 +8,5 @@
   "gitIgnoredAuthors": [
     "197425009+otelbot@users.noreply.github.com"
   ],
-  "postUpdateOptions": ["gomodTidyAll, "gomodUpdateImportPaths"]
+  "postUpdateOptions": ["gomodTidyAll", "gomodUpdateImportPaths"]
 }
