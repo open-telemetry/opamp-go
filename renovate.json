@@ -5,5 +5,5 @@
     "helpers:pinGitHubActionDigestsToSemver"
   ],
   "ignorePaths": [],
-  "postUpdateOptions": ["gomodTidy"]
+  "postUpdateOptions": ["gomodTidyAll, "gomodUpdateImportPaths"]
 }
