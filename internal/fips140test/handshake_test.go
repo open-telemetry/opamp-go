@@ -1,3 +1,5 @@
+//go:build go1.26
+
 //go:debug fips140=only
 
 package fips140test
