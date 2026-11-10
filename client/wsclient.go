@@ -284,7 +284,14 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinterna
 			}
 		}
 	}()
-	conn, resp, err := c.dialer.DialContext(ctx, c.url.String(), c.getHeader())
+	// The handshake checks Sec-WebSocket-Accept, a SHA-1 digest mandated by
+	// RFC 6455, so run the dial outside strict FIPS 140-3 enforcement
+	// (GODEBUG=fips140=only) or it panics. TLS negotiation is not affected,
+	// crypto/tls keeps its FIPS-only algorithm selection in every mode.
+	var conn *websocket.Conn
+	sharedinternal.WithoutFIPSEnforcement(func() {
+		conn, resp, err = c.dialer.DialContext(ctx, c.url.String(), c.getHeader())
+	})
 	if err != nil {
 		if !c.common.IsStopping() {
 			c.common.Callbacks.OnConnectFailed(ctx, err)

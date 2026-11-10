@@ -233,7 +233,13 @@ func (s *server) httpHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// No, it is a WebSocket. Upgrade it.
-	conn, err := s.wsUpgrader.Upgrade(w, req, nil)
+	// The handshake computes Sec-WebSocket-Accept with SHA-1 as RFC 6455 requires, so run it outside
+	// strict FIPS 140-3 enforcement (GODEBUG=fips140=only) or it panics.
+	var conn *websocket.Conn
+	var err error
+	internal.WithoutFIPSEnforcement(func() {
+		conn, err = s.wsUpgrader.Upgrade(w, req, nil)
+	})
 	if err != nil {
 		s.logger.Errorf(req.Context(), "Cannot upgrade HTTP connection to WebSocket: %v", err)
 		return
