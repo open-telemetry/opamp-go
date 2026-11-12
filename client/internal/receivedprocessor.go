@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/types"
+	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
 )
 
@@ -60,7 +62,8 @@ func newReceivedProcessor(
 // ProcessReceivedMessage is the entry point into the processing routine. It examines
 // the received message and performs any processing necessary based on what fields are set.
 // This function will call any relevant callbacks.
-func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) {
+// It returns the retry delay supplied in a processed UNAVAILABLE response.
+func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *protobufs.ServerToAgent) (retryAfter internal.OptionalDuration) {
 	// Note that anytime we add a new command capabilities we need to add a check here.
 	// This is because we want to ignore commands that the agent does not have the capability
 	// to process.
@@ -68,7 +71,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 		if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand) {
 			r.rcvCommand(ctx, msg.Command)
 			// If a command message exists, other messages will be ignored
-			return
+			return internal.OptionalDuration{}
 		} else {
 			r.logger.Debugf(ctx, "Ignoring Command, agent does not have AcceptsCommands capability")
 		}
@@ -207,10 +210,7 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 		r.sender.ScheduleSend()
 	}
 
-	errResponse := msg.GetErrorResponse()
-	if errResponse != nil {
-		r.processErrorResponse(ctx, errResponse)
-	}
+	return r.processErrorResponse(ctx, msg.GetErrorResponse())
 }
 
 func (r *receivedProcessor) hasCapability(capability protobufs.AgentCapabilities) bool {
@@ -343,10 +343,20 @@ func (r *receivedProcessor) rcvConnectionSettings(ctx context.Context, settings 
 	}
 }
 
-func (r *receivedProcessor) processErrorResponse(ctx context.Context, body *protobufs.ServerErrorResponse) {
-	if body != nil {
-		r.callbacks.OnError(ctx, body)
+func (r *receivedProcessor) processErrorResponse(ctx context.Context, body *protobufs.ServerErrorResponse) (retryAfter internal.OptionalDuration) {
+	if body == nil {
+		return internal.OptionalDuration{}
 	}
+
+	if info := body.GetRetryInfo(); info != nil &&
+		body.GetType() == protobufs.ServerErrorResponseType_ServerErrorResponseType_Unavailable {
+		retryAfter = internal.OptionalDuration{
+			Defined:  true,
+			Duration: time.Duration(min(info.GetRetryAfterNanoseconds(), math.MaxInt64)),
+		}
+	}
+	r.callbacks.OnError(ctx, body)
+	return retryAfter
 }
 
 func (r *receivedProcessor) rcvAgentIdentification(ctx context.Context, agentId *protobufs.AgentIdentification) error {

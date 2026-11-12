@@ -1347,3 +1347,82 @@ func TestWSClientBackoffPolicyNegativeInterval(t *testing.T) {
 	err := client.Stop(context.Background())
 	assert.NoError(t, err)
 }
+
+func TestWSClientUnavailable(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		delay time.Duration
+		stop  bool
+	}{
+		{name: "reconnect", delay: 200 * time.Millisecond},
+		{name: "stop", delay: time.Minute, stop: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := internal.StartMockServer(t)
+			t.Cleanup(srv.Close)
+
+			var dials atomic.Int32
+			var closedAt, reconnectedAt atomic.Pointer[time.Time]
+			var disconnectSent atomic.Bool
+			var sent atomic.Bool
+			srv.SetOnConnect(func(*http.Request) {
+				if dials.Add(1) == 2 {
+					now := time.Now()
+					reconnectedAt.Store(&now)
+				}
+			})
+			srv.SetOnWSConnect(func(conn *websocket.Conn) {
+				handleClose := conn.CloseHandler()
+				conn.SetCloseHandler(func(code int, text string) error {
+					now := time.Now()
+					closedAt.CompareAndSwap(nil, &now)
+					return handleClose(code, text)
+				})
+			})
+			srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+				if msg.GetAgentDisconnect() != nil {
+					disconnectSent.Store(true)
+				}
+				if sent.Swap(true) {
+					return nil
+				}
+				return &protobufs.ServerToAgent{ErrorResponse: &protobufs.ServerErrorResponse{
+					Type: protobufs.ServerErrorResponseType_ServerErrorResponseType_Unavailable,
+					Details: &protobufs.ServerErrorResponse_RetryInfo{
+						RetryInfo: &protobufs.RetryInfo{RetryAfterNanoseconds: uint64(tt.delay)},
+					},
+				}}
+			})
+
+			client := NewWebSocket(nil)
+			stop := sync.OnceFunc(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				assert.NoError(t, client.Stop(ctx))
+			})
+			t.Cleanup(stop)
+			policy := &mockBackoffPolicy{interval: time.Second}
+			startClient(t, types.StartSettings{
+				OpAMPServerURL: "ws://" + srv.Endpoint,
+				BackoffPolicy:  func() types.BackoffPolicy { return policy },
+			}, client)
+
+			eventually(t, func() bool { return closedAt.Load() != nil })
+			closed := closedAt.Load()
+			require.NotNil(t, closed)
+			assert.True(t, disconnectSent.Load())
+
+			if tt.stop {
+				eventually(t, func() bool { return policy.calls.Load() > 1 })
+				stop()
+				assert.EqualValues(t, 1, dials.Load())
+				return
+			}
+
+			eventually(t, func() bool { return reconnectedAt.Load() != nil })
+			reconnected := reconnectedAt.Load()
+			require.NotNil(t, reconnected)
+			assert.GreaterOrEqual(t, reconnected.Sub(*closed), tt.delay)
+		})
+	}
+}

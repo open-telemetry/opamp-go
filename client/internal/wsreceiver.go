@@ -22,6 +22,9 @@ type wsReceiver struct {
 
 	// Indicates that the receiver has fully stopped.
 	stopped chan struct{}
+
+	onThrottle func()
+	retryAfter internal.OptionalDuration
 }
 
 // NewWSReceiver creates a new Receiver that uses WebSocket to receive
@@ -49,13 +52,19 @@ func NewWSReceiver(
 }
 
 // Start starts the receiver loop.
-func (r *wsReceiver) Start(ctx context.Context) {
+func (r *wsReceiver) Start(ctx context.Context, onThrottle func()) {
+	r.onThrottle = onThrottle
 	go r.ReceiverLoop(ctx)
 }
 
 // IsStopped returns a channel that's closed when the receiver is stopped.
 func (r *wsReceiver) IsStopped() <-chan struct{} {
 	return r.stopped
+}
+
+// RetryAfter must be called after IsStopped is closed.
+func (r *wsReceiver) RetryAfter() time.Duration {
+	return r.retryAfter.Duration
 }
 
 // ReceiverLoop runs the receiver loop.
@@ -92,7 +101,15 @@ func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 					}
 					return
 				}
-				r.processor.ProcessReceivedMessage(ctx, res.message)
+				if r.retryAfter.Defined {
+					// Keep reading for the WebSocket close handshake.
+					continue
+				}
+
+				r.retryAfter = r.processor.ProcessReceivedMessage(ctx, res.message)
+				if r.retryAfter.Defined && r.onThrottle != nil {
+					r.onThrottle()
+				}
 			}
 		}
 	}
