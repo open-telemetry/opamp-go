@@ -146,6 +146,11 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 }
 
 func (c *wsClient) Stop(ctx context.Context) error {
+	c.scheduleAgentDisconnect()
+	return c.common.Stop(ctx)
+}
+
+func (c *wsClient) scheduleAgentDisconnect() {
 	// AgentDisconnect MUST be set in the last AgentToServer message sent from the Client to the Server.
 	c.sender.NextMessage().Update(
 		func(msg *protobufs.AgentToServer) {
@@ -153,7 +158,6 @@ func (c *wsClient) Stop(ctx context.Context) error {
 		},
 	)
 	c.sender.ScheduleSend()
-	return c.common.Stop(ctx)
 }
 
 func (c *wsClient) AgentDescription() *protobufs.AgentDescription {
@@ -318,7 +322,7 @@ func (c *wsClient) tryConnectOnce(ctx context.Context) (retryAfter sharedinterna
 
 // Continuously try until connected. Will return nil when successfully
 // connected. Will return error if it is cancelled via context.
-func (c *wsClient) ensureConnected(ctx context.Context) error {
+func (c *wsClient) ensureConnected(ctx context.Context, initialDelay time.Duration) error {
 	var bpolicy types.BackoffPolicy
 	if c.backoffPolicy != nil {
 		bpolicy = c.backoffPolicy()
@@ -328,21 +332,24 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 		bpolicy = b
 	}
 
-	interval := time.Duration(0)
+	interval := initialDelay
 
 	for {
-		timer := time.NewTimer(interval)
 		next := bpolicy.NextBackOff()
 		if next < 0 {
 			err := errors.New("invalid backoff policy time")
 			c.lastInternalErr.Store(&err)
 			return err
 		}
+		timer := time.NewTimer(interval)
 		interval = next
 
 		select {
 		case <-timer.C:
 			{
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				if retryAfter, err := c.tryConnectOnce(ctx); err != nil {
 					c.lastInternalErr.Store(&err)
 					if errors.Is(err, context.Canceled) {
@@ -386,17 +393,17 @@ func (c *wsClient) ensureConnected(ctx context.Context) error {
 // When Stop() is called (ctx is cancelled, isStopping is set), wsClient will shutdown gracefully:
 //  1. sender will be cancelled by the ctx, send the close message to server and return the error via sender.Err().
 //  2. runOneCycle will handle that error and wait for the close message from server until timeout.
-func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
-	if err := c.ensureConnected(ctx); err != nil {
+func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool, initialDelay time.Duration) time.Duration {
+	if err := c.ensureConnected(ctx, initialDelay); err != nil {
 		// Can't connect, so can't move forward. This currently happens when we
 		// are being stopped.
-		return
+		return 0
 	}
 	// Close the underlying connection.
 	defer c.conn.Close()
 
 	if c.common.IsStopping() {
-		return
+		return 0
 	}
 
 	if sendFirstMessage {
@@ -404,7 +411,7 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 		err := c.common.PrepareFirstMessage(ctx)
 		if err != nil {
 			c.common.Logger.Errorf(ctx, "cannot prepare the first message:%v", err)
-			return
+			return 0
 		}
 	} else {
 		// Send the next message even if it is empty
@@ -420,7 +427,7 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 	if err := c.sender.Start(senderCtx, c.conn); err != nil {
 		c.common.Logger.Errorf(senderCtx, "Failed to send message after connection: %v", err)
 		// We could not send the report, the only thing we can do is start over.
-		return
+		return 0
 	}
 
 	// First status report sent. Now loop to receive and process messages.
@@ -440,7 +447,10 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 	// until it received a Close message from the server which means the server has no more messages.
 	receiverCtx, stopReceiver := context.WithCancel(context.Background())
 	defer stopReceiver()
-	r.Start(receiverCtx)
+	r.Start(receiverCtx, func() {
+		c.scheduleAgentDisconnect()
+		stopSender()
+	})
 
 	select {
 	case <-c.sender.IsStopped():
@@ -463,23 +473,22 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 			<-r.IsStopped()
 		}
 	case <-r.IsStopped():
-		// If we exited receiverLoop it means there is a connection error, we cannot
-		// read messages anymore. We need to start over.
-
 		stopSender()
 		<-c.sender.IsStopped()
 	}
+	return r.RetryAfter()
 }
 
 func (c *wsClient) runUntilStopped(ctx context.Context) {
 	// Iterates until we detect that the client is stopping.
 	sendFirstMessage := true
+	var retryAfter time.Duration
 	for {
 		if c.common.IsStopping() {
 			return
 		}
 
-		c.runOneCycle(ctx, sendFirstMessage)
+		retryAfter = c.runOneCycle(ctx, sendFirstMessage, retryAfter)
 		sendFirstMessage = false
 	}
 }
