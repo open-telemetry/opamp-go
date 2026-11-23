@@ -26,6 +26,9 @@ type WSSender struct {
 	logger         types.Logger
 	maxMessageSize int64
 
+	// onMessageSent is called after each message is written to the connection.
+	onMessageSent func(ctx context.Context, msg *protobufs.AgentToServer, size int)
+
 	// Indicates that the sender has fully stopped.
 	stopped chan struct{}
 	err     error
@@ -43,6 +46,7 @@ func NewSender(logger types.Logger) *WSSender {
 		heartbeatIntervalUpdated: make(chan struct{}, 1),
 		heartbeatTimer:           time.NewTimer(0),
 		SenderCommon:             NewSenderCommon(),
+		onMessageSent:            func(context.Context, *protobufs.AgentToServer, int) {},
 	}
 	s.heartbeatIntervalMs.Store(defaultHeartbeatIntervalMs)
 	s.maxMessageSize = internal.DefaultMaxMessageSize
@@ -88,6 +92,16 @@ func (s *WSSender) SetHeartbeatInterval(d time.Duration) error {
 	default:
 	}
 	return nil
+}
+
+// SetOnMessageSent sets the function that is called after each message is
+// successfully written to the connection. It must be called before Start.
+// A nil value disables the notification.
+func (s *WSSender) SetOnMessageSent(f func(ctx context.Context, msg *protobufs.AgentToServer, size int)) {
+	if f == nil {
+		f = func(context.Context, *protobufs.AgentToServer, int) {}
+	}
+	s.onMessageSent = f
 }
 
 func (s *WSSender) SetMaxMessageSize(maxMessageSize int64) {
@@ -171,9 +185,11 @@ func (s *WSSender) sendNextMessage(ctx context.Context) error {
 }
 
 func (s *WSSender) sendMessage(ctx context.Context, msg *protobufs.AgentToServer) error {
-	if err := internal.WriteWSMessage(s.conn, msg, s.maxMessageSize); err != nil {
+	size, err := internal.WriteWSMessage(s.conn, msg, s.maxMessageSize)
+	if err != nil {
 		s.logger.Errorf(ctx, "Cannot write WS message: %v", err)
 		return err
 	}
+	s.onMessageSent(ctx, msg, size)
 	return nil
 }

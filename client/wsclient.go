@@ -89,6 +89,7 @@ func (c *wsClient) Start(ctx context.Context, settings types.StartSettings) erro
 	if err := c.common.PrepareStart(ctx, settings); err != nil {
 		return err
 	}
+	c.sender.SetOnMessageSent(c.common.Callbacks.OnMessageSent)
 
 	// Prepare connection settings.
 	c.dialer = *websocket.DefaultDialer
@@ -450,6 +451,10 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 
 			stopReceiver()
 			<-r.IsStopped()
+			if !c.common.IsStopping() {
+				// The sender failed on a broken connection, not because of Stop().
+				c.common.Callbacks.OnDisconnect(ctx, err)
+			}
 			break
 		}
 
@@ -468,6 +473,9 @@ func (c *wsClient) runOneCycle(ctx context.Context, sendFirstMessage bool) {
 
 		stopSender()
 		<-c.sender.IsStopped()
+		if !c.common.IsStopping() {
+			c.common.Callbacks.OnDisconnect(ctx, r.Err())
+		}
 	}
 }
 

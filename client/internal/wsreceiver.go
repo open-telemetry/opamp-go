@@ -22,6 +22,8 @@ type wsReceiver struct {
 
 	// Indicates that the receiver has fully stopped.
 	stopped chan struct{}
+	// err is the error that caused the receiver to stop, if any.
+	err error
 }
 
 // NewWSReceiver creates a new Receiver that uses WebSocket to receive
@@ -58,11 +60,19 @@ func (r *wsReceiver) IsStopped() <-chan struct{} {
 	return r.stopped
 }
 
+// Err returns the error that caused the receiver loop to exit, or nil if it
+// exited because its context was cancelled.
+// Err can be called only after IsStopped() is signalled.
+func (r *wsReceiver) Err() error {
+	return r.err
+}
+
 // ReceiverLoop runs the receiver loop.
 // To stop the receiver cancel the context and close the websocket connection
 func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 	type receivedMessage struct {
 		message *protobufs.ServerToAgent
+		size    int
 		err     error
 	}
 
@@ -78,8 +88,8 @@ func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 			// To stop this goroutine, close the websocket connection
 			go func() {
 				var message protobufs.ServerToAgent
-				err := r.receiveMessage(&message)
-				result <- receivedMessage{&message, err}
+				size, err := r.receiveMessage(&message)
+				result <- receivedMessage{&message, size, err}
 			}()
 
 			select {
@@ -90,7 +100,11 @@ func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 					if !websocket.IsCloseError(res.err, websocket.CloseNormalClosure) {
 						r.logger.Errorf(ctx, "Unexpected error while receiving: %v", res.err)
 					}
+					r.err = res.err
 					return
+				}
+				if r.callbacks.OnMessageReceived != nil {
+					r.callbacks.OnMessageReceived(ctx, res.message, res.size)
 				}
 				r.processor.ProcessReceivedMessage(ctx, res.message)
 			}
@@ -98,17 +112,17 @@ func (r *wsReceiver) ReceiverLoop(ctx context.Context) {
 	}
 }
 
-func (r *wsReceiver) receiveMessage(msg *protobufs.ServerToAgent) error {
+func (r *wsReceiver) receiveMessage(msg *protobufs.ServerToAgent) (int, error) {
 	mt, bytes, err := r.conn.ReadMessage()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if mt != websocket.BinaryMessage {
-		return fmt.Errorf("unsupported message type: %v", mt)
+		return 0, fmt.Errorf("unsupported message type: %v", mt)
 	}
 	err = internal.DecodeWSMessage(bytes, msg)
 	if err != nil {
-		return fmt.Errorf("cannot decode received message: %w", err)
+		return 0, fmt.Errorf("cannot decode received message: %w", err)
 	}
-	return err
+	return len(bytes), nil
 }
