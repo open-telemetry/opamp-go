@@ -95,6 +95,28 @@ func TestValidateChainRejections(t *testing.T) {
 	})
 }
 
+func TestValidateChainTrustAnchorEKU(t *testing.T) {
+	// An anchor restricted to code signing is fine.
+	key, err := newKey(AlgorithmECDSAP256SHA256)
+	require.NoError(t, err)
+	codeSigningRoot := issueCert(t, &x509.Certificate{
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning},
+	}, nil, key.Public(), key)
+	leaf, _ := newTestLeaf(t, AlgorithmECDSAP256SHA256, codeSigningRoot, key)
+	_, err = ValidateChain(t.Context(), ders(leaf), rootPool(codeSigningRoot), time.Now(), testHost)
+	require.NoError(t, err)
+
+	// One that could also anchor TLS is not, although crypto/x509 accepts it.
+	tlsRoot, tlsKey := newServerAuthCA(t)
+	leaf, _ = newTestLeaf(t, AlgorithmECDSAP256SHA256, tlsRoot, tlsKey)
+	_, err = ValidateChain(t.Context(), ders(leaf), rootPool(tlsRoot), time.Now(), testHost)
+	assert.ErrorIs(t, err, ErrChainValidation)
+	assert.ErrorIs(t, err, ErrTrustAnchorServerAuth)
+}
+
 func TestValidateChainMultipleSANs(t *testing.T) {
 	root, rootKey := newTestCA(t, AlgorithmECDSAP256SHA256)
 	leaf, _ := newTestLeaf(t, AlgorithmECDSAP256SHA256, root, rootKey, "gateway.example.com", "origin.example.com")

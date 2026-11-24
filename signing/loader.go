@@ -17,7 +17,8 @@ var ErrLoadCAFile = errors.New("signing: load CA file")
 var ErrParsePrivateKey = errors.New("signing: parse private key")
 
 // VerifierFromFile constructs a LocalVerifier trusting the PEM certificates
-// in the file at caPath. Non-CERTIFICATE blocks are ignored.
+// in the file at caPath. Non-CERTIFICATE blocks are ignored. A certificate
+// carrying id-kp-serverAuth fails with [ErrTrustAnchorServerAuth].
 func VerifierFromFile(caPath string) (*LocalVerifier, error) {
 	if caPath == "" {
 		return nil, fmt.Errorf("%w: empty path", ErrLoadCAFile)
@@ -25,6 +26,9 @@ func VerifierFromFile(caPath string) (*LocalVerifier, error) {
 	data, err := os.ReadFile(caPath)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrLoadCAFile, err)
+	}
+	if err := rejectServerAuthAnchors(data); err != nil {
+		return nil, fmt.Errorf("%w: %s: %w", ErrLoadCAFile, caPath, err)
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(data) {
@@ -34,16 +38,37 @@ func VerifierFromFile(caPath string) (*LocalVerifier, error) {
 }
 
 // VerifierFromPEM constructs a LocalVerifier trusting the PEM certificates
-// in pemBytes.
+// in pemBytes. A certificate carrying id-kp-serverAuth fails with
+// [ErrTrustAnchorServerAuth].
 func VerifierFromPEM(pemBytes []byte) (*LocalVerifier, error) {
 	if len(pemBytes) == 0 {
 		return nil, fmt.Errorf("%w: empty PEM bytes", ErrLoadCAFile)
+	}
+	if err := rejectServerAuthAnchors(pemBytes); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrLoadCAFile, err)
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(pemBytes) {
 		return nil, fmt.Errorf("%w: no valid PEM certificates in supplied bytes", ErrLoadCAFile)
 	}
 	return NewLocalVerifier(pool)
+}
+
+// rejectServerAuthAnchors returns ErrTrustAnchorServerAuth if a certificate
+// in pemBytes carries id-kp-serverAuth, so the anchor fails at load rather
+// than on every connection. Certificates that do not parse are left to
+// AppendCertsFromPEM, which skips them.
+func rejectServerAuthAnchors(pemBytes []byte) error {
+	for _, der := range pemCertificates(pemBytes) {
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			continue
+		}
+		if hasServerAuth(cert) {
+			return fmt.Errorf("%w: %s", ErrTrustAnchorServerAuth, cert.Subject)
+		}
+	}
+	return nil
 }
 
 // LocalSignerFromFiles constructs a LocalSigner from a PEM private key

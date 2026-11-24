@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -30,6 +31,11 @@ var (
 
 	// ErrHostnameMismatch is returned when the leaf's SANs do not cover dnsName.
 	ErrHostnameMismatch = errors.New("signing: leaf certificate not valid for server hostname")
+
+	// ErrTrustAnchorServerAuth is returned when a payload trust anchor carries
+	// the id-kp-serverAuth EKU, which the spec forbids so that a TLS CA cannot
+	// double as one.
+	ErrTrustAnchorServerAuth = errors.New("signing: trust anchor carries id-kp-serverAuth")
 )
 
 // VerifiedCertificate is a chain that has passed [ValidateChain]. Its fields
@@ -61,9 +67,10 @@ func (c *VerifiedCertificate) ValidAt(now time.Time) error {
 // trust_chain_response; the root is supplied via roots and MUST NOT appear
 // in it. The leaf MUST carry the id-kp-codeSigning EKU, so TLS server
 // certificates cannot be repurposed, and its SANs (dNSName or iPAddress)
-// must match dnsName, which MUST be non-empty. Other RFC 5280 checks are
-// enforced by crypto/x509. Revocation is not checked; the spec relies on
-// short-lived signing certificates instead.
+// must match dnsName, which MUST be non-empty. The root ending the path
+// MUST NOT carry id-kp-serverAuth (ErrTrustAnchorServerAuth). Other RFC
+// 5280 checks are enforced by crypto/x509. Revocation is not checked; the
+// spec relies on short-lived signing certificates instead.
 func ValidateChain(_ context.Context, chainDER [][]byte, roots *x509.CertPool, now time.Time, dnsName string) (*VerifiedCertificate, error) {
 	if len(chainDER) == 0 {
 		return nil, ErrEmptyChain
@@ -97,6 +104,11 @@ func isSelfSigned(cert *x509.Certificate) bool {
 		cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature) == nil
 }
 
+// hasServerAuth reports whether cert carries the id-kp-serverAuth EKU.
+func hasServerAuth(cert *x509.Certificate) bool {
+	return slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageServerAuth)
+}
+
 // verifyParsedChain validates a parsed chain (intermediates first, leaf
 // last) and returns the leaf.
 func verifyParsedChain(certs []*x509.Certificate, roots *x509.CertPool, now time.Time, dnsName string) (*x509.Certificate, error) {
@@ -115,7 +127,8 @@ func verifyParsedChain(certs []*x509.Certificate, roots *x509.CertPool, now time
 		DNSName:       dnsName,
 	}
 
-	if _, err := leaf.Verify(opts); err != nil {
+	chains, err := leaf.Verify(opts)
+	if err != nil {
 		var hostErr x509.HostnameError
 		if errors.As(err, &hostErr) {
 			return nil, fmt.Errorf("%w: %v", ErrHostnameMismatch, err)
@@ -123,5 +136,12 @@ func verifyParsedChain(certs []*x509.Certificate, roots *x509.CertPool, now time
 		return nil, fmt.Errorf("%w: %v", ErrChainValidation, err)
 	}
 
-	return leaf, nil
+	// Accept only a path that ends at a root without id-kp-serverAuth.
+	for _, chain := range chains {
+		if !hasServerAuth(chain[len(chain)-1]) {
+			return leaf, nil
+		}
+	}
+	anchor := chains[0][len(chains[0])-1]
+	return nil, fmt.Errorf("%w: %w: %s", ErrChainValidation, ErrTrustAnchorServerAuth, anchor.Subject)
 }

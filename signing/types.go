@@ -89,7 +89,8 @@ type TrustAnchorProvider interface {
 type Verifier interface {
 	// ValidateChain performs RFC 5280 path validation of chainDER
 	// (intermediates first, leaf last, root excluded) against the
-	// verifier's trust anchors.
+	// verifier's trust anchors, and MUST reject a path whose trust anchor
+	// carries id-kp-serverAuth, which the spec forbids.
 	//
 	// The leaf's SANs must match dnsName, the host the Agent connected to.
 	// dnsName MUST be non-empty (implementations fail closed otherwise) and

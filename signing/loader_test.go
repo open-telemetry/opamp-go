@@ -47,6 +47,12 @@ func TestVerifierFromFile(t *testing.T) {
 	require.NoError(t, err)
 	_, err = v.ValidateChain(t.Context(), ders(leaf), time.Now(), testHost)
 	assert.NoError(t, err)
+
+	// A trust anchor carrying id-kp-serverAuth fails at load, even in a bundle.
+	tlsRoot, _ := newServerAuthCA(t)
+	_, err = VerifierFromFile(writeFile(t, "bundle.pem", append(pemCert(root), pemCert(tlsRoot)...)))
+	assert.ErrorIs(t, err, ErrLoadCAFile)
+	assert.ErrorIs(t, err, ErrTrustAnchorServerAuth)
 }
 
 func TestVerifierFromPEM(t *testing.T) {
@@ -57,6 +63,11 @@ func TestVerifierFromPEM(t *testing.T) {
 
 	_, err = VerifierFromPEM([]byte("garbage"))
 	assert.ErrorIs(t, err, ErrLoadCAFile)
+
+	tlsRoot, _ := newServerAuthCA(t)
+	_, err = VerifierFromPEM(pemCert(tlsRoot))
+	assert.ErrorIs(t, err, ErrLoadCAFile)
+	assert.ErrorIs(t, err, ErrTrustAnchorServerAuth)
 
 	v, err := VerifierFromPEM(pemCert(root))
 	require.NoError(t, err)

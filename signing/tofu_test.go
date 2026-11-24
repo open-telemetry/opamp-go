@@ -112,6 +112,7 @@ func TestTOFUAnchorFromPEM(t *testing.T) {
 	nonCAKey, err := newKey(alg)
 	require.NoError(t, err)
 	nonCA := issueCert(t, &x509.Certificate{BasicConstraintsValid: true}, nil, nonCAKey.Public(), nonCAKey)
+	tlsRoot, _ := newServerAuthCA(t)
 
 	t.Run("root CA", func(t *testing.T) {
 		offered := append([]byte("Root CA for "+testHost+"\n"), pemCert(root)...)
@@ -137,6 +138,7 @@ func TestTOFUAnchorFromPEM(t *testing.T) {
 		{"leaf", "not a CA", pemCert(leaf)},
 		{"self-signed non-CA", "not a CA", pemCert(nonCA)},
 		{"intermediate CA", "not self-signed", pemCert(inter)},
+		{"root CA with serverAuth", "id-kp-serverAuth", pemCert(tlsRoot)},
 	}
 	for _, tc := range rejected {
 		t.Run(tc.name, func(t *testing.T) {

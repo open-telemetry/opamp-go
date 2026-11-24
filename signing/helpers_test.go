@@ -40,6 +40,22 @@ func newTestLeaf(t *testing.T, alg Algorithm, ca *x509.Certificate, caKey crypto
 	return leaf, key
 }
 
+// newServerAuthCA returns a self-signed CA carrying id-kp-serverAuth (with
+// code signing, so crypto/x509 alone would accept it), which the spec
+// forbids as a payload trust anchor.
+func newServerAuthCA(t *testing.T) (*x509.Certificate, crypto.Signer) {
+	t.Helper()
+	key, err := newKey(AlgorithmECDSAP256SHA256)
+	require.NoError(t, err)
+	ca := issueCert(t, &x509.Certificate{
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageCodeSigning},
+	}, nil, key.Public(), key)
+	return ca, key
+}
+
 func rootPool(certs ...*x509.Certificate) *x509.CertPool {
 	p := x509.NewCertPool()
 	for _, c := range certs {

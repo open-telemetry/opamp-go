@@ -108,11 +108,12 @@ func (s *FileTOFUStore) Save(pemBytes []byte) error {
 }
 
 // ErrInvalidTOFUAnchor is returned when a TOFU trust anchor is not a single
-// self-signed CA certificate in PEM form.
+// self-signed CA certificate, without id-kp-serverAuth, in PEM form.
 var ErrInvalidTOFUAnchor = errors.New("signing: invalid TOFU trust anchor")
 
 // TOFUAnchorFromPEM parses a TOFU trust anchor: exactly one PEM block, a
-// CERTIFICATE holding a self-signed CA; text around the block is ignored. It
+// CERTIFICATE holding a self-signed CA that does not carry id-kp-serverAuth
+// (see [ErrTrustAnchorServerAuth]); text around the block is ignored. It
 // returns a Verifier that trusts only that certificate, and the certificate
 // re-encoded as PEM, which is what should be persisted.
 //
@@ -139,6 +140,9 @@ func TOFUAnchorFromPEM(pemBytes []byte) (*LocalVerifier, []byte, error) {
 	}
 	if !isSelfSigned(cert) {
 		return nil, nil, fmt.Errorf("%w: not self-signed, so not a root", ErrInvalidTOFUAnchor)
+	}
+	if hasServerAuth(cert) {
+		return nil, nil, fmt.Errorf("%w: %w", ErrInvalidTOFUAnchor, ErrTrustAnchorServerAuth)
 	}
 	pool := x509.NewCertPool()
 	pool.AddCert(cert)
