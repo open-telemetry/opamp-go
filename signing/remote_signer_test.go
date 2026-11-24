@@ -45,7 +45,7 @@ func newPolicyServer(t *testing.T) *policyServer {
 	root, rootKey := newTestCA(t, AlgorithmECDSAP256SHA256)
 	p := &policyServer{t: t, root: root, rootKy: rootKey}
 	p.rotate()
-	p.srv = httptest.NewServer(http.HandlerFunc(p.handle))
+	p.srv = httptest.NewTLSServer(http.HandlerFunc(p.handle))
 	t.Cleanup(p.srv.Close)
 	return p
 }
@@ -132,6 +132,22 @@ func (p *policyServer) set(f func(p *policyServer)) {
 	f(p)
 }
 
+// newSigner returns a RemoteSigner for p, trusting its TLS certificate.
+// settings may set anything but BaseURL and Client.
+func (p *policyServer) newSigner(t *testing.T, settings RemoteSignerSettings) *RemoteSigner {
+	t.Helper()
+	settings.BaseURL, settings.Client = p.srv.URL, p.srv.Client()
+	rs, err := NewRemoteSigner(settings)
+	require.NoError(t, err)
+	return rs
+}
+
+// signer returns a RemoteSigner for p with default settings.
+func (p *policyServer) signer(t *testing.T) *RemoteSigner {
+	t.Helper()
+	return p.newSigner(t, RemoteSignerSettings{})
+}
+
 // assertVerifies checks res the way an Agent would.
 func (p *policyServer) assertVerifies(t *testing.T, res SignResult) {
 	t.Helper()
@@ -144,7 +160,8 @@ func (p *policyServer) assertVerifies(t *testing.T, res SignResult) {
 
 func TestRemoteSignerSign(t *testing.T) {
 	p := newPolicyServer(t)
-	rs := NewRemoteSigner(p.srv.URL + "/")
+	rs, err := NewRemoteSigner(RemoteSignerSettings{BaseURL: p.srv.URL + "/", Client: p.srv.Client()})
+	require.NoError(t, err)
 
 	payload := []byte("payload")
 	res, err := rs.Sign(t.Context(), payload)
@@ -160,8 +177,7 @@ func TestRemoteSignerSign(t *testing.T) {
 
 func TestRemoteSignerCacheDisabled(t *testing.T) {
 	p := newPolicyServer(t)
-	rs := NewRemoteSigner(p.srv.URL)
-	rs.SetChainCacheTTL(0)
+	rs := p.newSigner(t, RemoteSignerSettings{ChainCacheTTL: -1})
 
 	for i := 0; i < 3; i++ {
 		_, err := rs.Sign(t.Context(), []byte("p"))
@@ -181,7 +197,7 @@ func TestRemoteSignerErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			p := newPolicyServer(t)
 			p.set(setup)
-			_, err := NewRemoteSigner(p.srv.URL).Sign(t.Context(), []byte("p"))
+			_, err := p.signer(t).Sign(t.Context(), []byte("p"))
 			assert.Error(t, err)
 		})
 	}
@@ -191,7 +207,7 @@ func TestRemoteSignerErrors(t *testing.T) {
 			t.Run(path+" "+mode, func(t *testing.T) {
 				p := newPolicyServer(t)
 				p.set(func(p *policyServer) { p.broken = map[string]string{path: mode} })
-				_, err := NewRemoteSigner(p.srv.URL).Sign(t.Context(), []byte("p"))
+				_, err := p.signer(t).Sign(t.Context(), []byte("p"))
 				assert.Error(t, err)
 			})
 		}
@@ -200,19 +216,14 @@ func TestRemoteSignerErrors(t *testing.T) {
 	t.Run("unreachable", func(t *testing.T) {
 		p := newPolicyServer(t)
 		p.srv.Close()
-		_, err := NewRemoteSigner(p.srv.URL).Sign(t.Context(), []byte("p"))
-		assert.Error(t, err)
-	})
-
-	t.Run("invalid base URL", func(t *testing.T) {
-		_, err := NewRemoteSigner("http://[::1").Sign(t.Context(), []byte("p"))
+		_, err := p.signer(t).Sign(t.Context(), []byte("p"))
 		assert.Error(t, err)
 	})
 }
 
 func TestRemoteSignerRefreshesChainAfterRotation(t *testing.T) {
 	p := newPolicyServer(t)
-	rs := NewRemoteSigner(p.srv.URL)
+	rs := p.signer(t)
 
 	res, err := rs.Sign(t.Context(), []byte("p"))
 	require.NoError(t, err)
@@ -231,7 +242,7 @@ func TestRemoteSignerRefreshesChainAfterRotation(t *testing.T) {
 
 func TestRemoteSignerRefreshFailure(t *testing.T) {
 	p := newPolicyServer(t)
-	rs := NewRemoteSigner(p.srv.URL)
+	rs := p.signer(t)
 	_, err := rs.Sign(t.Context(), []byte("p"))
 	require.NoError(t, err)
 
@@ -247,7 +258,7 @@ func TestRemoteSignerPersistentMismatch(t *testing.T) {
 	other, _ := newTestLeaf(t, AlgorithmECDSAP256SHA256, p.root, p.rootKy)
 	p.set(func(p *policyServer) { p.chainPEM = pemCert(other) })
 
-	_, err := NewRemoteSigner(p.srv.URL).Sign(t.Context(), []byte("p"))
+	_, err := p.signer(t).Sign(t.Context(), []byte("p"))
 	assert.ErrorIs(t, err, ErrSignatureMismatch)
 	assert.EqualValues(t, 2, p.chainFetches.Load())
 }
@@ -286,7 +297,7 @@ func TestRemoteSignerCoalescesConcurrentFetches(t *testing.T) {
 			time.Sleep(20 * time.Millisecond)
 		}
 	})
-	rs := NewRemoteSigner(p.srv.URL)
+	rs := p.signer(t)
 
 	target.Store(n)
 	signConcurrently(t, p, rs, n)
@@ -308,7 +319,7 @@ func TestRemoteSignerWaiterHonoursContext(t *testing.T) {
 			<-release
 		}
 	})
-	rs := NewRemoteSigner(p.srv.URL)
+	rs := p.signer(t)
 
 	leaderDone := make(chan error, 1)
 	go func() {
@@ -337,23 +348,20 @@ func TestRemoteSignerWaiterHonoursContext(t *testing.T) {
 func TestRemoteSignerTrustAnchorPEM(t *testing.T) {
 	p := newPolicyServer(t)
 
-	got, err := NewRemoteSigner(p.srv.URL).TrustAnchorPEM(t.Context())
+	got, err := p.signer(t).TrustAnchorPEM(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, pemCert(p.root), got)
 
 	p.set(func(p *policyServer) { p.caStatus = http.StatusNotFound })
-	_, err = NewRemoteSigner(p.srv.URL).TrustAnchorPEM(t.Context())
+	_, err = p.signer(t).TrustAnchorPEM(t.Context())
 	assert.Error(t, err)
 
 	p.set(func(p *policyServer) { p.broken = map[string]string{"/v1/ca": "truncate"} })
-	_, err = NewRemoteSigner(p.srv.URL).TrustAnchorPEM(t.Context())
-	assert.Error(t, err)
-
-	_, err = NewRemoteSigner("http://[::1").TrustAnchorPEM(t.Context())
+	_, err = p.signer(t).TrustAnchorPEM(t.Context())
 	assert.Error(t, err)
 
 	p.srv.Close()
-	_, err = NewRemoteSigner(p.srv.URL).TrustAnchorPEM(t.Context())
+	_, err = p.signer(t).TrustAnchorPEM(t.Context())
 	assert.Error(t, err)
 }
 
@@ -371,7 +379,7 @@ func TestRemoteSignerRejectsOversizedResponses(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			p := newPolicyServer(t)
 			p.set(func(p *policyServer) { p.broken = map[string]string{path: "oversize"} })
-			rs := NewRemoteSigner(p.srv.URL)
+			rs := p.signer(t)
 			var err error
 			if path == "/v1/ca" {
 				_, err = rs.TrustAnchorPEM(t.Context())
@@ -386,7 +394,7 @@ func TestRemoteSignerRejectsOversizedResponses(t *testing.T) {
 func TestRemoteSignerRejectsRootInChain(t *testing.T) {
 	p := newPolicyServer(t)
 	p.set(func(p *policyServer) { p.chainPEM = append(pemCert(p.root), p.chainPEM...) })
-	_, err := NewRemoteSigner(p.srv.URL).Sign(t.Context(), []byte("p"))
+	_, err := p.signer(t).Sign(t.Context(), []byte("p"))
 	assert.ErrorIs(t, err, ErrChainValidation)
 }
 
@@ -405,7 +413,7 @@ func TestRemoteSignerSharedFetchSurvivesCallerCancel(t *testing.T) {
 			<-release
 		}
 	})
-	rs := NewRemoteSigner(p.srv.URL)
+	rs := p.signer(t)
 
 	firstCtx, cancelFirst := context.WithCancel(t.Context())
 	firstDone := make(chan error, 1)
@@ -441,7 +449,82 @@ func TestRemoteSignerRejectsExpiredChain(t *testing.T) {
 	require.NoError(t, err)
 	p.set(func(p *policyServer) { p.signKey, p.chainPEM = key, pemCert(leaf) })
 
-	_, err = NewRemoteSigner(p.srv.URL).Sign(t.Context(), []byte("payload"))
+	_, err = p.signer(t).Sign(t.Context(), []byte("payload"))
 	assert.ErrorIs(t, err, ErrChainValidation)
 	assert.EqualValues(t, 1, p.chainFetches.Load(), "a signature matching the chain needs no refetch")
+}
+
+func TestNewRemoteSignerRequiresHTTPS(t *testing.T) {
+	for name, baseURL := range map[string]string{
+		"plain http":  "http://policy-server:4322",
+		"no scheme":   "policy-server:4322",
+		"no host":     "https://",
+		"unparseable": "https://[::1",
+		"empty":       "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := NewRemoteSigner(RemoteSignerSettings{BaseURL: baseURL})
+			assert.ErrorIs(t, err, ErrInvalidRemoteSignerURL)
+		})
+	}
+
+	_, err := NewRemoteSigner(RemoteSignerSettings{BaseURL: "https://policy-server:4322"})
+	assert.NoError(t, err)
+}
+
+func TestRemoteSignerDoesNotFollowRedirects(t *testing.T) {
+	var followed atomic.Int32
+	target := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { followed.Add(1) }))
+	t.Cleanup(target.Close)
+	redirector := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirector.Close)
+
+	// The caller's client would follow redirects, and trusts both servers.
+	client := redirector.Client()
+	rs, err := NewRemoteSigner(RemoteSignerSettings{BaseURL: redirector.URL, Client: client})
+	require.NoError(t, err)
+
+	_, err = rs.Sign(t.Context(), []byte("payload"))
+	assert.ErrorContains(t, err, "HTTP 307")
+	_, err = rs.TrustAnchorPEM(t.Context())
+	assert.ErrorContains(t, err, "HTTP 307")
+	assert.Zero(t, followed.Load(), "nothing reaches the redirect target")
+	assert.Nil(t, client.CheckRedirect, "the caller's client is not modified")
+}
+
+func TestRemoteSignerRequestTimeout(t *testing.T) {
+	// The caller's client has no Timeout; RequestTimeout bounds each request.
+	settings := RemoteSignerSettings{RequestTimeout: 50 * time.Millisecond}
+
+	t.Run("sign", func(t *testing.T) {
+		release := make(chan struct{})
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			select {
+			case <-r.Context().Done():
+			case <-release:
+			}
+		}))
+		t.Cleanup(srv.Close)
+		t.Cleanup(func() { close(release) })
+
+		s := settings
+		s.BaseURL, s.Client = srv.URL, srv.Client()
+		rs, err := NewRemoteSigner(s)
+		require.NoError(t, err)
+		_, err = rs.Sign(t.Context(), []byte("p"))
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
+	})
+
+	t.Run("shared chain fetch", func(t *testing.T) {
+		// The shared fetch is detached from the caller's context.
+		p := newPolicyServer(t)
+		release := make(chan struct{})
+		t.Cleanup(func() { close(release) })
+		p.set(func(p *policyServer) { p.chainGate = func() { <-release } })
+
+		_, err := p.newSigner(t, settings).Sign(t.Context(), []byte("p"))
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
+	})
 }

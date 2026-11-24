@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -39,12 +40,25 @@ func readLimited(r io.Reader, limit int64) ([]byte, error) {
 }
 
 // RemoteSigner implements [Signer] by delegating to an out-of-process HTTP
-// signing service, so the OpAMP server holds no private key. The service
-// may also enforce policy on the payload before signing. It must expose:
+// signing service, so the OpAMP server holds no private key. It must expose:
 //
 //	POST /v1/sign  — body: payload bytes; response: raw signature bytes
 //	GET  /v1/chain — response: PEM chain (intermediates first, leaf last, no root)
 //	GET  /v1/ca    — response: PEM root CA (see TrustAnchorPEM)
+//
+// The service is a signing oracle: anything that reaches /v1/sign obtains
+// signatures that every attested Agent accepts. It MUST authenticate its
+// callers (mutual TLS is recommended, configured through
+// [RemoteSignerSettings].Client), MUST NOT be reachable from Agents or the
+// network edge, and SHOULD apply policy to each payload before signing it.
+//
+// For the same reason, RemoteSigner requires https and deliberately has no
+// plaintext mode, not even for loopback, Unix socket, or service mesh
+// deployments. Over plaintext, payloads, which may carry secrets such as
+// private keys in connection settings, are exposed, and an on-path attacker
+// can substitute the chain, signature, and root CA together, enrolling every
+// TOFU Agent onto its own anchor. Where TLS to the service is not possible,
+// implement [Signer] directly.
 //
 // The chain is cached, and concurrent fetches are coalesced into one
 // request. Because signature and chain come from separate
@@ -54,6 +68,7 @@ func readLimited(r io.Reader, limit int64) ([]byte, error) {
 type RemoteSigner struct {
 	baseURL string
 	client  *http.Client
+	timeout time.Duration // per request, however client is configured
 
 	chainTTL    time.Duration
 	mu          sync.Mutex
@@ -80,26 +95,75 @@ var (
 	_ TrustAnchorProvider = (*RemoteSigner)(nil)
 )
 
-const defaultChainCacheTTL = 60 * time.Second
+const (
+	defaultChainCacheTTL  = 60 * time.Second
+	defaultRequestTimeout = 10 * time.Second
+)
 
-// NewRemoteSigner returns a RemoteSigner that calls the signing service at
-// baseURL (e.g. "http://policy-server:4322"). A 10-second per-request
-// timeout is applied.
-func NewRemoteSigner(baseURL string) *RemoteSigner {
-	return &RemoteSigner{
-		baseURL:  strings.TrimRight(baseURL, "/"),
-		client:   &http.Client{Timeout: 10 * time.Second},
-		chainTTL: defaultChainCacheTTL,
-	}
+// ErrInvalidRemoteSignerURL is returned by [NewRemoteSigner] when the base URL
+// does not parse, has no host, or is not https.
+var ErrInvalidRemoteSignerURL = errors.New("remote signer: invalid signing service URL")
+
+// RemoteSignerSettings configures a [RemoteSigner].
+type RemoteSignerSettings struct {
+	// BaseURL is the signing service's URL, such as
+	// "https://policy-server:4322". It MUST use https; see [RemoteSigner].
+	BaseURL string
+
+	// Client sends every request. Configure it to authenticate to the
+	// service, for example with a client certificate in its Transport's
+	// TLSClientConfig, or a RoundTripper that adds credentials, and to trust
+	// the service's certificate. If nil, a client with default TLS settings
+	// and no client authentication is used. Redirects are never followed,
+	// whatever Client's CheckRedirect, since a redirect would re-send the
+	// payload wherever it points; Client itself is not modified.
+	Client *http.Client
+
+	// RequestTimeout bounds each request, even if Client has no Timeout. If
+	// not positive, 10 seconds is used.
+	RequestTimeout time.Duration
+
+	// ChainCacheTTL is how long Sign reuses a fetched chain before fetching
+	// it again to detect rotation. Zero means 60 seconds; a negative value
+	// disables caching, so every Sign fetches the chain.
+	ChainCacheTTL time.Duration
 }
 
-// SetChainCacheTTL overrides how long Sign caches the fetched chain before
-// re-fetching to detect rotation. A non-positive value disables caching
-// (fetch on every Sign).
-func (s *RemoteSigner) SetChainCacheTTL(ttl time.Duration) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.chainTTL = ttl
+// NewRemoteSigner returns a RemoteSigner for the signing service described by
+// settings. It returns ErrInvalidRemoteSignerURL unless BaseURL is an https
+// URL with a host: there is no plaintext mode (see [RemoteSigner]).
+func NewRemoteSigner(settings RemoteSignerSettings) (*RemoteSigner, error) {
+	u, err := url.Parse(settings.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidRemoteSignerURL, err)
+	}
+	if u.Scheme != "https" {
+		return nil, fmt.Errorf("%w: %q does not use https", ErrInvalidRemoteSignerURL, settings.BaseURL)
+	}
+	if u.Host == "" {
+		return nil, fmt.Errorf("%w: %q has no host", ErrInvalidRemoteSignerURL, settings.BaseURL)
+	}
+
+	var client http.Client
+	if settings.Client != nil {
+		client = *settings.Client
+	}
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+	timeout := settings.RequestTimeout
+	if timeout <= 0 {
+		timeout = defaultRequestTimeout
+	}
+	ttl := settings.ChainCacheTTL
+	if ttl == 0 {
+		ttl = defaultChainCacheTTL
+	}
+	return &RemoteSigner{
+		baseURL:  strings.TrimRight(settings.BaseURL, "/"),
+		client:   &client,
+		timeout:  timeout,
+		chainTTL: ttl,
+	}, nil
 }
 
 // Sign implements [Signer]. The service signs the posted bytes as-is, so
@@ -137,6 +201,8 @@ func (s *RemoteSigner) Sign(ctx context.Context, payload []byte) (SignResult, er
 
 // sign POSTs payload to /v1/sign and returns the raw signature bytes.
 func (s *RemoteSigner) sign(ctx context.Context, payload []byte) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		s.baseURL+"/v1/sign", bytes.NewReader(payload))
 	if err != nil {
@@ -193,6 +259,8 @@ func (s *RemoteSigner) refreshChain(ctx context.Context) ([][]byte, error) {
 // TrustAnchorPEM implements [TrustAnchorProvider] by GET-ing /v1/ca on the
 // remote policy server. The response MUST be a PEM-encoded CA certificate.
 func (s *RemoteSigner) TrustAnchorPEM(ctx context.Context) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		s.baseURL+"/v1/ca", nil)
 	if err != nil {
@@ -233,7 +301,7 @@ func (s *RemoteSigner) sharedFetch(ctx context.Context, slot **chainFetch) ([][]
 		f = &chainFetch{done: make(chan struct{})}
 		*slot = f
 		// The fetch serves every waiter, so one caller's cancellation must not
-		// fail it; the HTTP client timeout still bounds it.
+		// fail it; the per-request timeout still bounds it.
 		go s.runFetch(context.WithoutCancel(ctx), slot, f)
 	}
 	s.mu.Unlock()
@@ -260,7 +328,11 @@ func (s *RemoteSigner) runFetch(ctx context.Context, slot **chainFetch, f *chain
 	close(f.done)
 }
 
+// fetchChainDER fetches /v1/chain. Its deadline matters most here: the shared
+// fetch runs detached from any caller's context.
 func (s *RemoteSigner) fetchChainDER(ctx context.Context) ([][]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		s.baseURL+"/v1/chain", nil)
 	if err != nil {

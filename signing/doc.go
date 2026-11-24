@@ -7,7 +7,8 @@
 // signature over the bytes as received, so no re-marshalling is needed.
 // [LocalSigner] and [LocalVerifier] are in-process reference
 // implementations; other signers (HSM, remote signing services) plug in
-// through the same interfaces.
+// through the same interfaces. [RemoteSigner] delegates to a signing service
+// over https only; see its documentation for why there is no plaintext mode.
 //
 // The signature algorithm is determined by the signing leaf's public key;
 // the protocol does not negotiate algorithms. [GenerateCA] and
