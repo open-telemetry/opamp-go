@@ -313,7 +313,7 @@ func TestServerPlainHTTPAttestation(t *testing.T) {
 		var msg protobufs.ServerToAgent
 		require.NoError(t, proto.Unmarshal(body, &msg))
 		assert.Equal(t, testInstanceUid, msg.InstanceUid)
-		assert.Equal(t, offersBit, msg.Capabilities&offersBit)
+		assert.Zero(t, msg.Capabilities&offersBit, "Offers is only advertised to Agents that require attestation")
 		assert.Equal(t, settings.CustomCapabilities, msg.CustomCapabilities.Capabilities)
 	})
 }
@@ -354,8 +354,47 @@ func TestServerWebSocketAttestation(t *testing.T) {
 		var msg protobufs.ServerToAgent
 		readWS(t, dialAndSend(t, settings, 0), &msg)
 		assert.Equal(t, testInstanceUid, msg.InstanceUid)
-		assert.Equal(t, offersBit, msg.Capabilities&offersBit)
+		assert.Zero(t, msg.Capabilities&offersBit, "Offers is only advertised to Agents that require attestation")
 	})
+}
+
+func TestServerWebSocketPlainAgentWithSigner(t *testing.T) {
+	pki := newAttestPKI(t)
+	push := &protobufs.ServerToAgent{InstanceUid: testInstanceUid, Flags: 2}
+	connectedErr, pushErr := make(chan error, 1), make(chan error, 1)
+	settings := &StartSettings{Settings: Settings{
+		PayloadSigner: pki.signer(t),
+		Callbacks: types.Callbacks{
+			OnConnecting: func(*http.Request) types.ConnectionResponse {
+				return types.ConnectionResponse{Accept: true, ConnectionCallbacks: types.ConnectionCallbacks{
+					OnConnected: func(ctx context.Context, conn types.Connection) {
+						connectedErr <- conn.Send(ctx, push)
+					},
+					OnMessage: func(ctx context.Context, conn types.Connection, m *protobufs.AgentToServer) *protobufs.ServerToAgent {
+						pushErr <- conn.Send(ctx, push)
+						return echoUID(m)
+					},
+				}}
+			},
+		},
+	}}
+	srv := startServer(t, settings)
+	t.Cleanup(func() { srv.Stop(context.Background()) })
+
+	conn := dialAndSend(t, settings, 0)
+	// Before any AgentToServer the server cannot tell the Agent is plain.
+	require.ErrorIs(t, <-connectedErr, ErrSendBeforeNegotiated)
+	require.NoError(t, <-pushErr)
+
+	// After negotiation, the push and the reply are plain ServerToAgent
+	// messages without the Offers bit.
+	for _, wantFlags := range []uint64{push.Flags, 1} {
+		var msg protobufs.ServerToAgent
+		readWS(t, conn, &msg)
+		assert.Equal(t, testInstanceUid, msg.InstanceUid)
+		assert.Equal(t, wantFlags, msg.Flags)
+		assert.Zero(t, msg.Capabilities&offersBit)
+	}
 }
 
 func TestSignOutgoingMarshalError(t *testing.T) {

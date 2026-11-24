@@ -17,7 +17,8 @@ import (
 // ErrSendBeforeNegotiated is returned from Send when the server has a
 // PayloadSigner but has not yet processed the connection's first
 // AgentToServer, so it cannot know whether the Agent requires attestation.
-// Send from OnMessage rather than OnConnected.
+// It applies to every connection, including Agents that never request
+// attestation. Send from OnMessage rather than OnConnected.
 var ErrSendBeforeNegotiated = errors.New(
 	"server: Send called before Message Attestation negotiation completed; " +
 		"push outbound messages from OnMessage rather than OnConnected",
@@ -69,6 +70,12 @@ func (c *wsConnection) markNegotiated() {
 // isNegotiated reports whether markNegotiated has been called.
 func (c *wsConnection) isNegotiated() bool {
 	return c.negotiated.Load()
+}
+
+// isAttested reports whether the connection negotiated attestation, i.e.
+// Send signs its messages.
+func (c *wsConnection) isAttested() bool {
+	return c.signing.Load() != nil
 }
 
 func (c *wsConnection) Connection() net.Conn {

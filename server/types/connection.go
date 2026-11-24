@@ -18,6 +18,10 @@ type Connection interface {
 	// connections.
 	// Blocks until the message is sent.
 	// Should return as soon as possible if the ctx is cancelled.
+	// If the Server has a PayloadSigner, returns server.ErrSendBeforeNegotiated
+	// when called before the connection's first AgentToServer has been
+	// processed (for example, from OnConnected), whether or not the Agent
+	// requests attestation.
 	Send(ctx context.Context, message *protobufs.ServerToAgent) error
 
 	// Disconnect closes the network connection.

@@ -335,8 +335,9 @@ func (s *server) handleWSConnection(reqCtx context.Context, wsConn *websocket.Co
 			}
 			sentCustomCapabilities = true
 		}
-		// Offers signals server capability, whether or not this Agent requires it.
-		if s.settings.PayloadSigner != nil {
+		// Offers is advertised only to Agents that require attestation, as
+		// the spec recommends.
+		if agentConn.isAttested() {
 			response.Capabilities = addOffersAttestationBit(response.Capabilities)
 		}
 
@@ -465,20 +466,19 @@ func (s *server) handlePlainHTTPRequest(req *http.Request, w http.ResponseWriter
 			Capabilities: s.settings.CustomCapabilities,
 		}
 
-		if s.settings.PayloadSigner != nil {
+		// Offers is advertised only to Agents that require attestation, as
+		// the spec recommends.
+		if s.settings.PayloadSigner != nil && agentRequiresAttestation(request.Capabilities) {
 			response.Capabilities = addOffersAttestationBit(response.Capabilities)
-
-			if agentRequiresAttestation(request.Capabilities) {
-				tofu := agentRequestsTOFU(request.Capabilities)
-				state := newConnectionSigningState(req.Context(), s.settings.PayloadSigner, tofu)
-				envelope, sigErr := state.signOutgoing(req.Context(), response)
-				if sigErr != nil {
-					s.logger.Errorf(req.Context(), "Cannot sign HTTP response: %v", sigErr)
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-				responseMessage = envelope
+			tofu := agentRequestsTOFU(request.Capabilities)
+			state := newConnectionSigningState(req.Context(), s.settings.PayloadSigner, tofu)
+			envelope, sigErr := state.signOutgoing(req.Context(), response)
+			if sigErr != nil {
+				s.logger.Errorf(req.Context(), "Cannot sign HTTP response: %v", sigErr)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
 			}
+			responseMessage = envelope
 		}
 	}
 

@@ -37,11 +37,18 @@ type Settings struct {
 	// for more details.
 	CustomCapabilities []string
 
-	// PayloadSigner, when non-nil, enables Message Attestation: the Server
-	// advertises OffersPayloadTrustVerification, and on connections whose
-	// Agent requires payload trust verification it sends every ServerToAgent
-	// signed, in a SignedServerToAgent envelope. nil keeps the standard wire
+	// PayloadSigner, when non-nil, enables Message Attestation: on
+	// connections whose Agent requires payload trust verification, the
+	// Server advertises OffersPayloadTrustVerification and sends every
+	// ServerToAgent signed, in a SignedServerToAgent envelope. Other
+	// connections, and all connections when nil, keep the standard wire
 	// format.
+	//
+	// Whether a connection is attested is unknown until its first
+	// AgentToServer is processed, so until then Send on a WebSocket
+	// connection returns ErrSendBeforeNegotiated, for every Agent, including
+	// those that never request attestation. Push messages from OnMessage
+	// rather than OnConnected.
 	//
 	// Signing runs inline, and sends on a connection are serialized, so
 	// signer latency (for example of a remote or KMS signer) adds to every
