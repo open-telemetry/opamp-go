@@ -39,17 +39,43 @@ func TestSignOutgoingChainDelivery(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, proto.Equal(attestMsg, pki.verifyEnvelope(t, env)))
 	assert.Equal(t, pki.caPEM, env.TrustChainResponse.TofuTrustAnchor)
+	state.markDelivered(env)
 
 	env, err = state.signOutgoing(ctx, attestMsg)
 	require.NoError(t, err)
 	assert.Nil(t, env.TrustChainResponse, "an unchanged chain is not re-sent")
 	assert.NotEmpty(t, env.Signature)
+	state.markDelivered(env)
 
 	signer.set(pki.signer(t))
 	env, err = state.signOutgoing(ctx, attestMsg)
 	require.NoError(t, err)
 	pki.verifyEnvelope(t, env)
 	assert.Empty(t, env.TrustChainResponse.TofuTrustAnchor, "the TOFU anchor is only sent first")
+}
+
+func TestSignOutgoingUndeliveredChainIsResent(t *testing.T) {
+	pki := newAttestPKI(t)
+	signer := &rotatingSigner{cur: pki.signer(t), anchor: pki.caPEM}
+	state := newConnectionSigningState(context.Background(), signer, true)
+	ctx := context.Background()
+
+	// Never delivered, so the next envelope carries the chain and anchor again.
+	_, err := state.signOutgoing(ctx, attestMsg)
+	require.NoError(t, err)
+	env, err := state.signOutgoing(ctx, attestMsg)
+	require.NoError(t, err)
+	pki.verifyEnvelope(t, env)
+	assert.Equal(t, pki.caPEM, env.TrustChainResponse.TofuTrustAnchor)
+	state.markDelivered(env)
+
+	// Likewise for a rotated chain.
+	signer.set(pki.signer(t))
+	_, err = state.signOutgoing(ctx, attestMsg)
+	require.NoError(t, err)
+	env, err = state.signOutgoing(ctx, attestMsg)
+	require.NoError(t, err)
+	pki.verifyEnvelope(t, env)
 }
 
 func TestSignOutgoingTOFUAnchorUnavailable(t *testing.T) {
@@ -67,6 +93,7 @@ func TestSignOutgoingTOFUAnchorUnavailable(t *testing.T) {
 			require.NotNil(t, env.TrustChainResponse)
 			assert.NotEmpty(t, env.TrustChainResponse.ErrorMessage)
 			assert.Empty(t, env.TrustChainResponse.CertificateChain)
+			state.markDelivered(env)
 
 			env, err = state.signOutgoing(context.Background(), attestMsg)
 			require.NoError(t, err)
@@ -151,6 +178,28 @@ func TestWSConnectionSendAttested(t *testing.T) {
 	var env protobufs.SignedServerToAgent
 	readWS(t, clientConn, &env)
 	assert.True(t, proto.Equal(attestMsg, pki.verifyEnvelope(t, &env)))
+}
+
+func TestWSConnectionChainSurvivesFailedWrite(t *testing.T) {
+	pki := newAttestPKI(t)
+	serverConn, clientConn := wsPair(t)
+	conn := newWSConnection(serverConn, 4096, true)
+	ctx := context.Background()
+	conn.enableSigning(newConnectionSigningState(ctx, pki.signer(t), false))
+	conn.markNegotiated()
+
+	// Rejected by the size check before anything reaches the wire.
+	oversized := &protobufs.ServerToAgent{
+		InstanceUid:  testInstanceUid,
+		RemoteConfig: &protobufs.AgentRemoteConfig{ConfigHash: make([]byte, 8192)},
+	}
+	var sizeErr *sharedinternal.SizeLimitError
+	require.ErrorAs(t, conn.Send(ctx, oversized), &sizeErr)
+
+	require.NoError(t, conn.Send(ctx, attestMsg))
+	var env protobufs.SignedServerToAgent
+	readWS(t, clientConn, &env)
+	assert.True(t, proto.Equal(attestMsg, pki.verifyEnvelope(t, &env)), "the first message on the wire carries the chain")
 }
 
 func TestWSConnectionSendWithoutSigner(t *testing.T) {

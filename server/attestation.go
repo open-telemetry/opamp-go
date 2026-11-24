@@ -15,7 +15,8 @@ import (
 
 // connectionSigningState signs outbound messages on an attested connection.
 // The chain is sent with the first message and again whenever it changes
-// (rotation).
+// (rotation). Callers serialize signOutgoing, the write, and markDelivered;
+// wsConnection holds its send lock across all three.
 type connectionSigningState struct {
 	signer        signing.Signer
 	tofuAnchorPEM []byte // non-empty iff this connection is a TOFU enrollment
@@ -48,7 +49,8 @@ func newConnectionSigningState(ctx context.Context, signer signing.Signer, tofu 
 }
 
 // signOutgoing wraps msg in a signed envelope, attaching trust_chain_response
-// on the first message and whenever the chain changes.
+// on the first message and whenever the chain changes. It does not record
+// the delivery; see markDelivered.
 func (s *connectionSigningState) signOutgoing(ctx context.Context, msg *protobufs.ServerToAgent) (*protobufs.SignedServerToAgent, error) {
 	payload, err := proto.Marshal(msg)
 	if err != nil {
@@ -69,7 +71,6 @@ func (s *connectionSigningState) signOutgoing(ctx context.Context, msg *protobuf
 
 	if s.tofuError != "" {
 		if !s.firstSent {
-			s.firstSent = true
 			env.TrustChainResponse = &protobufs.TrustChainResponse{ErrorMessage: s.tofuError}
 		}
 		return env, nil
@@ -84,10 +85,20 @@ func (s *connectionSigningState) signOutgoing(ctx context.Context, msg *protobuf
 		if !s.firstSent {
 			env.TrustChainResponse.TofuTrustAnchor = s.tofuAnchorPEM
 		}
-		s.lastChainPEM = pemChain
-		s.firstSent = true
 	}
 	return env, nil
+}
+
+// markDelivered records that env, from signOutgoing, was written. Call it
+// only after a successful write: re-sending a chain the Agent already holds
+// is a no-op for it, but omitting one it never received fails verification.
+func (s *connectionSigningState) markDelivered(env *protobufs.SignedServerToAgent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.firstSent = true
+	if tcr := env.TrustChainResponse; tcr != nil && tcr.ErrorMessage == "" {
+		s.lastChainPEM = tcr.CertificateChain
+	}
 }
 
 // agentRequiresAttestation reports whether the Agent requires attestation.

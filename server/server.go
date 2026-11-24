@@ -42,6 +42,13 @@ type Settings struct {
 	// Agent requires payload trust verification it sends every ServerToAgent
 	// signed, in a SignedServerToAgent envelope. nil keeps the standard wire
 	// format.
+	//
+	// Signing runs inline, and sends on a connection are serialized, so
+	// signer latency (for example of a remote or KMS signer) adds to every
+	// send on that connection. On WebSocket, replies to AgentToServer
+	// messages are signed in the connection's read loop with a background
+	// context: a slow signature also delays reading the next message, and
+	// only the signer's own timeout bounds it.
 	PayloadSigner signing.Signer
 }
 

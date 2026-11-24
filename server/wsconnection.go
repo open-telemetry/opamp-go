@@ -92,7 +92,11 @@ func (c *wsConnection) Send(ctx context.Context, message *protobufs.ServerToAgen
 		if err != nil {
 			return err
 		}
-		return internal.WriteWSMessage(c.wsConn, env, c.maxMessageSize)
+		if err := internal.WriteWSMessage(c.wsConn, env, c.maxMessageSize); err != nil {
+			return err
+		}
+		state.markDelivered(env)
+		return nil
 	}
 
 	return internal.WriteWSMessage(c.wsConn, message, c.maxMessageSize)
