@@ -232,7 +232,7 @@ func (c *ClientCommon) PrepareStart(
 	if settings.PayloadTrustProvider != nil {
 		v, err := settings.PayloadTrustProvider.Verifier()
 		if err != nil {
-			return fmt.Errorf("%w: %v", ErrPayloadVerifierInit, err)
+			return fmt.Errorf("%w: %w", ErrPayloadVerifierInit, err)
 		}
 		switch {
 		case v != nil:

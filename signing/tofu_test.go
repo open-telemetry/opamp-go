@@ -19,6 +19,19 @@ func TestFileTOFUStoreLoadMissing(t *testing.T) {
 	assert.Nil(t, got)
 }
 
+func TestFileTOFUStoreLoadEmptyFile(t *testing.T) {
+	for name, content := range map[string]string{"empty": "", "whitespace only": " \n\t\n"} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "anchor.pem")
+			require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+			got, err := NewFileTOFUStore(path).Load()
+			require.ErrorIs(t, err, ErrTOFUAnchorFileEmpty)
+			assert.ErrorContains(t, err, path)
+			assert.Nil(t, got)
+		})
+	}
+}
+
 func TestFileTOFUStoreSaveIsWriteOnce(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "anchor.pem")
 	s := NewFileTOFUStore(path)

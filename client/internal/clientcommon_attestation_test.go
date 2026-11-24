@@ -3,6 +3,8 @@ package internal
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -65,6 +67,15 @@ func TestPrepareStartPayloadTrust(t *testing.T) {
 		c := newTestClientCommon(t, protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus)
 		require.NoError(t, c.PrepareStart(ctx, startSettings(nil)))
 		assert.False(t, c.PayloadTrustEnabled())
+	})
+
+	t.Run("TOFU with empty anchor file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "anchor.pem")
+		require.NoError(t, os.WriteFile(path, nil, 0o600))
+		c := newTestClientCommon(t, requiresAttestation)
+		err := c.PrepareStart(ctx, startSettings(signing.TOFUAnchor(signing.NewFileTOFUStore(path))))
+		require.ErrorIs(t, err, ErrPayloadVerifierInit)
+		require.ErrorIs(t, err, signing.ErrTOFUAnchorFileEmpty, "the cause is visible to callers")
 	})
 
 	errs := []struct {

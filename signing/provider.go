@@ -1,5 +1,7 @@
 package signing
 
+import "fmt"
+
 // PayloadTrustProvider opts a client in to payload trust verification via
 // StartSettings. Optional modes are separate interfaces the client detects by
 // type assertion (currently [TOFUEnroller]), so modes can be added without
@@ -70,11 +72,7 @@ func (p tofuAnchorProvider) Verifier() (Verifier, error) {
 	if len(anchorPEM) == 0 {
 		return nil, nil
 	}
-	v, err := VerifierFromPEM(anchorPEM)
-	if err != nil {
-		return nil, err
-	}
-	return v, nil
+	return storedVerifier(anchorPEM)
 }
 
 // Enroll saves anchorPEM (a no-op if an anchor is already stored) and returns
@@ -90,9 +88,14 @@ func (p tofuAnchorProvider) Enroll(anchorPEM []byte) (Verifier, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, err := VerifierFromPEM(stored)
+	return storedVerifier(stored)
+}
+
+// storedVerifier returns a verifier for an anchor read back from the store.
+func storedVerifier(anchorPEM []byte) (Verifier, error) {
+	v, err := VerifierFromPEM(anchorPEM)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("signing: stored TOFU trust anchor is unusable; delete it to re-enroll: %w", err)
 	}
 	return v, nil
 }

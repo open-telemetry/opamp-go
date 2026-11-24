@@ -2,6 +2,7 @@ package signing
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -56,6 +57,14 @@ func TestTOFUAnchorVerifier(t *testing.T) {
 
 	v, err = TOFUAnchor(&fakeTOFUStore{stored: []byte("garbage")}).Verifier()
 	assert.ErrorIs(t, err, ErrLoadCAFile)
+	assert.ErrorContains(t, err, "stored TOFU trust anchor is unusable")
+	assert.Nil(t, v)
+
+	// An existing but empty anchor file fails instead of reading as "not enrolled".
+	emptyPath := filepath.Join(t.TempDir(), "anchor.pem")
+	require.NoError(t, os.WriteFile(emptyPath, nil, 0o600))
+	v, err = TOFUAnchor(NewFileTOFUStore(emptyPath)).Verifier()
+	assert.ErrorIs(t, err, ErrTOFUAnchorFileEmpty)
 	assert.Nil(t, v)
 
 	v, err = TOFUAnchor(&fakeTOFUStore{stored: pemCert(root)}).Verifier()
@@ -120,4 +129,11 @@ func TestTOFUAnchorEnrollErrors(t *testing.T) {
 	// The stored anchor, not the offered one, must be usable.
 	_, err = TOFUAnchor(&fakeTOFUStore{stored: []byte("corrupt")}).(TOFUEnroller).Enroll(pemCert(root))
 	assert.ErrorIs(t, err, ErrLoadCAFile)
+	assert.ErrorContains(t, err, "stored TOFU trust anchor is unusable")
+
+	// An empty anchor file is never replaced, so enrollment reports it.
+	emptyPath := filepath.Join(t.TempDir(), "anchor.pem")
+	require.NoError(t, os.WriteFile(emptyPath, nil, 0o600))
+	_, err = TOFUAnchor(NewFileTOFUStore(emptyPath)).(TOFUEnroller).Enroll(pemCert(root))
+	assert.ErrorIs(t, err, ErrTOFUAnchorFileEmpty)
 }

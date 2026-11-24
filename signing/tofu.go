@@ -1,6 +1,7 @@
 package signing
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -9,7 +10,10 @@ import (
 
 // TOFUStore persists the trust anchor acquired by TOFU enrollment.
 type TOFUStore interface {
-	// Load returns the stored PEM anchor, or nil if none is stored.
+	// Load returns the stored PEM anchor, or (nil, nil) if none is stored.
+	// Stored data that cannot serve as an anchor, such as an empty file,
+	// MUST be an error rather than "none stored": Save would then be a
+	// no-op, and enrollment could never complete.
 	Load() ([]byte, error)
 
 	// Save persists pemBytes. It MUST be a no-op if an anchor is already
@@ -19,6 +23,11 @@ type TOFUStore interface {
 
 // ErrTOFUStoreSave wraps failures to persist the TOFU trust anchor.
 var ErrTOFUStoreSave = errors.New("signing: save TOFU trust anchor")
+
+// ErrTOFUAnchorFileEmpty is returned by [FileTOFUStore.Load] when the anchor
+// file exists but has no content. Save never replaces an existing file, so
+// it must be deleted before the Agent can enroll.
+var ErrTOFUAnchorFileEmpty = errors.New("signing: TOFU trust anchor file exists but is empty")
 
 // FileTOFUStore implements [TOFUStore] with a single PEM file, created with
 // 0o600 permissions on first Save. It is safe for concurrent use.
@@ -31,7 +40,8 @@ func NewFileTOFUStore(path string) *FileTOFUStore {
 	return &FileTOFUStore{path: path}
 }
 
-// Load reads the anchor, returning nil, nil if the file does not exist.
+// Load reads the anchor, returning nil, nil if the file does not exist and
+// [ErrTOFUAnchorFileEmpty] if it exists without content.
 func (s *FileTOFUStore) Load() ([]byte, error) {
 	data, err := os.ReadFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -39,6 +49,9 @@ func (s *FileTOFUStore) Load() ([]byte, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("signing: load TOFU trust anchor: %w", err)
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil, fmt.Errorf("%w: %s; delete it to re-enroll", ErrTOFUAnchorFileEmpty, s.path)
 	}
 	return data, nil
 }
