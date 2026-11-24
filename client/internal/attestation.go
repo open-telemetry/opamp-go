@@ -136,11 +136,13 @@ func (s *attestationState) processEnvelope(ctx context.Context, envelope *protob
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if chainResp := envelope.TrustChainResponse; chainResp != nil &&
-		!(s.firstSeen && bytes.Equal(chainResp.CertificateChain, s.pinnedChainPEM)) {
-		if chainResp.ErrorMessage != "" {
-			return nil, fmt.Errorf("%w: %s", ErrTrustChainErrorReported, chainResp.ErrorMessage)
-		}
+	chainResp := envelope.TrustChainResponse
+	// A reported error terminates the connection even alongside the pinned
+	// chain, which would otherwise be skipped as unchanged.
+	if chainResp != nil && chainResp.ErrorMessage != "" {
+		return nil, fmt.Errorf("%w: %s", ErrTrustChainErrorReported, chainResp.ErrorMessage)
+	}
+	if chainResp != nil && !(s.firstSeen && bytes.Equal(chainResp.CertificateChain, s.pinnedChainPEM)) {
 		chainDER, err := parsePEMChain(chainResp.CertificateChain)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrMalformedTrustChain, err)

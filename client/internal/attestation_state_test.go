@@ -121,6 +121,23 @@ func TestProcessEnvelopeChainRedeliveryAndRotation(t *testing.T) {
 	require.ErrorIs(t, err, signing.ErrSignatureMismatch, "the rotated leaf is now pinned")
 }
 
+func TestProcessEnvelopeErrorAlongsidePinnedChain(t *testing.T) {
+	pki := newTestPKI(t)
+	s := pki.signer(t)
+	state := newAttestationState(pki.verifier(t), testHost, nil)
+	ctx := context.Background()
+
+	_, err := state.ProcessEnvelope(ctx, signedMsg(t, s, testMsg, true))
+	require.NoError(t, err)
+
+	// The pinned chain again, now with error_message: still a failure.
+	env := signedMsg(t, s, testMsg, true)
+	env.TrustChainResponse.ErrorMessage = "signing key unavailable"
+	_, err = state.ProcessEnvelope(ctx, env)
+	require.ErrorIs(t, err, ErrTrustChainErrorReported)
+	assert.True(t, isAttestationFailure(err))
+}
+
 func TestProcessEnvelopeReset(t *testing.T) {
 	pki := newTestPKI(t)
 	s := pki.signer(t)
