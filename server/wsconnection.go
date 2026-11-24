@@ -39,7 +39,8 @@ func (c *wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent)
 	c.connMutex.Lock()
 	defer c.connMutex.Unlock()
 
-	return internal.WriteWSMessage(c.wsConn, message, c.maxMessageSize)
+	_, err := internal.WriteWSMessage(c.wsConn, message, c.maxMessageSize)
+	return err
 }
 
 func (c *wsConnection) Disconnect() error {

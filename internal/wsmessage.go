@@ -37,10 +37,14 @@ func DecodeWSMessage(bytes []byte, msg proto.Message) error {
 	return nil
 }
 
-func WriteWSMessage(conn *websocket.Conn, msg proto.Message, maxMessageSize int64) error {
+// WriteWSMessage encodes msg and writes it to conn as a single binary
+// WebSocket message. On success it returns the number of bytes of the encoded
+// message (header plus Protobuf payload), not including any WebSocket framing
+// or compression.
+func WriteWSMessage(conn *websocket.Conn, msg proto.Message, maxMessageSize int64) (int, error) {
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("marshal message: %w", err)
+		return 0, fmt.Errorf("marshal message: %w", err)
 	}
 
 	// Encode header as a varint.
@@ -49,31 +53,31 @@ func WriteWSMessage(conn *websocket.Conn, msg proto.Message, maxMessageSize int6
 	hdrBuf = hdrBuf[:n]
 
 	if err := CheckSizeLimit(int64(len(hdrBuf)+len(data)), maxMessageSize, "websocket message"); err != nil {
-		return err
+		return 0, err
 	}
 
 	writer, err := conn.NextWriter(websocket.BinaryMessage)
 	if err != nil {
-		return fmt.Errorf("next writer: %w", err)
+		return 0, fmt.Errorf("next writer: %w", err)
 	}
 
 	// Write the header bytes.
 	_, err = writer.Write(hdrBuf)
 	if err != nil {
 		writer.Close()
-		return fmt.Errorf("write header: %w", err)
+		return 0, fmt.Errorf("write header: %w", err)
 	}
 
 	// Write the encoded data.
 	_, err = writer.Write(data)
 	if err != nil {
 		writer.Close()
-		return fmt.Errorf("write data: %w", err)
+		return 0, fmt.Errorf("write data: %w", err)
 	}
 
 	err = writer.Close()
 	if err != nil {
-		return fmt.Errorf("close writer: %w", err)
+		return 0, fmt.Errorf("close writer: %w", err)
 	}
-	return nil
+	return len(hdrBuf) + len(data), nil
 }

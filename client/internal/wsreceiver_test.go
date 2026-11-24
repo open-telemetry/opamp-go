@@ -371,7 +371,7 @@ func TestRecieveMessage(t *testing.T) {
 			state.SetCapabilities(&capabilities)
 			rec := NewWSReceiver(&internal.NopLogger{}, callbacks, conn, NewSender(&internal.NopLogger{}), state, nil, new(sync.Mutex), time.Second)
 
-			err = rec.receiveMessage(&protobufs.ServerToAgent{})
+			_, err = rec.receiveMessage(&protobufs.ServerToAgent{})
 			if tc.hasError {
 				assert.Error(t, err)
 			} else {

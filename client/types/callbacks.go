@@ -69,6 +69,34 @@ type Callbacks struct {
 	// May also be called if the connection is lost and reconnection attempt fails.
 	OnConnectFailed func(ctx context.Context, err error)
 
+	// OnDisconnect is called when an established connection to the Server is lost.
+	// It is only called by WebSocket clients, after a successful OnConnect, when
+	// the connection fails or is closed by the Server. err describes the reason
+	// and may be a *websocket.CloseError if the Server closed the connection.
+	// It is not called when the connection is closed because Stop() was called.
+	// The client will attempt to reconnect after this callback returns.
+	OnDisconnect func(ctx context.Context, err error)
+
+	// OnMessageSent is called after an AgentToServer message has been
+	// successfully handed to the transport.
+	// For WebSocket clients this is called after the message has been written to
+	// the connection. For HTTP clients this is called when the request carrying
+	// the message received an OK response.
+	// size is the length in bytes of the Protobuf-encoded message. It excludes
+	// OpAMP and transport framing, transport compression, TLS, and network headers.
+	// The callback must not modify msg and should return quickly, since it is
+	// called on the sending path.
+	OnMessageSent func(ctx context.Context, msg *protobufs.AgentToServer, size int)
+
+	// OnMessageReceived is called after a ServerToAgent message has been
+	// received and successfully decoded, before it is processed and before
+	// OnMessage or any other message specific callback is called.
+	// size is the length in bytes of the Protobuf-encoded message. It excludes
+	// OpAMP and transport framing, transport compression, TLS, and network headers.
+	// The callback must not modify msg and should return quickly, since it is
+	// called on the receiving path.
+	OnMessageReceived func(ctx context.Context, msg *protobufs.ServerToAgent, size int)
+
 	// OnError is called when the Server reports an error in response to some previously
 	// sent request. Useful for logging purposes. The Agent should not attempt to process
 	// the error by reconnecting or retrying previous operations. The client handles the
@@ -167,6 +195,15 @@ func (c *Callbacks) SetDefaults() {
 	}
 	if c.OnConnectFailed == nil {
 		c.OnConnectFailed = func(ctx context.Context, err error) {}
+	}
+	if c.OnDisconnect == nil {
+		c.OnDisconnect = func(ctx context.Context, err error) {}
+	}
+	if c.OnMessageSent == nil {
+		c.OnMessageSent = func(ctx context.Context, msg *protobufs.AgentToServer, size int) {}
+	}
+	if c.OnMessageReceived == nil {
+		c.OnMessageReceived = func(ctx context.Context, msg *protobufs.ServerToAgent, size int) {}
 	}
 	if c.OnError == nil {
 		c.OnError = func(ctx context.Context, err *protobufs.ServerErrorResponse) {}

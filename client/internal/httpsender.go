@@ -38,6 +38,11 @@ type requestWrapper struct {
 	*http.Request
 
 	bodyReader func() io.ReadCloser
+
+	// msg is the message carried by the request.
+	msg *protobufs.AgentToServer
+	// size is the length of the encoded message before compression.
+	size int
 }
 
 func bodyReader(buf []byte) func() io.ReadCloser {
@@ -326,6 +331,9 @@ func (h *HTTPSender) attemptRequest(ctx context.Context, req *requestWrapper, cu
 	switch resp.StatusCode {
 	case http.StatusOK:
 		h.callbacks.OnConnect(ctx)
+		if h.callbacks.OnMessageSent != nil {
+			h.callbacks.OnMessageSent(ctx, req.msg, req.size)
+		}
 		return requestResult{resp: resp, err: nil, retry: false}
 
 	case http.StatusTooManyRequests, http.StatusServiceUnavailable:
@@ -384,7 +392,7 @@ func (h *HTTPSender) prepareRequest(ctx context.Context) (*requestWrapper, error
 	if err != nil {
 		return nil, err
 	}
-	req := requestWrapper{Request: r}
+	req := requestWrapper{Request: r, msg: msgToSend, size: len(data)}
 
 	if h.compressionEnabled {
 		var buf bytes.Buffer
@@ -471,6 +479,10 @@ func (h *HTTPSender) receiveResponse(ctx context.Context, resp *http.Response) {
 	if err := proto.Unmarshal(msgBytes, &response); err != nil {
 		h.logger.Errorf(ctx, "cannot unmarshal response: %v", err)
 		return
+	}
+
+	if h.callbacks.OnMessageReceived != nil {
+		h.callbacks.OnMessageReceived(ctx, &response, len(msgBytes))
 	}
 
 	h.receiveProcessor.ProcessReceivedMessage(ctx, &response)

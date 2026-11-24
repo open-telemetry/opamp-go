@@ -26,6 +26,9 @@ type WSSender struct {
 	logger         types.Logger
 	maxMessageSize int64
 
+	// onMessageSent is called after each message is written to the connection.
+	onMessageSent func(ctx context.Context, msg *protobufs.AgentToServer, size int)
+
 	// Indicates that the sender has fully stopped.
 	stopped chan struct{}
 	err     error
@@ -43,6 +46,7 @@ func NewSender(logger types.Logger) *WSSender {
 		heartbeatIntervalUpdated: make(chan struct{}, 1),
 		heartbeatTimer:           time.NewTimer(0),
 		SenderCommon:             NewSenderCommon(),
+		onMessageSent:            func(context.Context, *protobufs.AgentToServer, int) {},
 	}
 	s.heartbeatIntervalMs.Store(defaultHeartbeatIntervalMs)
 	s.maxMessageSize = internal.DefaultMaxMessageSize
@@ -54,14 +58,18 @@ func NewSender(logger types.Logger) *WSSender {
 // earlier. To stop the WSSender cancel the ctx.
 func (s *WSSender) Start(ctx context.Context, conn *websocket.Conn) error {
 	s.conn = conn
-	err := s.sendNextMessage(ctx)
-
-	// Run the sender in the background.
 	s.stopped = make(chan struct{})
 	s.err = nil
+
+	if err := s.sendNextMessage(ctx); err != nil {
+		close(s.stopped)
+		return err
+	}
+
+	// Run the sender in the background after the initial message is sent.
 	go s.run(ctx)
 
-	return err
+	return nil
 }
 
 // IsStopped returns a channel that's closed when the sender is stopped.
@@ -88,6 +96,16 @@ func (s *WSSender) SetHeartbeatInterval(d time.Duration) error {
 	default:
 	}
 	return nil
+}
+
+// SetOnMessageSent sets the function that is called after each message is
+// successfully written to the connection. It must be called before Start.
+// A nil value disables the notification.
+func (s *WSSender) SetOnMessageSent(f func(ctx context.Context, msg *protobufs.AgentToServer, size int)) {
+	if f == nil {
+		f = func(context.Context, *protobufs.AgentToServer, int) {}
+	}
+	s.onMessageSent = f
 }
 
 func (s *WSSender) SetMaxMessageSize(maxMessageSize int64) {
@@ -171,9 +189,11 @@ func (s *WSSender) sendNextMessage(ctx context.Context) error {
 }
 
 func (s *WSSender) sendMessage(ctx context.Context, msg *protobufs.AgentToServer) error {
-	if err := internal.WriteWSMessage(s.conn, msg, s.maxMessageSize); err != nil {
+	_, err := internal.WriteWSMessage(s.conn, msg, s.maxMessageSize)
+	if err != nil {
 		s.logger.Errorf(ctx, "Cannot write WS message: %v", err)
 		return err
 	}
+	s.onMessageSent(ctx, msg, proto.Size(msg))
 	return nil
 }
