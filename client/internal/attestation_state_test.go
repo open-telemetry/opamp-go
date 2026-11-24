@@ -18,7 +18,7 @@ import (
 func TestProcessEnvelopeFirstMessageAndPinnedLeaf(t *testing.T) {
 	pki := newTestPKI(t)
 	s := pki.signer(t)
-	state := newAttestationState(pki.verifier(t), testHost, nil)
+	state := newAttestationState(pki.verifier(t), testHost, nil, testUID)
 	ctx := context.Background()
 
 	env := signedMsg(t, s, testMsg, true)
@@ -73,7 +73,7 @@ func TestProcessEnvelopeFailures(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			state := newAttestationState(tc.verifier, tc.host, nil)
+			state := newAttestationState(tc.verifier, tc.host, nil, testUID)
 			_, err := state.ProcessEnvelope(context.Background(), tc.env)
 			require.ErrorIs(t, err, tc.want)
 			assert.True(t, isAttestationFailure(err))
@@ -87,11 +87,11 @@ func TestProcessEnvelopeCustomVerifierErrors(t *testing.T) {
 	env := signedMsg(t, pki.signer(t), testMsg, true)
 
 	boom := errors.New("boom")
-	_, err := newAttestationState(errVerifier{boom}, testHost, nil).ProcessEnvelope(context.Background(), env)
+	_, err := newAttestationState(errVerifier{boom}, testHost, nil, testUID).ProcessEnvelope(context.Background(), env)
 	require.ErrorIs(t, err, boom)
 	assert.True(t, isAttestationFailure(err), "arbitrary verifier errors are attestation failures")
 
-	_, err = newAttestationState(errVerifier{context.Canceled}, testHost, nil).ProcessEnvelope(context.Background(), env)
+	_, err = newAttestationState(errVerifier{context.Canceled}, testHost, nil, testUID).ProcessEnvelope(context.Background(), env)
 	require.ErrorIs(t, err, context.Canceled)
 	assert.False(t, isAttestationFailure(err), "cancellation is not an attestation failure")
 
@@ -103,7 +103,7 @@ func TestProcessEnvelopeChainRedeliveryAndRotation(t *testing.T) {
 	pki := newTestPKI(t)
 	s1, s2 := pki.signer(t), pki.signer(t)
 	v := &countingVerifier{Verifier: pki.verifier(t)}
-	state := newAttestationState(v, testHost, nil)
+	state := newAttestationState(v, testHost, nil, testUID)
 	ctx := context.Background()
 
 	_, err := state.ProcessEnvelope(ctx, signedMsg(t, s1, testMsg, true))
@@ -125,7 +125,7 @@ func TestProcessEnvelopeChainRedeliveryAndRotation(t *testing.T) {
 func TestProcessEnvelopeErrorAlongsidePinnedChain(t *testing.T) {
 	pki := newTestPKI(t)
 	s := pki.signer(t)
-	state := newAttestationState(pki.verifier(t), testHost, nil)
+	state := newAttestationState(pki.verifier(t), testHost, nil, testUID)
 	ctx := context.Background()
 
 	_, err := state.ProcessEnvelope(ctx, signedMsg(t, s, testMsg, true))
@@ -142,7 +142,7 @@ func TestProcessEnvelopeErrorAlongsidePinnedChain(t *testing.T) {
 func TestProcessEnvelopeReset(t *testing.T) {
 	pki := newTestPKI(t)
 	s := pki.signer(t)
-	state := newAttestationState(pki.verifier(t), testHost, nil)
+	state := newAttestationState(pki.verifier(t), testHost, nil, testUID)
 	ctx := context.Background()
 
 	_, err := state.ProcessEnvelope(ctx, signedMsg(t, s, testMsg, true))
@@ -180,7 +180,7 @@ func TestProcessEnvelopeTOFUEnrollment(t *testing.T) {
 	pki := newTestPKI(t)
 	s := pki.signer(t)
 	store, enroller := newTOFUStore(t)
-	state := newAttestationState(nil, testHost, enroller)
+	state := newAttestationState(nil, testHost, enroller, testUID)
 	ctx := context.Background()
 
 	_, err := state.ProcessEnvelope(ctx, tofuEnvelope(t, s, pki.caPEM))
@@ -229,7 +229,7 @@ func TestProcessEnvelopeTOFURejections(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			store, enroller := newTOFUStore(t)
-			state := newAttestationState(nil, testHost, enroller)
+			state := newAttestationState(nil, testHost, enroller, testUID)
 			_, err := state.ProcessEnvelope(context.Background(), tc.env)
 			for _, want := range tc.wants {
 				require.ErrorIs(t, err, want)
@@ -244,7 +244,7 @@ func TestProcessEnvelopeTOFURejections(t *testing.T) {
 func TestProcessEnvelopeTOFUStoresOnlyTheCertificate(t *testing.T) {
 	pki := newTestPKI(t)
 	store, enroller := newTOFUStore(t)
-	state := newAttestationState(nil, testHost, enroller)
+	state := newAttestationState(nil, testHost, enroller, testUID)
 
 	offered := bytes.Join([][]byte{[]byte("root CA for " + testHost + "\n"), pki.caPEM, []byte("\nsee the runbook\n")}, nil)
 	_, err := state.ProcessEnvelope(context.Background(), tofuEnvelope(t, pki.signer(t), offered))
@@ -257,7 +257,7 @@ func TestProcessEnvelopeTOFUStoresOnlyTheCertificate(t *testing.T) {
 func TestProcessEnvelopeTOFUEnrollerError(t *testing.T) {
 	pki := newTestPKI(t)
 	boom := errors.New("store unavailable")
-	state := newAttestationState(nil, testHost, enrollerFunc(func([]byte) (signing.Verifier, error) { return nil, boom }))
+	state := newAttestationState(nil, testHost, enrollerFunc(func([]byte) (signing.Verifier, error) { return nil, boom }), testUID)
 
 	_, err := state.ProcessEnvelope(context.Background(), tofuEnvelope(t, pki.signer(t), pki.caPEM))
 	require.ErrorIs(t, err, ErrTOFUEnrollment)
@@ -269,7 +269,7 @@ func TestProcessEnvelopeTOFUStoredAnchorWins(t *testing.T) {
 	store, enroller := newTOFUStore(t)
 	require.NoError(t, store.Save(pkiA.caPEM))
 
-	state := newAttestationState(nil, testHost, enroller)
+	state := newAttestationState(nil, testHost, enroller, testUID)
 	_, err := state.ProcessEnvelope(context.Background(), tofuEnvelope(t, pkiB.signer(t), pkiB.caPEM))
 	require.ErrorIs(t, err, signing.ErrChainValidation, "the stored anchor, not the offered one, is trusted")
 
@@ -284,14 +284,14 @@ func TestUnwrapServerToAgentAttested(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("signed message", func(t *testing.T) {
-		state := newAttestationState(pki.verifier(t), testHost, nil)
+		state := newAttestationState(pki.verifier(t), testHost, nil, testUID)
 		var msg protobufs.ServerToAgent
 		require.NoError(t, unwrapServerToAgent(ctx, state, mustMarshal(t, signedMsg(t, s, testMsg, true)), &msg))
 		assert.Equal(t, testMsg.InstanceUid, msg.InstanceUid)
 	})
 
 	t.Run("malformed envelope", func(t *testing.T) {
-		state := newAttestationState(pki.verifier(t), testHost, nil)
+		state := newAttestationState(pki.verifier(t), testHost, nil, testUID)
 		var msg protobufs.ServerToAgent
 		err := unwrapServerToAgent(ctx, state, []byte{0xff}, &msg)
 		require.ErrorIs(t, err, ErrMalformedEnvelope)
@@ -299,7 +299,7 @@ func TestUnwrapServerToAgentAttested(t *testing.T) {
 	})
 
 	t.Run("empty inner message", func(t *testing.T) {
-		state := newAttestationState(pki.verifier(t), testHost, nil)
+		state := newAttestationState(pki.verifier(t), testHost, nil, testUID)
 		// flags=0 encoded explicitly: a non-empty payload that decodes to an empty message.
 		env := signedEnvelope(t, s, []byte{0x30, 0x00}, true)
 		var msg protobufs.ServerToAgent
@@ -309,7 +309,7 @@ func TestUnwrapServerToAgentAttested(t *testing.T) {
 	})
 
 	t.Run("undecodable inner message", func(t *testing.T) {
-		state := newAttestationState(pki.verifier(t), testHost, nil)
+		state := newAttestationState(pki.verifier(t), testHost, nil, testUID)
 		env := signedEnvelope(t, s, []byte{0xff}, true)
 		var msg protobufs.ServerToAgent
 		err := unwrapServerToAgent(ctx, state, mustMarshal(t, env), &msg)
@@ -318,13 +318,71 @@ func TestUnwrapServerToAgentAttested(t *testing.T) {
 	})
 }
 
+func TestUnwrapServerToAgentChecksRecipient(t *testing.T) {
+	pki := newTestPKI(t)
+	s := pki.signer(t)
+	unwrap := func(state *attestationState, m *protobufs.ServerToAgent) (*protobufs.ServerToAgent, error) {
+		var got protobufs.ServerToAgent
+		err := unwrapServerToAgent(context.Background(), state, mustMarshal(t, signedMsg(t, s, m, true)), &got)
+		return &got, err
+	}
+	msg := func(uid []byte) *protobufs.ServerToAgent { return &protobufs.ServerToAgent{InstanceUid: uid, Flags: 1} }
+
+	t.Run("signed for another Agent", func(t *testing.T) {
+		state := newAttestationState(pki.verifier(t), testHost, nil, testUID)
+		got, err := unwrap(state, &protobufs.ServerToAgent{
+			InstanceUid:  []byte("AAAAAAAAAAAAAAAA"),
+			RemoteConfig: &protobufs.AgentRemoteConfig{ConfigHash: []byte("cfg")},
+		})
+		require.ErrorIs(t, err, ErrInstanceUidMismatch)
+		assert.True(t, isAttestationFailure(err))
+		assert.Nil(t, got.RemoteConfig, "the message is not returned")
+	})
+
+	t.Run("no instance_uid", func(t *testing.T) {
+		_, err := unwrap(newAttestationState(pki.verifier(t), testHost, nil, testUID), msg(nil))
+		require.ErrorIs(t, err, ErrInstanceUidMismatch)
+	})
+
+	t.Run("new_instance_uid transition", func(t *testing.T) {
+		oldUID, newUID := testUID(), []byte("fedcba9876543210")
+		current := oldUID
+		state := newAttestationState(pki.verifier(t), testHost, nil, func() []byte { return current })
+
+		_, err := unwrap(state, msg(oldUID))
+		require.NoError(t, err)
+		current = newUID // the Agent adopted a server-assigned new_instance_uid
+		_, err = unwrap(state, msg(oldUID))
+		require.NoError(t, err, "a reply in flight still carries the old UID")
+		_, err = unwrap(state, msg(newUID))
+		require.NoError(t, err)
+		_, err = unwrap(state, msg(oldUID))
+		require.ErrorIs(t, err, ErrInstanceUidMismatch, "rejected once a message carries the new UID")
+	})
+}
+
+func TestProcessEnvelopeTOFUChecksRecipientBeforeEnrolling(t *testing.T) {
+	pki := newTestPKI(t)
+	store, enroller := newTOFUStore(t)
+	state := newAttestationState(nil, testHost, enroller, testUID)
+
+	// Another Agent's enrollment message, replayed to this one.
+	env := signedMsg(t, pki.signer(t), &protobufs.ServerToAgent{InstanceUid: []byte("AAAAAAAAAAAAAAAA"), Flags: 1}, true)
+	env.TrustChainResponse.TofuTrustAnchor = pki.caPEM
+	_, err := state.ProcessEnvelope(context.Background(), env)
+	require.ErrorIs(t, err, ErrTOFUEnrollment)
+	require.ErrorIs(t, err, ErrInstanceUidMismatch)
+	assert.NotNil(t, state.enroller, "enrollment remains pending")
+	requireNotStored(t, store)
+}
+
 func TestProcessEnvelopeIgnoresNonCertificatePEMBlocks(t *testing.T) {
 	pki := newTestPKI(t)
 	env := signedMsg(t, pki.signer(t), testMsg, true)
 	extra := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte("x")})
 	env.TrustChainResponse.CertificateChain = append(extra, env.TrustChainResponse.CertificateChain...)
 
-	_, err := newAttestationState(pki.verifier(t), testHost, nil).ProcessEnvelope(context.Background(), env)
+	_, err := newAttestationState(pki.verifier(t), testHost, nil, testUID).ProcessEnvelope(context.Background(), env)
 	require.NoError(t, err)
 }
 
@@ -333,7 +391,7 @@ func TestUnwrapServerToAgentUndecodableUnsigned(t *testing.T) {
 	// but not a valid ServerToAgent.
 	raw := []byte{0x12, 0x03, 0x12, 0x01, 0xff}
 	var msg protobufs.ServerToAgent
-	err := unwrapServerToAgent(context.Background(), newAttestationState(nil, testHost, nil), raw, &msg)
+	err := unwrapServerToAgent(context.Background(), newAttestationState(nil, testHost, nil, testUID), raw, &msg)
 	require.Error(t, err)
 	assert.False(t, isAttestationFailure(err))
 }

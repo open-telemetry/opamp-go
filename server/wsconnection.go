@@ -24,6 +24,12 @@ var ErrSendBeforeNegotiated = errors.New(
 		"push outbound messages from OnMessage rather than OnConnected",
 )
 
+// ErrInstanceUidRequired is returned from Send on an attested connection when
+// the message has no InstanceUid. Agents reject signed messages addressed to
+// another instance, and a push answers no request, so the server does not
+// pick a recipient on the caller's behalf.
+var ErrInstanceUidRequired = errors.New("server: ServerToAgent.InstanceUid must be set on an attested connection")
+
 // wsConnection represents a persistent OpAMP connection over a WebSocket.
 type wsConnection struct {
 	// The websocket library does not allow multiple concurrent write operations,
@@ -94,6 +100,9 @@ func (c *wsConnection) Send(ctx context.Context, message *protobufs.ServerToAgen
 		// A heartbeat response (instance_uid only) MAY be sent unsigned.
 		if internal.IsHeartbeatServerToAgent(message) {
 			return internal.WriteWSMessage(c.wsConn, message, c.maxMessageSize)
+		}
+		if len(message.InstanceUid) == 0 {
+			return ErrInstanceUidRequired
 		}
 		env, err := state.signOutgoing(ctx, message)
 		if err != nil {

@@ -181,7 +181,7 @@ func (h *HTTPSender) Run(
 		if parsed, err := url.Parse(h.url); err == nil {
 			serverName = parsed.Hostname()
 		}
-		h.attestation = newAttestationState(payloadVerifier, serverName, tofuEnroller)
+		h.attestation = newAttestationState(payloadVerifier, serverName, tofuEnroller, h.NextMessage().InstanceUid)
 	}
 
 	// we need to detect if the redirect was ever set, if not, we want default behaviour

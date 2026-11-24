@@ -101,3 +101,6 @@ type enrollerFunc func([]byte) (signing.Verifier, error)
 func (f enrollerFunc) Enroll(anchorPEM []byte) (signing.Verifier, error) { return f(anchorPEM) }
 
 var testMsg = &protobufs.ServerToAgent{InstanceUid: []byte("0123456789abcdef"), Flags: 1}
+
+// testUID is the Agent's instance UID in tests: the one testMsg is addressed to.
+func testUID() []byte { return testMsg.InstanceUid }

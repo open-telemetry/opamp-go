@@ -51,20 +51,28 @@ var (
 	// ErrUnsignedNonHeartbeat: an unsigned message other than a heartbeat
 	// response, treated as a downgrade attempt.
 	ErrUnsignedNonHeartbeat = errors.New("client: unsigned ServerToAgent is not a heartbeat; rejecting non-signed message")
+
+	// ErrInstanceUidMismatch: a signed message is addressed to another
+	// instance_uid. Every Agent of a server shares its signing key, so this
+	// stops a message signed for one Agent from being replayed to another.
+	ErrInstanceUidMismatch = errors.New("client: signed ServerToAgent is addressed to another instance_uid")
 )
 
 // attestationState holds the Agent's per-connection payload trust state. It
 // exists only when attestation is enabled.
 type attestationState struct {
-	verifier   signing.Verifier
-	serverName string               // host matched against the leaf's SANs
-	enroller   signing.TOFUEnroller // non-nil while TOFU enrollment is pending
+	verifier    signing.Verifier
+	serverName  string               // host matched against the leaf's SANs
+	enroller    signing.TOFUEnroller // non-nil while TOFU enrollment is pending
+	instanceUID func() []byte        // the Agent's current instance UID
 
 	mu             sync.Mutex
 	firstSeen      bool
 	verified       *signing.VerifiedCertificate
 	pinnedChainPEM []byte
-	verifiedOnce   bool // not cleared by Reset
+	verifiedOnce   bool   // not cleared by Reset
+	lastUID        []byte // instance UID seen at the last recipient check
+	prevUID        []byte // UID before a change, until a message carries the new one
 }
 
 // HasVerified reports whether any signed message has verified.
@@ -75,9 +83,37 @@ func (s *attestationState) HasVerified() bool {
 }
 
 // newAttestationState returns state with either a verifier or, for TOFU, an
-// enroller. serverName is the server host, without port.
-func newAttestationState(verifier signing.Verifier, serverName string, enroller signing.TOFUEnroller) *attestationState {
-	return &attestationState{verifier: verifier, serverName: serverName, enroller: enroller}
+// enroller. serverName is the server host, without port; instanceUID returns
+// the Agent's current instance UID.
+func newAttestationState(verifier signing.Verifier, serverName string, enroller signing.TOFUEnroller, instanceUID func() []byte) *attestationState {
+	return &attestationState{verifier: verifier, serverName: serverName, enroller: enroller, instanceUID: instanceUID}
+}
+
+// checkRecipientLocked returns ErrInstanceUidMismatch unless uid, from a
+// verified message, is the Agent's current instance UID or, until a message
+// carries the new one, the UID it had before a server-assigned
+// new_instance_uid; replies in flight still carry the old one. Caller holds
+// s.mu.
+func (s *attestationState) checkRecipientLocked(uid []byte) error {
+	cur := s.instanceUID()
+	if !bytes.Equal(cur, s.lastUID) {
+		s.prevUID, s.lastUID = s.lastUID, cur
+	}
+	if len(uid) > 0 && bytes.Equal(uid, cur) {
+		s.prevUID = nil
+		return nil
+	}
+	if len(uid) > 0 && bytes.Equal(uid, s.prevUID) {
+		return nil
+	}
+	return fmt.Errorf("%w: message for %x, Agent is %x", ErrInstanceUidMismatch, uid, cur)
+}
+
+// checkRecipient is checkRecipientLocked for callers not holding s.mu.
+func (s *attestationState) checkRecipient(uid []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.checkRecipientLocked(uid)
 }
 
 // Reset clears the handshake state so the next message must carry a trust
@@ -196,6 +232,15 @@ func (s *attestationState) enroll(ctx context.Context, anchorPEM []byte, chainDE
 	if err := candidate.Verify(ctx, envelope.Payload, envelope.Signature, verified); err != nil {
 		return fmt.Errorf("%w: verify signature against offered anchor: %w", ErrTOFUEnrollment, err)
 	}
+	// Persisting the anchor cannot be undone, so first make sure the message
+	// is addressed to this Agent and not replayed from another enrollment.
+	var inner protobufs.ServerToAgent
+	if err := proto.Unmarshal(envelope.Payload, &inner); err != nil {
+		return fmt.Errorf("%w: decode payload: %w", ErrTOFUEnrollment, err)
+	}
+	if err := s.checkRecipientLocked(inner.InstanceUid); err != nil {
+		return fmt.Errorf("%w: %w", ErrTOFUEnrollment, err)
+	}
 	v, err := s.enroller.Enroll(anchor)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrTOFUEnrollment, err)
@@ -260,6 +305,10 @@ func unwrapServerToAgent(ctx context.Context, state *attestationState, rawProto 
 	}
 	if proto.Equal(msg, &protobufs.ServerToAgent{}) {
 		return failAttestation(ErrEmptyInnerServerToAgent)
+	}
+	if err := state.checkRecipient(msg.InstanceUid); err != nil {
+		proto.Reset(msg)
+		return failAttestation(err)
 	}
 	return nil
 }

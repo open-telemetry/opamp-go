@@ -30,7 +30,7 @@ func newAttestedHTTPSender(t *testing.T, pki *testPKI) *HTTPSender {
 	callbacks.SetDefaults()
 	state := &ClientSyncedState{}
 	sender.receiveProcessor = newReceivedProcessor(&sharedinternal.NopLogger{}, callbacks, sender, state, nil, new(sync.Mutex), time.Second)
-	sender.attestation = newAttestationState(pki.verifier(t), testHost, nil)
+	sender.attestation = newAttestationState(pki.verifier(t), testHost, nil, testUID)
 	return sender
 }
 

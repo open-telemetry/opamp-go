@@ -67,7 +67,8 @@ func NewWSReceiver(
 		} else {
 			serverName = parsed.Hostname()
 		}
-		w.attestation = newAttestationState(payloadVerifier, serverName, tofuEnroller)
+		w.attestation = newAttestationState(payloadVerifier, serverName, tofuEnroller,
+			func() []byte { return sender.NextMessage().InstanceUid() })
 	}
 
 	return w

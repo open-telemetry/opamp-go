@@ -42,7 +42,9 @@ func runAttestedReceiver(t *testing.T, v signing.Verifier, serve func(conn *webs
 	state := &ClientSyncedState{}
 	caps := protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
 	require.NoError(t, state.SetCapabilities(&caps))
-	r := NewWSReceiver(&sharedinternal.NopLogger{}, callbacks, conn, NewSender(&sharedinternal.NopLogger{}), state, nil,
+	sender := NewSender(&sharedinternal.NopLogger{})
+	require.NoError(t, sender.SetInstanceUid(types.InstanceUid(testUID())))
+	r := NewWSReceiver(&sharedinternal.NopLogger{}, callbacks, conn, sender, state, nil,
 		new(sync.Mutex), time.Second, v, "ws://"+testHost+"/v1/opamp", nil)
 
 	r.ReceiverLoop(context.Background())

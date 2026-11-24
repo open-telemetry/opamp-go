@@ -24,7 +24,7 @@ func mustMarshal(t *testing.T, m proto.Message) []byte {
 func TestUnwrapServerToAgent_UnsignedHeartbeatAccepted(t *testing.T) {
 	uid := []byte("0123456789abcdef")
 	// verifier is nil: the heartbeat path must never touch it.
-	state := newAttestationState(nil, "example.com", nil)
+	state := newAttestationState(nil, "example.com", nil, testUID)
 	raw := mustMarshal(t, &protobufs.ServerToAgent{InstanceUid: uid})
 
 	var msg protobufs.ServerToAgent
@@ -49,7 +49,7 @@ func TestUnwrapServerToAgent_UnsignedNonHeartbeatRejected(t *testing.T) {
 	}
 	for name, sta := range cases {
 		t.Run(name, func(t *testing.T) {
-			state := newAttestationState(nil, "example.com", nil)
+			state := newAttestationState(nil, "example.com", nil, testUID)
 			raw := mustMarshal(t, sta)
 
 			var msg protobufs.ServerToAgent
@@ -71,7 +71,7 @@ func TestUnwrapServerToAgent_UnsignedNonHeartbeatRejected(t *testing.T) {
 // heartbeat candidate: it falls through to ProcessEnvelope and is
 // rejected with ErrMissingPayload rather than silently accepted.
 func TestUnwrapServerToAgent_EnvelopeWithSignatureNoPayload(t *testing.T) {
-	state := newAttestationState(nil, "example.com", nil)
+	state := newAttestationState(nil, "example.com", nil, testUID)
 	raw := mustMarshal(t, &protobufs.SignedServerToAgent{Signature: []byte{0x01, 0x02}})
 
 	var msg protobufs.ServerToAgent

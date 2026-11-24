@@ -174,10 +174,13 @@ func TestWSConnectionSendAttested(t *testing.T) {
 	readWS(t, clientConn, &gotHeartbeat)
 	assert.True(t, proto.Equal(heartbeat, &gotHeartbeat), "heartbeats are sent unsigned")
 
+	// The server never guesses the recipient of a push.
+	require.ErrorIs(t, conn.Send(ctx, &protobufs.ServerToAgent{Flags: 1}), ErrInstanceUidRequired)
+
 	require.NoError(t, conn.Send(ctx, attestMsg))
 	var env protobufs.SignedServerToAgent
 	readWS(t, clientConn, &env)
-	assert.True(t, proto.Equal(attestMsg, pki.verifyEnvelope(t, &env)))
+	assert.True(t, proto.Equal(attestMsg, pki.verifyEnvelope(t, &env)), "the rejected push never reached the wire")
 }
 
 func TestWSConnectionChainSurvivesFailedWrite(t *testing.T) {
@@ -209,6 +212,12 @@ func TestWSConnectionSendWithoutSigner(t *testing.T) {
 	var got protobufs.ServerToAgent
 	readWS(t, clientConn, &got)
 	assert.True(t, proto.Equal(attestMsg, &got))
+
+	// Without attestation, a push without InstanceUid is still sent as is.
+	noUID := &protobufs.ServerToAgent{Flags: 1}
+	require.NoError(t, conn.Send(context.Background(), noUID))
+	readWS(t, clientConn, &got)
+	assert.True(t, proto.Equal(noUID, &got))
 }
 
 func TestWSConnectionSendSignerError(t *testing.T) {

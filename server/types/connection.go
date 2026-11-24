@@ -21,7 +21,8 @@ type Connection interface {
 	// If the Server has a PayloadSigner, returns server.ErrSendBeforeNegotiated
 	// when called before the connection's first AgentToServer has been
 	// processed (for example, from OnConnected), whether or not the Agent
-	// requests attestation.
+	// requests attestation. On an attested connection, returns
+	// server.ErrInstanceUidRequired if message has no InstanceUid.
 	Send(ctx context.Context, message *protobufs.ServerToAgent) error
 
 	// Disconnect closes the network connection.

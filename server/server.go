@@ -48,7 +48,10 @@ type Settings struct {
 	// AgentToServer is processed, so until then Send on a WebSocket
 	// connection returns ErrSendBeforeNegotiated, for every Agent, including
 	// those that never request attestation. Push messages from OnMessage
-	// rather than OnConnected.
+	// rather than OnConnected. On an attested connection, a pushed message
+	// must set InstanceUid (ErrInstanceUidRequired): Agents reject signed
+	// messages addressed to another instance. Replies to AgentToServer take
+	// it from the request.
 	//
 	// Signing runs inline, and sends on a connection are serialized, so
 	// signer latency (for example of a remote or KMS signer) adds to every
