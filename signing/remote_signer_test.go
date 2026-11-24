@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/x509"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -527,4 +528,40 @@ func TestRemoteSignerRequestTimeout(t *testing.T) {
 		_, err := p.newSigner(t, settings).Sign(t.Context(), []byte("p"))
 		assert.ErrorIs(t, err, context.DeadlineExceeded)
 	})
+}
+
+func TestRemoteSignerErrorBodiesAreQuotedAndBounded(t *testing.T) {
+	// A forged log line and a terminal escape, then enough data to flood logs.
+	body := "denied\n2026-11-24T12:00:00Z INFO payload signed for all agents\x1b[2J" + strings.Repeat("x", 10_000)
+	var failPath atomic.Value
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != failPath.Load() {
+			_, _ = w.Write([]byte("signature"))
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	rs, err := NewRemoteSigner(RemoteSignerSettings{BaseURL: srv.URL, Client: srv.Client()})
+	require.NoError(t, err)
+
+	sign := func() error { _, err := rs.Sign(t.Context(), []byte("p")); return err }
+	for path, call := range map[string]func() error{
+		"/v1/sign":  sign,
+		"/v1/chain": sign, // reached once /v1/sign succeeds
+		"/v1/ca":    func() error { _, err := rs.TrustAnchorPEM(t.Context()); return err },
+	} {
+		t.Run(path, func(t *testing.T) {
+			failPath.Store(path)
+			err := call()
+			require.ErrorContains(t, err, "HTTP 403")
+			msg := err.Error()
+			assert.NotContains(t, msg, "\n", "newlines are escaped")
+			assert.NotContains(t, msg, "\x1b", "terminal escapes are escaped")
+			assert.Contains(t, msg, `denied\n2026`)
+			assert.Contains(t, msg, fmt.Sprintf("(%d bytes)", len(body)))
+			assert.Less(t, len(msg), 512)
+		})
+	}
 }

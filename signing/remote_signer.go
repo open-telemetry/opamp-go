@@ -39,6 +39,20 @@ func readLimited(r io.Reader, limit int64) ([]byte, error) {
 	return data, nil
 }
 
+// maxErrorBodySize bounds how much of an error response's body is quoted in
+// the returned error, so a faulty or compromised service cannot flood logs.
+const maxErrorBodySize = 256
+
+// errorBody renders an error response's body for an error message: quoted,
+// so newlines and terminal escape sequences cannot forge or corrupt log
+// lines, and truncated to maxErrorBodySize bytes.
+func errorBody(body []byte) string {
+	if len(body) <= maxErrorBodySize {
+		return fmt.Sprintf("%q", body)
+	}
+	return fmt.Sprintf("%q... (%d bytes)", body[:maxErrorBodySize], len(body))
+}
+
 // RemoteSigner implements [Signer] by delegating to an out-of-process HTTP
 // signing service, so the OpAMP server holds no private key. It must expose:
 //
@@ -221,7 +235,7 @@ func (s *RemoteSigner) sign(ctx context.Context, payload []byte) ([]byte, error)
 		return nil, fmt.Errorf("remote signer: read sign response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("remote signer: sign returned HTTP %d: %s", resp.StatusCode, body)
+		return nil, fmt.Errorf("remote signer: sign returned HTTP %d: %s", resp.StatusCode, errorBody(body))
 	}
 	return body, nil
 }
@@ -276,7 +290,7 @@ func (s *RemoteSigner) TrustAnchorPEM(ctx context.Context) ([]byte, error) {
 		return nil, fmt.Errorf("remote signer: read CA response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("remote signer: CA returned HTTP %d: %s", resp.StatusCode, body)
+		return nil, fmt.Errorf("remote signer: CA returned HTTP %d: %s", resp.StatusCode, errorBody(body))
 	}
 	return body, nil
 }
@@ -350,7 +364,7 @@ func (s *RemoteSigner) fetchChainDER(ctx context.Context) ([][]byte, error) {
 		return nil, fmt.Errorf("remote signer: read chain response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("remote signer: chain returned HTTP %d: %s", resp.StatusCode, pemBytes)
+		return nil, fmt.Errorf("remote signer: chain returned HTTP %d: %s", resp.StatusCode, errorBody(pemBytes))
 	}
 
 	chain := pemCertificates(pemBytes)
