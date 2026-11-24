@@ -1,12 +1,19 @@
 package client
 
 import (
+	"bufio"
 	"context"
+	"crypto/sha1"
+	"encoding/base64"
+	"net"
+	"net/http"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opamp-go/client/internal"
@@ -99,10 +106,27 @@ func TestOnDisconnectCalledWhenServerDropsConnection(t *testing.T) {
 }
 
 func TestOnDisconnectCalledWhenInitialWebSocketMessageFails(t *testing.T) {
-	srv := internal.StartMockServer(t)
-	srv.SetOnWSConnect(func(conn *websocket.Conn) {
-		assert.NoError(t, conn.Close())
-	})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+
+	serverReady := make(chan struct{})
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		reader := bufio.NewReader(conn)
+		request, err := http.ReadRequest(reader)
+		if err != nil {
+			return
+		}
+		acceptHash := sha1.Sum([]byte(request.Header.Get("Sec-WebSocket-Key") + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
+		_, _ = conn.Write([]byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + base64.StdEncoding.EncodeToString(acceptHash[:]) + "\r\n\r\n"))
+		close(serverReady)
+	}()
 
 	var connected, disconnected atomic.Int64
 	settings := types.StartSettings{
@@ -116,16 +140,20 @@ func TestOnDisconnectCalledWhenInitialWebSocketMessageFails(t *testing.T) {
 			},
 		},
 	}
-	settings.OpAMPServerURL = "ws://" + srv.Endpoint
+	settings.OpAMPServerURL = "ws://" + listener.Addr().String()
 	client := NewWebSocket(nil)
 	startClient(t, settings, client)
 
+	select {
+	case <-serverReady:
+	case <-time.After(time.Second):
+		t.Fatal("server did not complete the WebSocket handshake")
+	}
 	eventually(t, func() bool { return connected.Load() > 0 })
 	eventually(t, func() bool { return disconnected.Load() > 0 })
 	assert.Equal(t, connected.Load(), disconnected.Load())
 
 	assert.NoError(t, client.Stop(context.Background()))
-	srv.Close()
 }
 
 func TestOnDisconnectNotCalledOnStop(t *testing.T) {
