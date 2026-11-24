@@ -2,6 +2,8 @@ package signing
 
 import (
 	"bytes"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
@@ -103,4 +105,46 @@ func (s *FileTOFUStore) Save(pemBytes []byte) error {
 		return fmt.Errorf("%w: %v", ErrTOFUStoreSave, err)
 	}
 	return nil
+}
+
+// ErrInvalidTOFUAnchor is returned when a TOFU trust anchor is not a single
+// self-signed CA certificate in PEM form.
+var ErrInvalidTOFUAnchor = errors.New("signing: invalid TOFU trust anchor")
+
+// TOFUAnchorFromPEM parses a TOFU trust anchor: exactly one PEM block, a
+// CERTIFICATE holding a self-signed CA; text around the block is ignored. It
+// returns a Verifier that trusts only that certificate, and the certificate
+// re-encoded as PEM, which is what should be persisted.
+//
+// The spec defines the anchor as one root CA certificate. A bundle would make
+// every certificate in it a permanent trust anchor, and a leaf or
+// intermediate would stop verifying once it rotated.
+func TOFUAnchorFromPEM(pemBytes []byte) (*LocalVerifier, []byte, error) {
+	block, rest := pem.Decode(pemBytes)
+	if block == nil {
+		return nil, nil, fmt.Errorf("%w: no PEM block", ErrInvalidTOFUAnchor)
+	}
+	if extra, _ := pem.Decode(rest); extra != nil {
+		return nil, nil, fmt.Errorf("%w: more than one PEM block", ErrInvalidTOFUAnchor)
+	}
+	if block.Type != "CERTIFICATE" {
+		return nil, nil, fmt.Errorf("%w: PEM block is %q, not CERTIFICATE", ErrInvalidTOFUAnchor, block.Type)
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %v", ErrInvalidTOFUAnchor, err)
+	}
+	if !cert.BasicConstraintsValid || !cert.IsCA {
+		return nil, nil, fmt.Errorf("%w: not a CA certificate", ErrInvalidTOFUAnchor)
+	}
+	if !isSelfSigned(cert) {
+		return nil, nil, fmt.Errorf("%w: not self-signed, so not a root", ErrInvalidTOFUAnchor)
+	}
+	pool := x509.NewCertPool()
+	pool.AddCert(cert)
+	v, err := NewLocalVerifier(pool)
+	if err != nil {
+		return nil, nil, err
+	}
+	return v, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}), nil
 }

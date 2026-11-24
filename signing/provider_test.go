@@ -56,8 +56,14 @@ func TestTOFUAnchorVerifier(t *testing.T) {
 	assert.ErrorIs(t, err, boom)
 
 	v, err = TOFUAnchor(&fakeTOFUStore{stored: []byte("garbage")}).Verifier()
-	assert.ErrorIs(t, err, ErrLoadCAFile)
+	assert.ErrorIs(t, err, ErrInvalidTOFUAnchor)
 	assert.ErrorContains(t, err, "stored TOFU trust anchor is unusable")
+	assert.Nil(t, v)
+
+	// A second CA appended to the stored anchor is rejected, not trusted.
+	other, _ := newTestCA(t, AlgorithmECDSAP256SHA256)
+	v, err = TOFUAnchor(&fakeTOFUStore{stored: append(pemCert(root), pemCert(other)...)}).Verifier()
+	assert.ErrorIs(t, err, ErrInvalidTOFUAnchor)
 	assert.Nil(t, v)
 
 	// An existing but empty anchor file fails instead of reading as "not enrolled".
@@ -82,8 +88,11 @@ func TestTOFUAnchorEnroll(t *testing.T) {
 	enroller, ok := p.(TOFUEnroller)
 	require.True(t, ok)
 
-	v, err := enroller.Enroll(pemCert(root))
+	v, err := enroller.Enroll(append([]byte("root CA\n"), pemCert(root)...))
 	require.NoError(t, err)
+	stored, err := store.Load()
+	require.NoError(t, err)
+	assert.Equal(t, pemCert(root), stored, "only the certificate is stored")
 	_, err = v.ValidateChain(t.Context(), ders(leaf), time.Now(), testHost)
 	require.NoError(t, err)
 
@@ -117,8 +126,11 @@ func TestTOFUAnchorEnrollErrors(t *testing.T) {
 
 	store := &fakeTOFUStore{}
 	_, err := TOFUAnchor(store).(TOFUEnroller).Enroll([]byte("garbage"))
-	assert.ErrorIs(t, err, ErrLoadCAFile)
-	assert.Zero(t, store.saves, "an unusable anchor must not be saved")
+	assert.ErrorIs(t, err, ErrInvalidTOFUAnchor)
+	other, _ := newTestCA(t, AlgorithmECDSAP256SHA256)
+	_, err = TOFUAnchor(store).(TOFUEnroller).Enroll(append(pemCert(root), pemCert(other)...))
+	assert.ErrorIs(t, err, ErrInvalidTOFUAnchor)
+	assert.Zero(t, store.saves, "an invalid anchor must not be saved")
 
 	_, err = TOFUAnchor(&fakeTOFUStore{saveErr: boom}).(TOFUEnroller).Enroll(pemCert(root))
 	assert.ErrorIs(t, err, boom)
@@ -128,7 +140,7 @@ func TestTOFUAnchorEnrollErrors(t *testing.T) {
 
 	// The stored anchor, not the offered one, must be usable.
 	_, err = TOFUAnchor(&fakeTOFUStore{stored: []byte("corrupt")}).(TOFUEnroller).Enroll(pemCert(root))
-	assert.ErrorIs(t, err, ErrLoadCAFile)
+	assert.ErrorIs(t, err, ErrInvalidTOFUAnchor)
 	assert.ErrorContains(t, err, "stored TOFU trust anchor is unusable")
 
 	// An empty anchor file is never replaced, so enrollment reports it.

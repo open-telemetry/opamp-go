@@ -1,6 +1,8 @@
 package signing
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
@@ -8,6 +10,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -96,4 +99,52 @@ func TestFileTOFUStoreConcurrentSave(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Dir(path))
 	require.NoError(t, err)
 	assert.Len(t, entries, 1)
+}
+
+func TestTOFUAnchorFromPEM(t *testing.T) {
+	alg := AlgorithmECDSAP256SHA256
+	root, rootKey := newTestCA(t, alg)
+	other, _ := newTestCA(t, alg)
+	leaf, _ := newTestLeaf(t, alg, root, rootKey)
+	interKey, err := newKey(alg)
+	require.NoError(t, err)
+	inter := issueCert(t, &x509.Certificate{IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}, root, interKey.Public(), rootKey)
+	nonCAKey, err := newKey(alg)
+	require.NoError(t, err)
+	nonCA := issueCert(t, &x509.Certificate{BasicConstraintsValid: true}, nil, nonCAKey.Public(), nonCAKey)
+
+	t.Run("root CA", func(t *testing.T) {
+		offered := append([]byte("Root CA for "+testHost+"\n"), pemCert(root)...)
+		offered = append(offered, "\nsee the runbook\n"...)
+		v, anchor, err := TOFUAnchorFromPEM(offered)
+		require.NoError(t, err)
+		assert.Equal(t, pemCert(root), anchor, "only the certificate is kept")
+		_, err = v.ValidateChain(t.Context(), ders(leaf), time.Now(), testHost)
+		require.NoError(t, err)
+	})
+
+	keyBlock := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte("x")})
+	rejected := []struct {
+		name, reason string
+		input        []byte
+	}{
+		{"empty", "no PEM block", nil},
+		{"no PEM block", "no PEM block", []byte("not a certificate")},
+		{"bundle of two CAs", "more than one PEM block", append(pemCert(root), pemCert(other)...)},
+		{"extra non-certificate block", "more than one PEM block", append(pemCert(root), keyBlock...)},
+		{"non-certificate block", "not CERTIFICATE", keyBlock},
+		{"malformed certificate", "x509", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("junk")})},
+		{"leaf", "not a CA", pemCert(leaf)},
+		{"self-signed non-CA", "not a CA", pemCert(nonCA)},
+		{"intermediate CA", "not self-signed", pemCert(inter)},
+	}
+	for _, tc := range rejected {
+		t.Run(tc.name, func(t *testing.T) {
+			v, anchor, err := TOFUAnchorFromPEM(tc.input)
+			require.ErrorIs(t, err, ErrInvalidTOFUAnchor)
+			assert.ErrorContains(t, err, tc.reason)
+			assert.Nil(t, v)
+			assert.Nil(t, anchor)
+		})
+	}
 }

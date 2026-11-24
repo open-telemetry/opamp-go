@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"encoding/pem"
 	"errors"
@@ -205,13 +206,22 @@ func TestProcessEnvelopeTOFURejections(t *testing.T) {
 	noSig := tofuEnvelope(t, s, pki.caPEM)
 	noSig.Signature = nil
 
+	keyBlock := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte("x")})
+	// The signing leaf offered as its own anchor: it would verify today and
+	// break at the next leaf rotation.
+	leafAsAnchor := signedMsg(t, s, testMsg, true)
+	leafAsAnchor.TrustChainResponse.TofuTrustAnchor = leafAsAnchor.TrustChainResponse.CertificateChain
+
 	tests := []struct {
 		name  string
 		env   *protobufs.SignedServerToAgent
 		wants []error
 	}{
 		{"missing anchor", tofuEnvelope(t, s, nil), []error{ErrTOFUAnchorMissing}},
-		{"garbage anchor", tofuEnvelope(t, s, []byte("junk")), []error{ErrTOFUEnrollment}},
+		{"garbage anchor", tofuEnvelope(t, s, []byte("junk")), []error{ErrTOFUEnrollment, signing.ErrInvalidTOFUAnchor}},
+		{"anchor bundle", tofuEnvelope(t, s, bytes.Join([][]byte{pki.caPEM, other.caPEM}, nil)), []error{ErrTOFUEnrollment, signing.ErrInvalidTOFUAnchor}},
+		{"anchor with extra PEM block", tofuEnvelope(t, s, bytes.Join([][]byte{pki.caPEM, keyBlock}, nil)), []error{ErrTOFUEnrollment, signing.ErrInvalidTOFUAnchor}},
+		{"signing leaf as anchor", leafAsAnchor, []error{ErrTOFUEnrollment, signing.ErrInvalidTOFUAnchor}},
 		{"chain not under offered anchor", tofuEnvelope(t, s, other.caPEM), []error{ErrTOFUEnrollment, signing.ErrChainValidation}},
 		{"signature invalid under offered anchor", badSig, []error{ErrTOFUEnrollment, signing.ErrSignatureMismatch}},
 		{"missing signature", noSig, []error{ErrMissingSignature}},
@@ -229,6 +239,19 @@ func TestProcessEnvelopeTOFURejections(t *testing.T) {
 			requireNotStored(t, store)
 		})
 	}
+}
+
+func TestProcessEnvelopeTOFUStoresOnlyTheCertificate(t *testing.T) {
+	pki := newTestPKI(t)
+	store, enroller := newTOFUStore(t)
+	state := newAttestationState(nil, testHost, enroller)
+
+	offered := bytes.Join([][]byte{[]byte("root CA for " + testHost + "\n"), pki.caPEM, []byte("\nsee the runbook\n")}, nil)
+	_, err := state.ProcessEnvelope(context.Background(), tofuEnvelope(t, pki.signer(t), offered))
+	require.NoError(t, err)
+	stored, err := store.Load()
+	require.NoError(t, err)
+	assert.Equal(t, pki.caPEM, stored, "only the validated certificate is persisted")
 }
 
 func TestProcessEnvelopeTOFUEnrollerError(t *testing.T) {

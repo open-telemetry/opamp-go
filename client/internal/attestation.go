@@ -176,7 +176,8 @@ func (s *attestationState) processEnvelope(ctx context.Context, envelope *protob
 }
 
 // enroll performs TOFU enrollment. The anchor is persisted only after the
-// chain and this envelope's signature verify under it. Caller holds s.mu.
+// chain and this envelope's signature verify under it, and only as the single
+// validated certificate, never the offered bytes. Caller holds s.mu.
 func (s *attestationState) enroll(ctx context.Context, anchorPEM []byte, chainDER [][]byte, envelope *protobufs.SignedServerToAgent) error {
 	if len(anchorPEM) == 0 {
 		return ErrTOFUAnchorMissing
@@ -184,7 +185,7 @@ func (s *attestationState) enroll(ctx context.Context, anchorPEM []byte, chainDE
 	if len(envelope.Signature) == 0 {
 		return ErrMissingSignature
 	}
-	candidate, err := signing.VerifierFromPEM(anchorPEM)
+	candidate, anchor, err := signing.TOFUAnchorFromPEM(anchorPEM)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrTOFUEnrollment, err)
 	}
@@ -195,7 +196,7 @@ func (s *attestationState) enroll(ctx context.Context, anchorPEM []byte, chainDE
 	if err := candidate.Verify(ctx, envelope.Payload, envelope.Signature, verified); err != nil {
 		return fmt.Errorf("%w: verify signature against offered anchor: %w", ErrTOFUEnrollment, err)
 	}
-	v, err := s.enroller.Enroll(anchorPEM)
+	v, err := s.enroller.Enroll(anchor)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrTOFUEnrollment, err)
 	}

@@ -16,15 +16,17 @@ type PayloadTrustProvider interface {
 
 // TOFUEnroller is an optional [PayloadTrustProvider] interface for Trust On
 // First Use enrollment. When Verifier returns nil, the client takes the root
-// CA from the first trust_chain_response.tofu_trust_anchor, checks that the
-// delivered chain and signature verify under it, then calls Enroll and uses
-// the returned Verifier for all later connections. The client advertises
+// CA from the first trust_chain_response.tofu_trust_anchor, checks that it
+// is a valid anchor (see [TOFUAnchorFromPEM]) and that the delivered chain
+// and signature verify under it, then calls Enroll and uses the returned
+// Verifier for all later connections. The client advertises
 // AcceptsPayloadTrustAnchorTOFU only while enrollment is pending.
 type TOFUEnroller interface {
-	// Enroll persists anchorPEM and returns a Verifier for the stored
-	// anchor. It MUST NOT overwrite an anchor that is already stored, and
-	// the returned Verifier MUST reflect the stored anchor, so a repeat
-	// enrollment cannot substitute a different one.
+	// Enroll persists anchorPEM, which the client passes as the single
+	// validated certificate re-encoded as PEM, and returns a Verifier for
+	// the stored anchor. It MUST NOT overwrite an anchor that is already
+	// stored, and the returned Verifier MUST reflect the stored anchor, so
+	// a repeat enrollment cannot substitute a different one.
 	Enroll(anchorPEM []byte) (Verifier, error)
 }
 
@@ -75,13 +77,15 @@ func (p tofuAnchorProvider) Verifier() (Verifier, error) {
 	return storedVerifier(anchorPEM)
 }
 
-// Enroll saves anchorPEM (a no-op if an anchor is already stored) and returns
-// a verifier for the anchor actually stored.
+// Enroll validates anchorPEM (see [TOFUAnchorFromPEM]), saves the certificate
+// it holds (a no-op if an anchor is already stored), and returns a verifier
+// for the anchor actually stored.
 func (p tofuAnchorProvider) Enroll(anchorPEM []byte) (Verifier, error) {
-	if _, err := VerifierFromPEM(anchorPEM); err != nil {
+	_, anchor, err := TOFUAnchorFromPEM(anchorPEM)
+	if err != nil {
 		return nil, err
 	}
-	if err := p.store.Save(anchorPEM); err != nil {
+	if err := p.store.Save(anchor); err != nil {
 		return nil, err
 	}
 	stored, err := p.store.Load()
@@ -91,9 +95,10 @@ func (p tofuAnchorProvider) Enroll(anchorPEM []byte) (Verifier, error) {
 	return storedVerifier(stored)
 }
 
-// storedVerifier returns a verifier for an anchor read back from the store.
+// storedVerifier returns a verifier for an anchor read back from the store,
+// which must meet the same rules as an offered one.
 func storedVerifier(anchorPEM []byte) (Verifier, error) {
-	v, err := VerifierFromPEM(anchorPEM)
+	v, _, err := TOFUAnchorFromPEM(anchorPEM)
 	if err != nil {
 		return nil, fmt.Errorf("signing: stored TOFU trust anchor is unusable; delete it to re-enroll: %w", err)
 	}
