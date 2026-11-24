@@ -104,7 +104,9 @@ func (s *RemoteSigner) SetChainCacheTTL(ttl time.Duration) {
 
 // Sign implements [Signer]. The service signs the posted bytes as-is, so
 // SignResult.Payload is the input. If the signature does not verify under
-// the current chain even after a refetch, Sign returns an error.
+// the current chain even after a refetch, or that chain is outside its
+// validity period (ErrChainValidation), Sign returns an error. The service
+// should rotate its signing certificate well before it expires.
 func (s *RemoteSigner) Sign(ctx context.Context, payload []byte) (SignResult, error) {
 	sig, err := s.sign(ctx, payload)
 	if err != nil {
@@ -124,6 +126,11 @@ func (s *RemoteSigner) Sign(ctx context.Context, payload []byte) (SignResult, er
 		if err := verifyUnderLeaf(chain, payload, sig); err != nil {
 			return SignResult{}, fmt.Errorf("remote signer: signature does not verify under the current chain: %w", err)
 		}
+	}
+	// The signature matches this chain, so if it has expired the service is
+	// still signing with it, and refetching would not help.
+	if err := checkChainWindow(chain, time.Now()); err != nil {
+		return SignResult{}, fmt.Errorf("remote signer: %w", err)
 	}
 	return SignResult{Payload: payload, Signature: sig, ChainDER: chain}, nil
 }
@@ -161,6 +168,20 @@ func verifyUnderLeaf(chain [][]byte, payload, signature []byte) error {
 		return fmt.Errorf("%w: leaf: %v", ErrParseCertificate, err)
 	}
 	return verifyWithCert(leaf, payload, signature)
+}
+
+// checkChainWindow fails if chain is outside its validity period at now.
+func checkChainWindow(chain [][]byte, now time.Time) error {
+	certs := make([]*x509.Certificate, len(chain))
+	for i, der := range chain {
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			return fmt.Errorf("%w: chain[%d]: %v", ErrParseCertificate, i, err)
+		}
+		certs[i] = cert
+	}
+	notBefore, notAfter := chainWindow(certs)
+	return checkSigningWindow(notBefore, notAfter, now)
 }
 
 // refreshChain fetches and caches the current chain, bypassing the cache.

@@ -199,3 +199,42 @@ func TestNewLocalSignerRequiresSAN(t *testing.T) {
 	_, err = NewLocalSigner(key, []*x509.Certificate{leaf})
 	assert.ErrorIs(t, err, ErrChainValidation)
 }
+
+func TestLocalSignerSignOutsideValidity(t *testing.T) {
+	alg := AlgorithmECDSAP256SHA256
+	past, future := time.Now().Add(-48*time.Hour), time.Now().Add(48*time.Hour)
+	root, rootKey, err := GenerateCA(alg, CertOptions{NotBefore: past.Add(-time.Hour), NotAfter: future.Add(time.Hour)})
+	require.NoError(t, err)
+	leafOpts := func(from, until time.Time) CertOptions {
+		return CertOptions{DNSNames: []string{testHost}, NotBefore: from, NotAfter: until}
+	}
+
+	expiredLeaf, expiredKey, err := GenerateLeaf(alg, root, rootKey, leafOpts(past.Add(-time.Hour), past.Add(time.Hour)))
+	require.NoError(t, err)
+	inter, interKey, err := generateCert(alg, CertOptions{NotBefore: past.Add(-time.Hour), NotAfter: past.Add(time.Hour)}, "CA",
+		&x509.Certificate{IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}, root, rootKey)
+	require.NoError(t, err)
+	longLeaf, longKey, err := GenerateLeaf(alg, inter, interKey, leafOpts(past.Add(-time.Hour), future))
+	require.NoError(t, err)
+	laterLeaf, laterKey, err := GenerateLeaf(alg, root, rootKey, leafOpts(future.Add(-time.Hour), future.Add(time.Hour)))
+	require.NoError(t, err)
+
+	cases := []struct {
+		name  string
+		key   crypto.Signer
+		chain []*x509.Certificate
+		at    time.Time // a time the chain is valid, for construction
+	}{
+		{"expired leaf", expiredKey, []*x509.Certificate{expiredLeaf}, past},
+		{"expired intermediate above a valid leaf", longKey, []*x509.Certificate{inter, longLeaf}, past},
+		{"leaf not yet valid", laterKey, []*x509.Certificate{laterLeaf}, future},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := newLocalSigner(tc.key, tc.chain, tc.at)
+			require.NoError(t, err, "valid when constructed")
+			_, err = s.Sign(t.Context(), []byte("payload"))
+			assert.ErrorIs(t, err, ErrChainValidation)
+		})
+	}
+}

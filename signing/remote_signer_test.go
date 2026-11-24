@@ -431,3 +431,17 @@ func TestRemoteSignerSharedFetchSurvivesCallerCancel(t *testing.T) {
 	assert.NoError(t, <-secondDone)
 	assert.EqualValues(t, 1, p.chainFetches.Load(), "the second caller shares the first fetch")
 }
+
+func TestRemoteSignerRejectsExpiredChain(t *testing.T) {
+	p := newPolicyServer(t)
+	past := time.Now().Add(-48 * time.Hour)
+	leaf, key, err := GenerateLeaf(AlgorithmECDSAP256SHA256, p.root, p.rootKy, CertOptions{
+		DNSNames: []string{testHost}, NotBefore: past.Add(-time.Hour), NotAfter: past.Add(time.Hour),
+	})
+	require.NoError(t, err)
+	p.set(func(p *policyServer) { p.signKey, p.chainPEM = key, pemCert(leaf) })
+
+	_, err = NewRemoteSigner(p.srv.URL).Sign(t.Context(), []byte("payload"))
+	assert.ErrorIs(t, err, ErrChainValidation)
+	assert.EqualValues(t, 1, p.chainFetches.Load(), "a signature matching the chain needs no refetch")
+}

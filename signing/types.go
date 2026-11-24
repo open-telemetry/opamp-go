@@ -73,6 +73,10 @@ type Signer interface {
 	// separate chain-fetch step, so signers that learn their certificate
 	// only by signing fit naturally; a failing signer errors here and the
 	// server closes the connection.
+	//
+	// Sign SHOULD fail rather than return a chain that is not valid at the
+	// time of signing: every Agent would reject the signature, and the cause
+	// would only be visible on the Agents.
 	Sign(ctx context.Context, payload []byte) (SignResult, error)
 }
 

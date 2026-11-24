@@ -21,11 +21,20 @@ var ErrKeyMismatch = errors.New("signing: private key does not match leaf certif
 // signs with a crypto.Signer and a fixed certificate chain. The key may be
 // in memory or backed by hardware or a KMS. It is safe for concurrent use
 // if the crypto.Signer is.
+//
+// Because the chain is fixed, Sign fails once it is outside its validity
+// period. With short-lived signing certificates, as the spec recommends, use
+// a Signer that rotates its chain, such as a RemoteSigner backed by a
+// rotating signing service or a custom Signer that swaps in new
+// LocalSigners. Rotate well before expiry, for example at half to two-thirds
+// of the leaf's lifetime, so that validity periods overlap.
 type LocalSigner struct {
 	key       crypto.Signer
 	alg       Algorithm
 	chainDER  [][]byte
-	rootCAPEM []byte // PEM-encoded, set via WithRootCA; nil unless TOFU is supported
+	notBefore time.Time // latest NotBefore in the chain
+	notAfter  time.Time // earliest NotAfter in the chain
+	rootCAPEM []byte    // PEM-encoded, set via WithRootCA; nil unless TOFU is supported
 }
 
 // NewLocalSigner constructs a LocalSigner from key and chain (intermediates
@@ -38,6 +47,11 @@ type LocalSigner struct {
 // SAN, the chain includes a self-signed root, or it is not internally
 // consistent.
 func NewLocalSigner(key crypto.Signer, chain []*x509.Certificate) (*LocalSigner, error) {
+	return newLocalSigner(key, chain, time.Now())
+}
+
+// newLocalSigner is NewLocalSigner with the chain validated as of now.
+func newLocalSigner(key crypto.Signer, chain []*x509.Certificate, now time.Time) (*LocalSigner, error) {
 	if key == nil {
 		return nil, ErrNilKey
 	}
@@ -66,7 +80,7 @@ func NewLocalSigner(key crypto.Signer, chain []*x509.Certificate) (*LocalSigner,
 			return nil, fmt.Errorf("%w: chain[%d] is a self-signed root, which must not be included", ErrChainValidation, i)
 		}
 	}
-	if err := verifyChainInternally(chain, time.Now()); err != nil {
+	if err := verifyChainInternally(chain, now); err != nil {
 		return nil, err
 	}
 
@@ -78,10 +92,13 @@ func NewLocalSigner(key crypto.Signer, chain []*x509.Certificate) (*LocalSigner,
 		chainDER[i] = raw
 	}
 
+	notBefore, notAfter := chainWindow(chain)
 	return &LocalSigner{
-		key:      key,
-		alg:      alg,
-		chainDER: chainDER,
+		key:       key,
+		alg:       alg,
+		chainDER:  chainDER,
+		notBefore: notBefore,
+		notAfter:  notAfter,
 	}, nil
 }
 
@@ -109,10 +126,40 @@ func verifyChainInternally(chain []*x509.Certificate, now time.Time) error {
 	return nil
 }
 
+// chainWindow returns the period in which every certificate in certs is
+// valid: from the latest NotBefore to the earliest NotAfter.
+func chainWindow(certs []*x509.Certificate) (notBefore, notAfter time.Time) {
+	for i, c := range certs {
+		if i == 0 || c.NotBefore.After(notBefore) {
+			notBefore = c.NotBefore
+		}
+		if i == 0 || c.NotAfter.Before(notAfter) {
+			notAfter = c.NotAfter
+		}
+	}
+	return notBefore, notAfter
+}
+
+// checkSigningWindow returns ErrChainValidation if now is outside
+// [notBefore, notAfter], the bounds crypto/x509 enforces, so a signer refuses
+// a signature every Agent would reject. A window check suffices here because
+// Agents still run full path validation.
+func checkSigningWindow(notBefore, notAfter, now time.Time) error {
+	if now.Before(notBefore) || now.After(notAfter) {
+		return fmt.Errorf("%w: signing chain is valid from %s until %s, not at %s", ErrChainValidation,
+			notBefore.UTC().Format(time.RFC3339), notAfter.UTC().Format(time.RFC3339), now.UTC().Format(time.RFC3339))
+	}
+	return nil
+}
+
 // Sign implements [Signer]. It signs payload as-is, so SignResult.Payload is
-// the input, and returns the chain configured at construction.
+// the input, and returns the chain configured at construction. It fails with
+// ErrChainValidation once that chain is outside its validity period.
 func (s *LocalSigner) Sign(ctx context.Context, payload []byte) (SignResult, error) {
 	if err := ctx.Err(); err != nil {
+		return SignResult{}, err
+	}
+	if err := checkSigningWindow(s.notBefore, s.notAfter, time.Now()); err != nil {
 		return SignResult{}, err
 	}
 	sig, err := signWithKey(s.key, s.alg, payload)
