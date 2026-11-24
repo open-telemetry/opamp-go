@@ -191,6 +191,29 @@ func TestWSClientResponseMessageSizeLimit(t *testing.T) {
 	assert.ErrorContains(t, err, "read limit")
 }
 
+func TestTryConnectOnceCallsOnConnectFailedOnce(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	require.NoError(t, listener.Close())
+
+	var failures atomic.Int64
+	client := NewWebSocket(nil)
+	client.url, err = url.Parse("ws://" + listener.Addr().String())
+	require.NoError(t, err)
+	client.dialer = *websocket.DefaultDialer
+	client.getHeader = func() http.Header { return nil }
+	client.common.Callbacks = types.Callbacks{
+		OnConnectFailed: func(context.Context, error) {
+			failures.Add(1)
+		},
+	}
+	client.common.Callbacks.SetDefaults()
+
+	_, err = client.tryConnectOnce(context.Background())
+	require.Error(t, err)
+	assert.EqualValues(t, 1, failures.Load())
+}
+
 func TestDisconnectWSByServer(t *testing.T) {
 	// Start a Server.
 	srv := internal.StartMockServer(t)

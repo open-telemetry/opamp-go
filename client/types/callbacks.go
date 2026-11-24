@@ -82,8 +82,8 @@ type Callbacks struct {
 	// For WebSocket clients this is called after the message has been written to
 	// the connection. For HTTP clients this is called when the request carrying
 	// the message received an OK response.
-	// size is the length in bytes of the encoded message, before any transport
-	// level compression is applied.
+	// size is the length in bytes of the Protobuf-encoded message. It excludes
+	// OpAMP and transport framing, transport compression, TLS, and network headers.
 	// The callback must not modify msg and should return quickly, since it is
 	// called on the sending path.
 	OnMessageSent func(ctx context.Context, msg *protobufs.AgentToServer, size int)
@@ -91,8 +91,8 @@ type Callbacks struct {
 	// OnMessageReceived is called after a ServerToAgent message has been
 	// received and successfully decoded, before it is processed and before
 	// OnMessage or any other message specific callback is called.
-	// size is the length in bytes of the encoded message, after any transport
-	// level decompression.
+	// size is the length in bytes of the Protobuf-encoded message. It excludes
+	// OpAMP and transport framing, transport compression, TLS, and network headers.
 	// The callback must not modify msg and should return quickly, since it is
 	// called on the receiving path.
 	OnMessageReceived func(ctx context.Context, msg *protobufs.ServerToAgent, size int)

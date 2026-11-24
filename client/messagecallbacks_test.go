@@ -29,14 +29,14 @@ func TestMessageSentAndReceivedCallbacks(t *testing.T) {
 		settings := types.StartSettings{
 			Callbacks: types.Callbacks{
 				OnMessageSent: func(ctx context.Context, msg *protobufs.AgentToServer, size int) {
-					// The reported size covers at least the encoded Protobuf payload.
-					if msg == nil || size <= 0 || size < proto.Size(msg) {
+					// Callback size is the protobuf payload, independent of transport framing.
+					if msg == nil || size != proto.Size(msg) {
 						sentSizeOK.Store(false)
 					}
 					sentCount.Add(1)
 				},
 				OnMessageReceived: func(ctx context.Context, msg *protobufs.ServerToAgent, size int) {
-					if msg == nil || size <= 0 || size < proto.Size(msg) {
+					if msg == nil || size != proto.Size(msg) {
 						receivedSizeOK.Store(false)
 					}
 					receivedCount.Add(1)
@@ -96,6 +96,36 @@ func TestOnDisconnectCalledWhenServerDropsConnection(t *testing.T) {
 	err := client.Stop(context.Background())
 	assert.NoError(t, err)
 	assert.EqualValues(t, 1, disconnected.Load())
+}
+
+func TestOnDisconnectCalledWhenInitialWebSocketMessageFails(t *testing.T) {
+	srv := internal.StartMockServer(t)
+	srv.SetOnWSConnect(func(conn *websocket.Conn) {
+		assert.NoError(t, conn.Close())
+	})
+
+	var connected, disconnected atomic.Int64
+	settings := types.StartSettings{
+		Callbacks: types.Callbacks{
+			OnConnect: func(context.Context) {
+				connected.Add(1)
+			},
+			OnDisconnect: func(_ context.Context, err error) {
+				assert.Error(t, err)
+				disconnected.Add(1)
+			},
+		},
+	}
+	settings.OpAMPServerURL = "ws://" + srv.Endpoint
+	client := NewWebSocket(nil)
+	startClient(t, settings, client)
+
+	eventually(t, func() bool { return connected.Load() > 0 })
+	eventually(t, func() bool { return disconnected.Load() > 0 })
+	assert.Equal(t, connected.Load(), disconnected.Load())
+
+	assert.NoError(t, client.Stop(context.Background()))
+	srv.Close()
 }
 
 func TestOnDisconnectNotCalledOnStop(t *testing.T) {

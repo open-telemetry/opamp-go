@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/internal"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -124,5 +126,5 @@ func (r *wsReceiver) receiveMessage(msg *protobufs.ServerToAgent) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("cannot decode received message: %w", err)
 	}
-	return len(bytes), nil
+	return proto.Size(msg), nil
 }
