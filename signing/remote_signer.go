@@ -76,9 +76,10 @@ func errorBody(body []byte) string {
 //
 // The chain is cached, and concurrent fetches are coalesced into one
 // request. Because signature and chain come from separate
-// requests, Sign checks the signature under the chain's leaf and refetches
-// the chain once on a mismatch (a leaf rotation), so it never returns a
-// signature paired with a stale chain.
+// requests, Sign checks that the signature verifies under the chain's leaf
+// and that the chain is within its validity period, refetching the chain
+// once if not (after a leaf rotation, or a renewal under the same key), so
+// it never returns a signature paired with a stale chain.
 type RemoteSigner struct {
 	baseURL string
 	client  *http.Client
@@ -181,10 +182,10 @@ func NewRemoteSigner(settings RemoteSignerSettings) (*RemoteSigner, error) {
 }
 
 // Sign implements [Signer]. The service signs the posted bytes as-is, so
-// SignResult.Payload is the input. If the signature does not verify under
-// the current chain even after a refetch, or that chain is outside its
-// validity period (ErrChainValidation), Sign returns an error. The service
-// should rotate its signing certificate well before it expires.
+// SignResult.Payload is the input. If, even after refetching the chain, the
+// signature does not verify under it or it is outside its validity period
+// (ErrChainValidation), Sign returns an error. The service should rotate its
+// signing certificate well before it expires.
 func (s *RemoteSigner) Sign(ctx context.Context, payload []byte) (SignResult, error) {
 	sig, err := s.sign(ctx, payload)
 	if err != nil {
@@ -195,20 +196,17 @@ func (s *RemoteSigner) Sign(ctx context.Context, payload []byte) (SignResult, er
 	if err != nil {
 		return SignResult{}, err
 	}
-	if err := verifyUnderLeaf(chain, payload, sig); err != nil {
-		// The leaf most likely rotated after the chain was cached.
+	if err := checkChain(chain, payload, sig); err != nil {
+		// The chain is most likely stale: the leaf rotated after it was
+		// cached, or was renewed under the same key and the cached copy
+		// expired.
 		chain, err = s.refreshChain(ctx)
 		if err != nil {
 			return SignResult{}, err
 		}
-		if err := verifyUnderLeaf(chain, payload, sig); err != nil {
-			return SignResult{}, fmt.Errorf("remote signer: signature does not verify under the current chain: %w", err)
+		if err := checkChain(chain, payload, sig); err != nil {
+			return SignResult{}, fmt.Errorf("remote signer: %w", err)
 		}
-	}
-	// The signature matches this chain, so if it has expired the service is
-	// still signing with it, and refetching would not help.
-	if err := checkChainWindow(chain, time.Now()); err != nil {
-		return SignResult{}, fmt.Errorf("remote signer: %w", err)
 	}
 	return SignResult{Payload: payload, Signature: sig, ChainDER: chain}, nil
 }
@@ -238,6 +236,15 @@ func (s *RemoteSigner) sign(ctx context.Context, payload []byte) ([]byte, error)
 		return nil, fmt.Errorf("remote signer: sign returned HTTP %d: %s", resp.StatusCode, errorBody(body))
 	}
 	return body, nil
+}
+
+// checkChain fails unless signature verifies under chain's leaf and chain is
+// within its validity period now.
+func checkChain(chain [][]byte, payload, signature []byte) error {
+	if err := verifyUnderLeaf(chain, payload, signature); err != nil {
+		return fmt.Errorf("signature does not verify under the current chain: %w", err)
+	}
+	return checkChainWindow(chain, time.Now())
 }
 
 // verifyUnderLeaf checks that signature verifies over payload under the

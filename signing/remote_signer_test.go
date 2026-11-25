@@ -452,7 +452,36 @@ func TestRemoteSignerRejectsExpiredChain(t *testing.T) {
 
 	_, err = p.signer(t).Sign(t.Context(), []byte("payload"))
 	assert.ErrorIs(t, err, ErrChainValidation)
-	assert.EqualValues(t, 1, p.chainFetches.Load(), "a signature matching the chain needs no refetch")
+	assert.EqualValues(t, 2, p.chainFetches.Load(), "an expired chain is refetched once before failing")
+}
+
+// A renewal that keeps the key leaves the signature verifying under the
+// expired cached chain, so Sign must refetch it rather than fail.
+func TestRemoteSignerRefetchesExpiredChainRenewedUnderSameKey(t *testing.T) {
+	p := newPolicyServer(t)
+	key, err := newKey(AlgorithmECDSAP256SHA256)
+	require.NoError(t, err)
+	serve := func(notAfter time.Time) {
+		leaf := issueCert(t, &x509.Certificate{
+			KeyUsage:    x509.KeyUsageDigitalSignature,
+			ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning},
+			DNSNames:    []string{testHost},
+			NotBefore:   notAfter.Add(-2 * time.Hour),
+			NotAfter:    notAfter,
+		}, p.root, key.Public(), p.rootKy)
+		p.set(func(p *policyServer) { p.signKey, p.chainPEM = key, pemCert(leaf) })
+	}
+	rs := p.newSigner(t, RemoteSignerSettings{ChainCacheTTL: time.Hour})
+
+	// The service is late renewing, and its expired chain gets cached.
+	serve(time.Now().Add(-time.Minute))
+	_, err = rs.Sign(t.Context(), []byte("p"))
+	require.ErrorIs(t, err, ErrChainValidation)
+
+	serve(time.Now().Add(time.Hour))
+	res, err := rs.Sign(t.Context(), []byte("p"))
+	require.NoError(t, err)
+	p.assertVerifies(t, res)
 }
 
 func TestNewRemoteSignerRequiresHTTPS(t *testing.T) {
