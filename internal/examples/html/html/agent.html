@@ -21,6 +21,12 @@
         border: 1px solid #ccc;
         padding: 5px;
     }
+    .config-heading {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 4px;
+    }
     .config-table textarea {
         width: 100%;
         box-sizing: border-box;
@@ -86,8 +92,12 @@
 <table class="config-table">
     <tr>
         <td valign="top">
-            Current Effective Configuration:<br/>
-            <pre><code class="language-yaml">{{ .EffectiveConfig }}</code></pre>
+            <div class="config-heading">
+                <span>Current Effective Configuration:</span>
+                <button type="button" id="copy-effective-config">Copy</button>
+                <span id="copy-effective-config-status" role="status" aria-live="polite"></span>
+            </div>
+            <pre><code id="effective-config" class="language-yaml">{{ .EffectiveConfig }}</code></pre>
         </td>
         <td valign="top">
             Additional Configuration:<br/>
@@ -104,6 +114,19 @@
         </td>
     </tr>
 </table>
+
+<script>
+    document.getElementById("copy-effective-config").addEventListener("click", async function () {
+        const config = document.getElementById("effective-config").textContent;
+        const status = document.getElementById("copy-effective-config-status");
+        try {
+            await navigator.clipboard.writeText(config);
+            status.textContent = "Copied";
+        } catch (error) {
+            status.textContent = "Copy failed";
+        }
+    });
+</script>
 
 <hr/>
 
