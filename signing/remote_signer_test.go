@@ -31,6 +31,7 @@ type policyServer struct {
 	signStatus  int
 	chainStatus int
 	caStatus    int
+	caPEM       []byte // served at /v1/ca instead of the root when set
 	chainGate   func() // runs before each /v1/chain response, outside mu
 	// broken maps a path to "hangup" (close without responding),
 	// "truncate" (promise more body than is sent), or "oversize" (send one
@@ -39,6 +40,7 @@ type policyServer struct {
 
 	signs        atomic.Int32
 	chainFetches atomic.Int32
+	caFetches    atomic.Int32
 	srv          *httptest.Server
 }
 
@@ -114,14 +116,18 @@ func (p *policyServer) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		_, _ = w.Write(body)
 	case "/v1/ca":
+		p.caFetches.Add(1)
 		p.mu.Lock()
-		status := p.caStatus
+		status, body := p.caStatus, p.caPEM
 		p.mu.Unlock()
 		if status != 0 {
 			http.Error(w, "ca failed", status)
 			return
 		}
-		_, _ = w.Write(pemCert(p.root))
+		if body == nil {
+			body = pemCert(p.root)
+		}
+		_, _ = w.Write(body)
 	default:
 		http.NotFound(w, r)
 	}
@@ -178,7 +184,7 @@ func TestRemoteSignerSign(t *testing.T) {
 
 func TestRemoteSignerCacheDisabled(t *testing.T) {
 	p := newPolicyServer(t)
-	rs := p.newSigner(t, RemoteSignerSettings{ChainCacheTTL: -1})
+	rs := p.newSigner(t, RemoteSignerSettings{CacheTTL: -1})
 
 	for i := 0; i < 3; i++ {
 		_, err := rs.Sign(t.Context(), []byte("p"))
@@ -366,6 +372,50 @@ func TestRemoteSignerTrustAnchorPEM(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestRemoteSignerCachesTrustAnchor(t *testing.T) {
+	p := newPolicyServer(t)
+	rs := p.signer(t)
+
+	// A failed fetch is not cached.
+	p.set(func(p *policyServer) { p.caStatus = http.StatusServiceUnavailable })
+	_, err := rs.TrustAnchorPEM(t.Context())
+	require.Error(t, err)
+	p.set(func(p *policyServer) { p.caStatus = 0 })
+
+	for i := 0; i < 3; i++ {
+		got, err := rs.TrustAnchorPEM(t.Context())
+		require.NoError(t, err)
+		assert.Equal(t, pemCert(p.root), got)
+		got[0] = 'x' // must not reach the cached copy
+	}
+	assert.EqualValues(t, 2, p.caFetches.Load(), "one failed fetch, then one cached")
+
+	uncached := p.newSigner(t, RemoteSignerSettings{CacheTTL: -1})
+	for i := 0; i < 2; i++ {
+		_, err := uncached.TrustAnchorPEM(t.Context())
+		require.NoError(t, err)
+	}
+	assert.EqualValues(t, 4, p.caFetches.Load())
+}
+
+func TestRemoteSignerRejectsInvalidTrustAnchor(t *testing.T) {
+	p := newPolicyServer(t)
+	leaf, _ := newTestLeaf(t, AlgorithmECDSAP256SHA256, p.root, p.rootKy)
+	tlsRoot, _ := newServerAuthCA(t)
+	for name, caPEM := range map[string][]byte{
+		"not PEM":         []byte("not a certificate"),
+		"leaf":            pemCert(leaf),
+		"bundle":          bytes.Join([][]byte{pemCert(p.root), pemCert(leaf)}, nil),
+		"serverAuth root": pemCert(tlsRoot),
+	} {
+		t.Run(name, func(t *testing.T) {
+			p.set(func(p *policyServer) { p.caPEM = caPEM })
+			_, err := p.signer(t).TrustAnchorPEM(t.Context())
+			assert.ErrorIs(t, err, ErrInvalidTOFUAnchor)
+		})
+	}
+}
+
 func TestReadLimited(t *testing.T) {
 	got, err := readLimited(strings.NewReader("abcd"), 4)
 	require.NoError(t, err)
@@ -471,7 +521,7 @@ func TestRemoteSignerRefetchesExpiredChainRenewedUnderSameKey(t *testing.T) {
 		}, p.root, key.Public(), p.rootKy)
 		p.set(func(p *policyServer) { p.signKey, p.chainPEM = key, pemCert(leaf) })
 	}
-	rs := p.newSigner(t, RemoteSignerSettings{ChainCacheTTL: time.Hour})
+	rs := p.newSigner(t, RemoteSignerSettings{CacheTTL: time.Hour})
 
 	// The service is late renewing, and its expired chain gets cached.
 	serve(time.Now().Add(-time.Minute))

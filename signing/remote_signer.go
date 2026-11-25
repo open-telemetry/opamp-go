@@ -74,8 +74,8 @@ func errorBody(body []byte) string {
 // TOFU Agent onto its own anchor. Where TLS to the service is not possible,
 // implement [Signer] directly.
 //
-// The chain is cached, and concurrent fetches are coalesced into one
-// request. Because signature and chain come from separate
+// The chain and root CA are cached, and concurrent chain fetches are
+// coalesced into one request. Because signature and chain come from separate
 // requests, Sign checks that the signature verifies under the chain's leaf
 // and that the chain is within its validity period, refetching the chain
 // once if not (after a leaf rotation, or a renewal under the same key), so
@@ -85,10 +85,12 @@ type RemoteSigner struct {
 	client  *http.Client
 	timeout time.Duration // per request, however client is configured
 
-	chainTTL    time.Duration
-	mu          sync.Mutex
-	cachedChain [][]byte
-	cachedAt    time.Time
+	cacheTTL     time.Duration
+	mu           sync.Mutex
+	cachedChain  [][]byte
+	cachedAt     time.Time
+	cachedAnchor []byte // the root CA as re-encoded by TOFUAnchorFromPEM
+	anchorAt     time.Time
 	// Concurrent callers share one in-flight fetch rather than each hitting
 	// /v1/chain: fetching on a cache miss, refreshing after a rotation is
 	// detected. Separate slots keep a refresh from joining a fetch that may
@@ -111,7 +113,7 @@ var (
 )
 
 const (
-	defaultChainCacheTTL  = 60 * time.Second
+	defaultCacheTTL       = 60 * time.Second
 	defaultRequestTimeout = 10 * time.Second
 )
 
@@ -138,10 +140,11 @@ type RemoteSignerSettings struct {
 	// not positive, 10 seconds is used.
 	RequestTimeout time.Duration
 
-	// ChainCacheTTL is how long Sign reuses a fetched chain before fetching
-	// it again to detect rotation. Zero means 60 seconds; a negative value
-	// disables caching, so every Sign fetches the chain.
-	ChainCacheTTL time.Duration
+	// CacheTTL is how long a fetched chain or root CA is reused before it is
+	// fetched again (for the chain, to detect rotation). Zero means 60
+	// seconds; a negative value disables caching, so every Sign fetches the
+	// chain and every TrustAnchorPEM the root CA.
+	CacheTTL time.Duration
 }
 
 // NewRemoteSigner returns a RemoteSigner for the signing service described by
@@ -169,15 +172,15 @@ func NewRemoteSigner(settings RemoteSignerSettings) (*RemoteSigner, error) {
 	if timeout <= 0 {
 		timeout = defaultRequestTimeout
 	}
-	ttl := settings.ChainCacheTTL
+	ttl := settings.CacheTTL
 	if ttl == 0 {
-		ttl = defaultChainCacheTTL
+		ttl = defaultCacheTTL
 	}
 	return &RemoteSigner{
 		baseURL:  strings.TrimRight(settings.BaseURL, "/"),
 		client:   &client,
 		timeout:  timeout,
-		chainTTL: ttl,
+		cacheTTL: ttl,
 	}, nil
 }
 
@@ -278,8 +281,31 @@ func (s *RemoteSigner) refreshChain(ctx context.Context) ([][]byte, error) {
 }
 
 // TrustAnchorPEM implements [TrustAnchorProvider] by GET-ing /v1/ca on the
-// remote policy server. The response MUST be a PEM-encoded CA certificate.
+// remote policy server, caching the result like the chain. The response
+// MUST be a single self-signed CA certificate in PEM form, as Agents require
+// of a TOFU anchor (see [TOFUAnchorFromPEM]); otherwise TrustAnchorPEM
+// returns an error wrapping ErrInvalidTOFUAnchor rather than offer Agents an
+// anchor they would reject.
 func (s *RemoteSigner) TrustAnchorPEM(ctx context.Context) ([]byte, error) {
+	s.mu.Lock()
+	anchor := s.cachedAnchor
+	fresh := anchor != nil && s.cacheTTL > 0 && time.Since(s.anchorAt) < s.cacheTTL
+	s.mu.Unlock()
+	if !fresh {
+		var err error
+		if anchor, err = s.fetchAnchor(ctx); err != nil {
+			return nil, err
+		}
+		s.mu.Lock()
+		s.cachedAnchor, s.anchorAt = anchor, time.Now()
+		s.mu.Unlock()
+	}
+	return bytes.Clone(anchor), nil
+}
+
+// fetchAnchor fetches /v1/ca and returns its CA certificate re-encoded as
+// PEM.
+func (s *RemoteSigner) fetchAnchor(ctx context.Context) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
@@ -299,14 +325,18 @@ func (s *RemoteSigner) TrustAnchorPEM(ctx context.Context) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("remote signer: CA returned HTTP %d: %s", resp.StatusCode, errorBody(body))
 	}
-	return body, nil
+	_, anchor, err := TOFUAnchorFromPEM(body)
+	if err != nil {
+		return nil, fmt.Errorf("remote signer: CA response: %w", err)
+	}
+	return anchor, nil
 }
 
-// chainDER returns the cached signing chain if it is younger than chainTTL,
+// chainDER returns the cached signing chain if it is younger than cacheTTL,
 // and otherwise fetches and caches the current one.
 func (s *RemoteSigner) chainDER(ctx context.Context) ([][]byte, error) {
 	s.mu.Lock()
-	if s.cachedChain != nil && s.chainTTL > 0 && time.Since(s.cachedAt) < s.chainTTL {
+	if s.cachedChain != nil && s.cacheTTL > 0 && time.Since(s.cachedAt) < s.cacheTTL {
 		chain := s.cachedChain
 		s.mu.Unlock()
 		return chain, nil
