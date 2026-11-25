@@ -23,14 +23,14 @@ var allAlgorithms = []Algorithm{
 	AlgorithmEd25519,
 }
 
-func newTestCA(t *testing.T, alg Algorithm) (*x509.Certificate, crypto.Signer) {
+func newTestCA(t testing.TB, alg Algorithm) (*x509.Certificate, crypto.Signer) {
 	t.Helper()
 	ca, key, err := GenerateCA(alg, CertOptions{})
 	require.NoError(t, err)
 	return ca, key
 }
 
-func newTestLeaf(t *testing.T, alg Algorithm, ca *x509.Certificate, caKey crypto.Signer, hosts ...string) (*x509.Certificate, crypto.Signer) {
+func newTestLeaf(t testing.TB, alg Algorithm, ca *x509.Certificate, caKey crypto.Signer, hosts ...string) (*x509.Certificate, crypto.Signer) {
 	t.Helper()
 	if len(hosts) == 0 {
 		hosts = []string{testHost}
@@ -66,7 +66,7 @@ func rootPool(certs ...*x509.Certificate) *x509.CertPool {
 
 // issueCert creates a certificate from tmpl with sensible defaults filled in.
 // A nil parent makes it self-signed with signerKey.
-func issueCert(t *testing.T, tmpl, parent *x509.Certificate, pub crypto.PublicKey, signerKey crypto.Signer) *x509.Certificate {
+func issueCert(t testing.TB, tmpl, parent *x509.Certificate, pub crypto.PublicKey, signerKey crypto.Signer) *x509.Certificate {
 	t.Helper()
 	if tmpl.SerialNumber == nil {
 		tmpl.SerialNumber = big.NewInt(time.Now().UnixNano())
