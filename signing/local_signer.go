@@ -44,8 +44,8 @@ type LocalSigner struct {
 // The material is validated up front so misconfiguration fails at startup:
 // ErrUnsupportedAlgorithm for an unsupported leaf key, ErrKeyMismatch if key
 // does not match the leaf, and ErrChainValidation if the leaf has no DNS or IP
-// SAN, the chain includes a self-signed root, or it is not internally
-// consistent.
+// SAN or does not list id-kp-codeSigning, the chain includes a self-signed
+// root, or it is not internally consistent.
 func NewLocalSigner(key crypto.Signer, chain []*x509.Certificate) (*LocalSigner, error) {
 	return newLocalSigner(key, chain, time.Now())
 }
@@ -74,6 +74,9 @@ func newLocalSigner(key crypto.Signer, chain []*x509.Certificate, now time.Time)
 
 	if len(leaf.DNSNames) == 0 && len(leaf.IPAddresses) == 0 {
 		return nil, fmt.Errorf("%w: signing leaf has no DNS or IP SAN", ErrChainValidation)
+	}
+	if !listsCodeSigning(leaf) {
+		return nil, fmt.Errorf("%w: signing leaf does not list id-kp-codeSigning", ErrChainValidation)
 	}
 	for i, cert := range chain {
 		if isSelfSigned(cert) {

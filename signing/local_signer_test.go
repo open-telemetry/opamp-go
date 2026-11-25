@@ -238,3 +238,14 @@ func TestLocalSignerSignOutsideValidity(t *testing.T) {
 		})
 	}
 }
+
+func TestNewLocalSignerRequiresExplicitCodeSigning(t *testing.T) {
+	root, rootKey := newTestCA(t, AlgorithmECDSAP256SHA256)
+	key, err := newKey(AlgorithmECDSAP256SHA256)
+	require.NoError(t, err)
+	// No EKU extension: crypto/x509 alone would accept it for code signing.
+	leaf := issueCert(t, &x509.Certificate{KeyUsage: x509.KeyUsageDigitalSignature, DNSNames: []string{testHost}}, root, key.Public(), rootKey)
+	_, err = NewLocalSigner(key, []*x509.Certificate{leaf})
+	assert.ErrorIs(t, err, ErrChainValidation)
+	assert.ErrorContains(t, err, "does not list id-kp-codeSigning")
+}

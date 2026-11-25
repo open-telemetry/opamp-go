@@ -65,8 +65,9 @@ func (c *VerifiedCertificate) ValidAt(now time.Time) error {
 //
 // chainDER is ordered intermediates first, leaf last, as in
 // trust_chain_response; the root is supplied via roots and MUST NOT appear
-// in it. The leaf MUST carry the id-kp-codeSigning EKU, so TLS server
-// certificates cannot be repurposed, and its SANs (dNSName or iPAddress)
+// in it. The leaf MUST list the id-kp-codeSigning EKU explicitly, so TLS
+// server certificates cannot be repurposed; a leaf without the extension, or
+// with only anyExtendedKeyUsage, is rejected. Its SANs (dNSName or iPAddress)
 // must match dnsName, which MUST be non-empty. The root ending the path
 // MUST NOT carry id-kp-serverAuth (ErrTrustAnchorServerAuth). Other RFC
 // 5280 checks are enforced by crypto/x509. Revocation is not checked; the
@@ -109,6 +110,14 @@ func hasServerAuth(cert *x509.Certificate) bool {
 	return slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageServerAuth)
 }
 
+// listsCodeSigning reports whether cert's EKU explicitly lists
+// id-kp-codeSigning, as the spec requires of the signing leaf. crypto/x509
+// also accepts a certificate without the extension, or with only
+// anyExtendedKeyUsage, for code signing.
+func listsCodeSigning(cert *x509.Certificate) bool {
+	return slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageCodeSigning)
+}
+
 // verifyParsedChain validates a parsed chain (intermediates first, leaf
 // last) and returns the leaf.
 func verifyParsedChain(certs []*x509.Certificate, roots *x509.CertPool, now time.Time, dnsName string) (*x509.Certificate, error) {
@@ -134,6 +143,9 @@ func verifyParsedChain(certs []*x509.Certificate, roots *x509.CertPool, now time
 			return nil, fmt.Errorf("%w: %v", ErrHostnameMismatch, err)
 		}
 		return nil, fmt.Errorf("%w: %v", ErrChainValidation, err)
+	}
+	if !listsCodeSigning(leaf) {
+		return nil, fmt.Errorf("%w: signing leaf does not list id-kp-codeSigning", ErrChainValidation)
 	}
 
 	// Accept only a path that ends at a root without id-kp-serverAuth.

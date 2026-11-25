@@ -155,3 +155,34 @@ func TestVerifiedCertificateValidAtAfterExpiry(t *testing.T) {
 	assert.NoError(t, vc.ValidAt(time.Now()))
 	assert.ErrorIs(t, vc.ValidAt(time.Now().Add(2*time.Hour)), ErrChainValidation)
 }
+
+func TestValidateChainRequiresExplicitCodeSigning(t *testing.T) {
+	root, rootKey := newTestCA(t, AlgorithmECDSAP256SHA256)
+	for name, tc := range map[string]struct {
+		ekus []x509.ExtKeyUsage
+		ok   bool
+	}{
+		"codeSigning":              {[]x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}, true},
+		"codeSigning, serverAuth":  {[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageCodeSigning}, true},
+		"codeSigning, any":         {[]x509.ExtKeyUsage{x509.ExtKeyUsageAny, x509.ExtKeyUsageCodeSigning}, true},
+		"no EKU extension":         {nil, false},
+		"anyExtendedKeyUsage only": {[]x509.ExtKeyUsage{x509.ExtKeyUsageAny}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			key, err := newKey(AlgorithmECDSAP256SHA256)
+			require.NoError(t, err)
+			leaf := issueCert(t, &x509.Certificate{
+				KeyUsage:    x509.KeyUsageDigitalSignature,
+				ExtKeyUsage: tc.ekus,
+				DNSNames:    []string{testHost},
+			}, root, key.Public(), rootKey)
+			_, err = ValidateChain(t.Context(), ders(leaf), rootPool(root), time.Now(), testHost)
+			if tc.ok {
+				assert.NoError(t, err)
+				return
+			}
+			assert.ErrorIs(t, err, ErrChainValidation)
+			assert.ErrorContains(t, err, "does not list id-kp-codeSigning")
+		})
+	}
+}
