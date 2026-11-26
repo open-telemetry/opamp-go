@@ -573,7 +573,12 @@ func (agent *Agent) calcConnectionSettings(response *protobufs.ServerToAgent) {
 	response.ConnectionSettings.Hash = toHash(response.ConnectionSettings)
 }
 
+// SendToAgent pushes msg to the Agent, addressed to its instance UID as the
+// spec requires; attested connections reject a push without one.
 func (agent *Agent) SendToAgent(msg *protobufs.ServerToAgent) {
+	if len(msg.InstanceUid) == 0 {
+		msg.InstanceUid = agent.InstanceId[:]
+	}
 	agent.conn.Send(context.Background(), msg)
 }
 

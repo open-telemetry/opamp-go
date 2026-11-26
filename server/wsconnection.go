@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -13,6 +14,22 @@ import (
 	"github.com/open-telemetry/opamp-go/server/types"
 )
 
+// ErrSendBeforeNegotiated is returned from Send when the server has a
+// PayloadSigner but has not yet processed the connection's first
+// AgentToServer, so it cannot know whether the Agent requires attestation.
+// It applies to every connection, including Agents that never request
+// attestation. Send from OnMessage rather than OnConnected.
+var ErrSendBeforeNegotiated = errors.New(
+	"server: Send called before Message Attestation negotiation completed; " +
+		"push outbound messages from OnMessage rather than OnConnected",
+)
+
+// ErrInstanceUidRequired is returned from Send on an attested connection when
+// the message has no InstanceUid. Agents reject signed messages addressed to
+// another instance, and a push answers no request, so the server does not
+// pick a recipient on the caller's behalf.
+var ErrInstanceUidRequired = errors.New("server: ServerToAgent.InstanceUid must be set on an attested connection")
+
 // wsConnection represents a persistent OpAMP connection over a WebSocket.
 type wsConnection struct {
 	// The websocket library does not allow multiple concurrent write operations,
@@ -23,21 +40,80 @@ type wsConnection struct {
 	closed    atomic.Bool
 
 	maxMessageSize int64
+
+	// requiresNegotiation (server has a PayloadSigner) blocks Send until
+	// negotiated, i.e. until the first AgentToServer has been processed.
+	requiresNegotiation bool
+	negotiated          atomic.Bool
+
+	// signing is non-nil once the connection has negotiated attestation;
+	// Send then signs every non-heartbeat message. Atomic because user code
+	// may call Send from other goroutines.
+	signing atomic.Pointer[connectionSigningState]
 }
 
 var _ types.Connection = (*wsConnection)(nil)
 
-func newWSConnection(wsConn *websocket.Conn, maxMessageSize int64) types.Connection {
-	return &wsConnection{wsConn: wsConn, maxMessageSize: maxMessageSize}
+func newWSConnection(wsConn *websocket.Conn, maxMessageSize int64, requiresNegotiation bool) *wsConnection {
+	return &wsConnection{
+		wsConn:              wsConn,
+		maxMessageSize:      maxMessageSize,
+		requiresNegotiation: requiresNegotiation,
+	}
+}
+
+// enableSigning makes Send sign outbound messages with state.
+func (c *wsConnection) enableSigning(state *connectionSigningState) {
+	c.signing.Store(state)
+}
+
+// markNegotiated records that the first AgentToServer has been processed,
+// unblocking Send.
+func (c *wsConnection) markNegotiated() {
+	c.negotiated.Store(true)
+}
+
+// isNegotiated reports whether markNegotiated has been called.
+func (c *wsConnection) isNegotiated() bool {
+	return c.negotiated.Load()
+}
+
+// isAttested reports whether the connection negotiated attestation, i.e.
+// Send signs its messages.
+func (c *wsConnection) isAttested() bool {
+	return c.signing.Load() != nil
 }
 
 func (c *wsConnection) Connection() net.Conn {
 	return c.wsConn.UnderlyingConn()
 }
 
-func (c *wsConnection) Send(_ context.Context, message *protobufs.ServerToAgent) error {
+func (c *wsConnection) Send(ctx context.Context, message *protobufs.ServerToAgent) error {
+	if c.requiresNegotiation && !c.negotiated.Load() {
+		return ErrSendBeforeNegotiated
+	}
+
 	c.connMutex.Lock()
 	defer c.connMutex.Unlock()
+
+	if state := c.signing.Load(); state != nil {
+		// A heartbeat response (instance_uid only) MAY be sent unsigned.
+		if internal.IsHeartbeatServerToAgent(message) {
+			return internal.WriteWSMessage(c.wsConn, message, c.maxMessageSize)
+		}
+		if len(message.InstanceUid) == 0 {
+			return ErrInstanceUidRequired
+		}
+		env, err := state.signOutgoing(ctx, message)
+		if err != nil {
+			return err
+		}
+		if err := internal.WriteWSMessage(c.wsConn, env, c.maxMessageSize); err != nil {
+			return err
+		}
+		state.markDelivered(env)
+		return nil
+	}
 
 	return internal.WriteWSMessage(c.wsConn, message, c.maxMessageSize)
 }

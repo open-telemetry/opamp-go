@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/open-telemetry/opamp-go/server/types"
+	"github.com/open-telemetry/opamp-go/signing"
 )
 
 // Settings contains the settings for attaching an OpAMP Server.
@@ -35,6 +36,30 @@ type Settings struct {
 	// https://github.com/open-telemetry/opamp-spec/blob/main/specification.md#customcapabilities
 	// for more details.
 	CustomCapabilities []string
+
+	// PayloadSigner, when non-nil, enables Message Attestation: on
+	// connections whose Agent requires payload trust verification, the
+	// Server advertises OffersPayloadTrustVerification and sends every
+	// ServerToAgent signed, in a SignedServerToAgent envelope. Other
+	// connections, and all connections when nil, keep the standard wire
+	// format.
+	//
+	// Whether a connection is attested is unknown until its first
+	// AgentToServer is processed, so until then Send on a WebSocket
+	// connection returns ErrSendBeforeNegotiated, for every Agent, including
+	// those that never request attestation. Push messages from OnMessage
+	// rather than OnConnected. On an attested connection, a pushed message
+	// must set InstanceUid (ErrInstanceUidRequired): Agents reject signed
+	// messages addressed to another instance. Replies to AgentToServer take
+	// it from the request.
+	//
+	// Signing runs inline, and sends on a connection are serialized, so
+	// signer latency (for example of a remote or KMS signer) adds to every
+	// send on that connection. On WebSocket, replies to AgentToServer
+	// messages are signed in the connection's read loop with a background
+	// context: a slow signature also delays reading the next message, and
+	// only the signer's own timeout bounds it.
+	PayloadSigner signing.Signer
 }
 
 // StartSettings contains the settings for starting an OpAMP Server.

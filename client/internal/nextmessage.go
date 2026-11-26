@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"sync"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -26,6 +27,14 @@ func NewNextMessage() NextMessage {
 		nextMessage:        &protobufs.AgentToServer{},
 		nextMessageSending: make(chan struct{}),
 	}
+}
+
+// InstanceUid returns a copy of the instance UID the next message carries,
+// i.e. the Agent's current instance UID.
+func (s *NextMessage) InstanceUid() []byte {
+	s.messageMutex.Lock()
+	defer s.messageMutex.Unlock()
+	return bytes.Clone(s.nextMessage.InstanceUid)
 }
 
 // Update applies the specified modifier function to the next message that will be sent
