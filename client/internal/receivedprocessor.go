@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -69,9 +70,10 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 			r.rcvCommand(ctx, msg.Command)
 			// If a command message exists, other messages will be ignored
 			return
-		} else {
-			r.logger.Debugf(ctx, "Ignoring Command, agent does not have AcceptsCommands capability")
 		}
+		r.logger.Debugf(ctx, "Ignoring Command, agent does not have AcceptsCommands capability")
+		r.reportCommandStatus(ctx, msg.Command, protobufs.CommandStatuses_CommandStatuses_UNSUPPORTED,
+			fmt.Sprintf("command %s is not accepted by the agent", msg.Command.Type))
 	}
 
 	scheduled, err := r.rcvFlags(ctx, protobufs.ServerToAgentFlags(msg.Flags))
@@ -258,6 +260,9 @@ func (r *receivedProcessor) rcvFlags(
 				if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsConnectionSettingsStatus) {
 					msg.ConnectionSettingsStatus = r.clientSyncedState.ConnectionSettingsStatus()
 				}
+				if r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsCommandStatus) {
+					msg.CommandStatus = r.clientSyncedState.CommandStatus()
+				}
 
 				// The logic for EffectiveConfig is similar to the previous 6 sub-messages however
 				// the EffectiveConfig is fetched using GetEffectiveConfig instead of
@@ -369,7 +374,50 @@ func (r *receivedProcessor) rcvAgentIdentification(ctx context.Context, agentId 
 }
 
 func (r *receivedProcessor) rcvCommand(ctx context.Context, command *protobufs.ServerToAgentCommand) {
-	if command != nil {
-		r.callbacks.OnCommand(ctx, command)
+	if command == nil {
+		return
 	}
+
+	r.reportCommandStatus(ctx, command, protobufs.CommandStatuses_CommandStatuses_EXECUTING, "")
+
+	err := r.callbacks.OnCommand(ctx, command)
+	if err == nil {
+		// The Agent is responsible for reporting COMPLETED, since the command
+		// may still be in progress after OnCommand returns.
+		return
+	}
+
+	if errors.Is(err, types.ErrCommandUnsupported) {
+		r.logger.Debugf(ctx, "Command %s is not supported by the agent: %v", command.Type, err)
+		r.reportCommandStatus(ctx, command, protobufs.CommandStatuses_CommandStatuses_UNSUPPORTED, err.Error())
+		return
+	}
+
+	r.logger.Errorf(ctx, "Failed to execute command %s: %v", command.Type, err)
+	r.reportCommandStatus(ctx, command, protobufs.CommandStatuses_CommandStatuses_FAILED, err.Error())
+}
+
+// reportCommandStatus reports the given status for the command, if the agent
+// has the ReportsCommandStatus capability.
+func (r *receivedProcessor) reportCommandStatus(ctx context.Context, command *protobufs.ServerToAgentCommand, status protobufs.CommandStatuses, errorMessage string) {
+	if !r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsCommandStatus) {
+		return
+	}
+	r.setCommandStatus(ctx, &protobufs.CommandStatus{
+		CommandId:    command.CommandId,
+		Type:         command.Type,
+		Status:       status,
+		ErrorMessage: errorMessage,
+	})
+}
+
+func (r *receivedProcessor) setCommandStatus(ctx context.Context, status *protobufs.CommandStatus) {
+	if err := r.clientSyncedState.SetCommandStatus(status); err != nil {
+		r.logger.Errorf(ctx, "Unable to persist command status: %v", err)
+		return
+	}
+	r.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.CommandStatus = status
+	})
+	r.sender.ScheduleSend()
 }

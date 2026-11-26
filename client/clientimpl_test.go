@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -3221,6 +3222,90 @@ func TestSetConnectionSettingsStatusAsync(t *testing.T) {
 
 		err = client.Stop(t.Context())
 		require.NoError(t, err)
+	})
+}
+
+func TestSetCommandStatusWithoutCapability(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		settings := createNoServerSettings()
+		settings.Capabilities = coreCapabilities
+		startClient(t, settings, client)
+
+		err := client.SetCommandStatus(&protobufs.CommandStatus{
+			Status: protobufs.CommandStatuses_CommandStatuses_COMPLETED,
+		})
+		require.ErrorIs(t, err, internal.ErrReportsCommandStatusNotSet)
+
+		require.NoError(t, client.Stop(t.Context()))
+	})
+}
+
+// TestSetCommandStatusAsync tests that when the server sends a command, the
+// client reports EXECUTING automatically, and then the agent can asynchronously
+// report COMPLETED via SetCommandStatus with the same command id.
+func TestSetCommandStatusAsync(t *testing.T) {
+	testClients(t, func(t *testing.T, client OpAMPClient) {
+		commandID := []byte("restart-1")
+		gotExecuting := new(atomic.Bool)
+		gotCompleted := new(atomic.Bool)
+
+		srv := internal.StartMockServer(t)
+		defer srv.Close()
+
+		firstMessage := true
+		srv.SetOnMessage(func(msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
+			if status := msg.CommandStatus; status != nil && bytes.Equal(status.CommandId, commandID) {
+				switch status.Status {
+				case protobufs.CommandStatuses_CommandStatuses_EXECUTING:
+					gotExecuting.Store(true)
+				case protobufs.CommandStatuses_CommandStatuses_COMPLETED:
+					gotCompleted.Store(true)
+				}
+			}
+			resp := &protobufs.ServerToAgent{InstanceUid: msg.InstanceUid}
+			if firstMessage {
+				firstMessage = false
+				resp.Command = &protobufs.ServerToAgentCommand{
+					Type:      protobufs.CommandType_CommandType_Restart,
+					CommandId: commandID,
+				}
+			}
+			return resp
+		})
+
+		receivedCommand := make(chan *protobufs.ServerToAgentCommand, 1)
+		settings := types.StartSettings{
+			Capabilities: coreCapabilities |
+				protobufs.AgentCapabilities_AgentCapabilities_AcceptsRestartCommand |
+				protobufs.AgentCapabilities_AgentCapabilities_ReportsCommandStatus,
+			OpAMPServerURL: "ws://" + srv.Endpoint,
+			Callbacks: types.Callbacks{
+				OnCommand: func(_ context.Context, command *protobufs.ServerToAgentCommand) error {
+					receivedCommand <- command
+					return nil
+				},
+			},
+		}
+		startClient(t, settings, client)
+
+		var command *protobufs.ServerToAgentCommand
+		select {
+		case command = <-receivedCommand:
+		case <-time.After(5 * time.Second):
+			t.Fatal("OnCommand was not called")
+		}
+		eventually(t, func() bool { return gotExecuting.Load() })
+		assert.False(t, gotCompleted.Load())
+
+		err := client.SetCommandStatus(&protobufs.CommandStatus{
+			CommandId: command.CommandId,
+			Type:      command.Type,
+			Status:    protobufs.CommandStatuses_CommandStatuses_COMPLETED,
+		})
+		require.NoError(t, err)
+		eventually(t, func() bool { return gotCompleted.Load() })
+
+		require.NoError(t, client.Stop(t.Context()))
 	})
 }
 

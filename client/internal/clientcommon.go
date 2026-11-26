@@ -24,6 +24,7 @@ var (
 	ErrAcceptsPackagesNotSet                 = errors.New("AcceptsPackages and ReportsPackageStatuses must be set")
 	ErrAvailableComponentsMissing            = errors.New("AvailableComponents is nil")
 	ErrReportsConnectionSettingsStatusNotSet = errors.New("ReportsConnectionSettingsStatus capability is not set")
+	ErrReportsCommandStatusNotSet            = errors.New("ReportsCommandStatus capability is not set")
 	ErrDialContextAndProxyURL                = errors.New("DialContext and ProxyURL cannot both be set")
 
 	errAlreadyStarted                  = errors.New("already started")
@@ -357,6 +358,26 @@ func (c *ClientCommon) SetConnectionSettingsStatus(status *protobufs.ConnectionS
 
 	c.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
 		msg.ConnectionSettingsStatus = c.ClientSyncedState.ConnectionSettingsStatus()
+	})
+	c.sender.ScheduleSend()
+
+	return nil
+}
+
+// SetCommandStatus sends a status update to the Server with the new CommandStatus.
+// It also remembers the new status in the client state so that it can be sent
+// to the Server when the Server asks for it.
+func (c *ClientCommon) SetCommandStatus(status *protobufs.CommandStatus) error {
+	if !c.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsCommandStatus) {
+		return ErrReportsCommandStatusNotSet
+	}
+
+	if err := c.ClientSyncedState.SetCommandStatus(status); err != nil {
+		return err
+	}
+
+	c.sender.NextMessage().Update(func(msg *protobufs.AgentToServer) {
+		msg.CommandStatus = c.ClientSyncedState.CommandStatus()
 	})
 	c.sender.ScheduleSend()
 

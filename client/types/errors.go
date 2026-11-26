@@ -22,4 +22,10 @@ var (
 
 	// ErrNoAvailableComponentHash is returned by SetAvailableComponents when called with a message with an empty hash
 	ErrNoAvailableComponentHash = errors.New("AvailableComponents.Hash is empty")
+
+	// ErrCommandUnsupported can be returned (optionally wrapped) by the OnCommand
+	// callback when the Agent does not support the received command type. If the
+	// Agent has the ReportsCommandStatus capability, the client then reports the
+	// UNSUPPORTED status instead of FAILED.
+	ErrCommandUnsupported = errors.New("command is not supported")
 )
