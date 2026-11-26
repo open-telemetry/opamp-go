@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -69,9 +70,10 @@ func (r *receivedProcessor) ProcessReceivedMessage(ctx context.Context, msg *pro
 			r.rcvCommand(ctx, msg.Command)
 			// If a command message exists, other messages will be ignored
 			return
-		} else {
-			r.logger.Debugf(ctx, "Ignoring Command, agent does not have AcceptsCommands capability")
 		}
+		r.logger.Debugf(ctx, "Ignoring Command, agent does not have AcceptsCommands capability")
+		r.reportCommandStatus(ctx, msg.Command, protobufs.CommandStatuses_CommandStatuses_UNSUPPORTED,
+			fmt.Sprintf("command %s is not accepted by the agent", msg.Command.Type))
 	}
 
 	scheduled, err := r.rcvFlags(ctx, protobufs.ServerToAgentFlags(msg.Flags))
@@ -376,14 +378,7 @@ func (r *receivedProcessor) rcvCommand(ctx context.Context, command *protobufs.S
 		return
 	}
 
-	reportsStatus := r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsCommandStatus)
-	if reportsStatus {
-		r.setCommandStatus(ctx, &protobufs.CommandStatus{
-			CommandId: command.CommandId,
-			Type:      command.Type,
-			Status:    protobufs.CommandStatuses_CommandStatuses_EXECUTING,
-		})
-	}
+	r.reportCommandStatus(ctx, command, protobufs.CommandStatuses_CommandStatuses_EXECUTING, "")
 
 	err := r.callbacks.OnCommand(ctx, command)
 	if err == nil {
@@ -392,15 +387,28 @@ func (r *receivedProcessor) rcvCommand(ctx context.Context, command *protobufs.S
 		return
 	}
 
-	r.logger.Errorf(ctx, "Failed to execute command %s: %v", command.Type, err)
-	if reportsStatus {
-		r.setCommandStatus(ctx, &protobufs.CommandStatus{
-			CommandId:    command.CommandId,
-			Type:         command.Type,
-			Status:       protobufs.CommandStatuses_CommandStatuses_FAILED,
-			ErrorMessage: err.Error(),
-		})
+	if errors.Is(err, types.ErrCommandUnsupported) {
+		r.logger.Debugf(ctx, "Command %s is not supported by the agent: %v", command.Type, err)
+		r.reportCommandStatus(ctx, command, protobufs.CommandStatuses_CommandStatuses_UNSUPPORTED, err.Error())
+		return
 	}
+
+	r.logger.Errorf(ctx, "Failed to execute command %s: %v", command.Type, err)
+	r.reportCommandStatus(ctx, command, protobufs.CommandStatuses_CommandStatuses_FAILED, err.Error())
+}
+
+// reportCommandStatus reports the given status for the command, if the agent
+// has the ReportsCommandStatus capability.
+func (r *receivedProcessor) reportCommandStatus(ctx context.Context, command *protobufs.ServerToAgentCommand, status protobufs.CommandStatuses, errorMessage string) {
+	if !r.hasCapability(protobufs.AgentCapabilities_AgentCapabilities_ReportsCommandStatus) {
+		return
+	}
+	r.setCommandStatus(ctx, &protobufs.CommandStatus{
+		CommandId:    command.CommandId,
+		Type:         command.Type,
+		Status:       status,
+		ErrorMessage: errorMessage,
+	})
 }
 
 func (r *receivedProcessor) setCommandStatus(ctx context.Context, status *protobufs.CommandStatus) {
